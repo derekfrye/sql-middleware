@@ -10,7 +10,7 @@ pub struct MissingDbObjects {
 
 /// Check if tables or constraints are setup.
 pub async fn test_is_db_setup(
-    db: &Db,
+    db: &Db, 
     check_type: &CheckType,
     query: &str,
     ddl: Vec<DatabaseItem>,
