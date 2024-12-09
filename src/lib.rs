@@ -5,8 +5,7 @@
 //! - Query execution with abstracted row handling.
 //! - Models for database tables, rows, and states.
 pub mod model;
-pub mod db{
-    pub mod db;
+pub mod db {
     pub mod convenience_items;
+    pub mod db;
 }
-

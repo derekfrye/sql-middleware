@@ -1,5 +1,5 @@
-use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row};
 use deadpool_postgres::Config;
+use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row};
 // use ::function_name::named;
 
 use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
@@ -126,8 +126,6 @@ impl DbConfigAndPool {
         }
     }
 }
-
-
 
 impl Db {
     pub fn new(cnf: DbConfigAndPool) -> Result<Self, String> {
@@ -404,6 +402,3 @@ impl Db {
         Ok(final_result)
     }
 }
-
-
-

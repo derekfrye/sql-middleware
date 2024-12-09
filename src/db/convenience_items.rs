@@ -1,22 +1,18 @@
 use crate::db::db::{DatabaseSetupState, Db};
+use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
-use crate::model::{DatabaseResult, QueryAndParams, RowValues, CheckType, DatabaseItem};
 // use sqlx::query;
 
-
-
-#[derive( Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct MissingDbObjects {
- pub missing_object: String,
+    pub missing_object: String,
 }
-
-
 
 /// Check if tables or constraints are setup.
 pub async fn test_is_db_setup(
     db: &Db,
     check_type: &CheckType,
-    query  : &str,
+    query: &str,
     ddl: Vec<DatabaseItem>,
 ) -> Result<Vec<DatabaseResult<String>>, Box<dyn std::error::Error>> {
     let mut dbresults = vec![];
@@ -70,20 +66,20 @@ pub async fn test_is_db_setup(
         })
         .collect();
 
-        fn local_fn_get_iter<'a>(
-            ddl: &'a [DatabaseItem],
-            check_type: &'a CheckType,
-        ) -> impl Iterator<Item = &'a str> {
-            ddl.iter().filter_map(move |item| match (check_type, item) {
-                (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
-                (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
-                    Some(constraint.constraint_name.as_str())
-                }
-                _ => None,
-            })
-        }
+    fn local_fn_get_iter<'a>(
+        ddl: &'a [DatabaseItem],
+        check_type: &'a CheckType,
+    ) -> impl Iterator<Item = &'a str> {
+        ddl.iter().filter_map(move |item| match (check_type, item) {
+            (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
+            (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
+                Some(constraint.constraint_name.as_str())
+            }
+            _ => None,
+        })
+    }
 
-    for table in local_fn_get_iter(&ddl,  &check_type) {
+    for table in local_fn_get_iter(&ddl, &check_type) {
         let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
         dbresult.db_object_name = table.to_string();
 
@@ -100,92 +96,8 @@ pub async fn test_is_db_setup(
 }
 
 #[named]
-    pub async fn create_tables(
-        db: Db,
-        tables: Vec<MissingDbObjects>,
-        check_type: CheckType,
-        ddl_for_validation: &[(&str, &str, &str, &str)],
-    ) -> Result<DatabaseResult<String>, Box<dyn std::error::Error>> {
-        let mut return_result: DatabaseResult<String> = DatabaseResult::<String>::default();
-        return_result.db_object_name = function_name!().to_string();
-
-        let entire_create_stms = if check_type == CheckType::Table {
-            ddl_for_validation
-                .iter()
-                .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
-                .map(|af| af.1)
-                // .into_iter()
-                .collect::<Vec<&str>>()
-            // .join("")
-            // .flatten()
-        } else {
-            ddl_for_validation
-                .iter()
-                .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
-                .map(|af| af.3)
-                // .collect::<Vec<&str>>()
-                // .flatten()
-                .collect::<Vec<&str>>()
-            // .join("")
-        };
-
-        let result = db
-            .exec_general_query(
-                entire_create_stms
-                    .iter()
-                    .map(|x| QueryAndParams {
-                        query: x.to_string(),
-                        params: vec![],
-                    })
-                    .collect(),
-                false,
-            )
-            .await;
-
-        // let query_and_params = QueryAndParams {
-        //     query: entire_create_stms,
-        //     params: vec![],
-        // };
-        // let result = self.exec_general_query(vec![query_and_params], false).await;
-
-        let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
-
-        match result {
-            Ok(r) => {
-                dbresult.db_last_exec_state = r.db_last_exec_state;
-                dbresult.error_message = r.error_message;
-                // r.return_result
-            }
-            Err(e) => {
-                let emessage = format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
-                dbresult.error_message = Some(emessage);
-            }
-        };
-        Ok(dbresult)
-    }
-
-
-
-#[cfg(test)]
-mod tests {
-    use std::{env, vec};
-
-    use chrono::NaiveDateTime;
-    use crate::db::db::{DatabaseType, DbConfigAndPool};
-    use function_name::named;
-    use crate::model::CustomDbRow;
-    // use sqlx::query;
-    use tokio::runtime::Runtime;
-
-    use super::*;
-
- 
-
-
-
-#[named]
-async fn create_tables(
-    sself: &Db,
+pub async fn create_tables(
+    db: Db,
     tables: Vec<MissingDbObjects>,
     check_type: CheckType,
     ddl_for_validation: &[(&str, &str, &str, &str)],
@@ -213,7 +125,7 @@ async fn create_tables(
         // .join("")
     };
 
-    let result = sself
+    let result = db
         .exec_general_query(
             entire_create_stms
                 .iter()
@@ -247,6 +159,84 @@ async fn create_tables(
     };
     Ok(dbresult)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{env, vec};
+
+    use crate::db::db::{DatabaseType, DbConfigAndPool};
+    use crate::model::CustomDbRow;
+    use chrono::NaiveDateTime;
+    use function_name::named;
+    // use sqlx::query;
+    use tokio::runtime::Runtime;
+
+    use super::*;
+
+    #[named]
+    async fn create_tables(
+        sself: &Db,
+        tables: Vec<MissingDbObjects>,
+        check_type: CheckType,
+        ddl_for_validation: &[(&str, &str, &str, &str)],
+    ) -> Result<DatabaseResult<String>, Box<dyn std::error::Error>> {
+        let mut return_result: DatabaseResult<String> = DatabaseResult::<String>::default();
+        return_result.db_object_name = function_name!().to_string();
+
+        let entire_create_stms = if check_type == CheckType::Table {
+            ddl_for_validation
+                .iter()
+                .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
+                .map(|af| af.1)
+                // .into_iter()
+                .collect::<Vec<&str>>()
+            // .join("")
+            // .flatten()
+        } else {
+            ddl_for_validation
+                .iter()
+                .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
+                .map(|af| af.3)
+                // .collect::<Vec<&str>>()
+                // .flatten()
+                .collect::<Vec<&str>>()
+            // .join("")
+        };
+
+        let result = sself
+            .exec_general_query(
+                entire_create_stms
+                    .iter()
+                    .map(|x| QueryAndParams {
+                        query: x.to_string(),
+                        params: vec![],
+                    })
+                    .collect(),
+                false,
+            )
+            .await;
+
+        // let query_and_params = QueryAndParams {
+        //     query: entire_create_stms,
+        //     params: vec![],
+        // };
+        // let result = self.exec_general_query(vec![query_and_params], false).await;
+
+        let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
+
+        match result {
+            Ok(r) => {
+                dbresult.db_last_exec_state = r.db_last_exec_state;
+                dbresult.error_message = r.error_message;
+                // r.return_result
+            }
+            Err(e) => {
+                let emessage = format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
+                dbresult.error_message = Some(emessage);
+            }
+        };
+        Ok(dbresult)
+    }
 
     #[test]
     fn a_pg_create_and_update_tbls() {
@@ -300,7 +290,7 @@ async fn create_tables(
 
             let postgres_dbconfig: DbConfigAndPool =
                 DbConfigAndPool::new(cfg, DatabaseType::Postgres).await;
-            let  postgres_db = Db::new(postgres_dbconfig).unwrap();
+            let postgres_db = Db::new(postgres_dbconfig).unwrap();
 
             let pg_objs = vec![
                 MissingDbObjects {
@@ -312,9 +302,10 @@ async fn create_tables(
             ];
 
             // create two test tables
-            let pg_create_result = create_tables(&postgres_db,pg_objs, CheckType::Table, TABLE_DDL)
-                .await
-                .unwrap();
+            let pg_create_result =
+                create_tables(&postgres_db, pg_objs, CheckType::Table, TABLE_DDL)
+                    .await
+                    .unwrap();
 
             if pg_create_result.db_last_exec_state == DatabaseSetupState::QueryError {
                 eprintln!("Error: {}", pg_create_result.error_message.unwrap());
@@ -344,9 +335,14 @@ async fn create_tables(
             }];
 
             // create a test table
-            let pg_create_result = create_tables(&postgres_db,pg_objs, CheckType::Table, TABLE_DDL_SYNTAX_ERR)
-                .await
-                .unwrap();
+            let pg_create_result = create_tables(
+                &postgres_db,
+                pg_objs,
+                CheckType::Table,
+                TABLE_DDL_SYNTAX_ERR,
+            )
+            .await
+            .unwrap();
 
             assert_eq!(
                 pg_create_result.db_last_exec_state,
