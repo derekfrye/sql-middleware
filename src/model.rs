@@ -1,7 +1,5 @@
+use crate::db::db::DatabaseSetupState;
 use chrono::NaiveDateTime;
-use crate::db::DatabaseSetupState;
-
-
 
 // Custom Value enum to support multiple data types
 #[derive(Debug, Clone, PartialEq)]
@@ -77,4 +75,27 @@ impl<T: Default> DatabaseResult<T> {
             db_object_name: "".to_string(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CheckType {
+    Table,
+    Constraint,
+}
+
+pub struct DatabaseTable {
+    pub table_name: String,
+    pub ddl: String,
+}
+
+pub struct DatabaseConstraint {
+    pub table_name: String,
+    pub constraint_name: String,
+    pub constraint_type: String,
+    pub ddl: String,
+}
+
+pub enum DatabaseItem {
+    Table(DatabaseTable),
+    Constraint(DatabaseConstraint),
 }
