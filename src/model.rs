@@ -78,3 +78,26 @@ impl<T: Default> DatabaseResult<T> {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CheckType {
+    Table,
+    Constraint,
+}
+
+pub struct DatabaseTable {
+    pub table_name: String,
+    pub ddl: String,
+}
+
+pub struct DatabaseConstraint {
+    pub table_name: String,
+    pub constraint_name: String,
+    pub constraint_type: String,
+    pub ddl: String,
+}
+
+pub enum DatabaseItem {
+    Table(DatabaseTable),
+    Constraint(DatabaseConstraint),
+}

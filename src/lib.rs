@@ -3,27 +3,26 @@ pub mod db;
 
 use db::{DatabaseSetupState, Db};
 use function_name::named;
-use model::{DatabaseResult, QueryAndParams, RowValues};
+use model::{DatabaseResult, QueryAndParams, RowValues, CheckType, DatabaseItem};
+// use sqlx::query;
 
 #[derive( Debug, Clone)]
-struct MissingDbObjects {
- missing_object: String,
+pub struct MissingDbObjects {
+ pub missing_object: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum CheckType {
-    Table,
-    Constraint,
-}
+
 
 /// Check if tables or constraints are setup.
 pub async fn test_is_db_setup(
-    db: Db,
+    db: &Db,
     check_type: &CheckType,
+    query  : &str,
+    ddl: Vec<DatabaseItem>,
 ) -> Result<Vec<DatabaseResult<String>>, Box<dyn std::error::Error>> {
     let mut dbresults = vec![];
 
-    let query = include_str!("../admin/model/sql/schema/0x_tables_exist.sql");
+    // let query = include_str!("../admin/model/sql/schema/0x_tables_exist.sql");
     let query_and_params = QueryAndParams {
         query: query.to_string(),
         params: vec![],
@@ -72,15 +71,20 @@ pub async fn test_is_db_setup(
         })
         .collect();
 
-    fn local_fn_get_iter(check_type: &CheckType) -> impl Iterator<Item = &'static str> {
-        let iter = match check_type {
-            CheckType::Table => TABLES_AND_DDL.iter(),
-            _ => TABLES_CONSTRAINT_TYPE_CONSTRAINT_NAME_AND_DDL.iter(),
-        };
-        iter.map(|x| x.0)
-    }
+        fn local_fn_get_iter<'a>(
+            ddl: &'a [DatabaseItem],
+            check_type: &'a CheckType,
+        ) -> impl Iterator<Item = &'a str> {
+            ddl.iter().filter_map(move |item| match (check_type, item) {
+                (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
+                (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
+                    Some(constraint.constraint_name.as_str())
+                }
+                _ => None,
+            })
+        }
 
-    for table in local_fn_get_iter(&check_type) {
+    for table in local_fn_get_iter(&ddl,  &check_type) {
         let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
         dbresult.db_object_name = table.to_string();
 
@@ -98,7 +102,7 @@ pub async fn test_is_db_setup(
 
 #[named]
     pub async fn create_tables(
-        &mut self,
+        db: Db,
         tables: Vec<MissingDbObjects>,
         check_type: CheckType,
         ddl_for_validation: &[(&str, &str, &str, &str)],
@@ -126,7 +130,7 @@ pub async fn test_is_db_setup(
             // .join("")
         };
 
-        let result = self
+        let result = db
             .exec_general_query(
                 entire_create_stms
                     .iter()
@@ -181,7 +185,7 @@ mod tests {
 
 #[named]
 async fn create_tables(
-    sself: Db,
+    sself: &Db,
     tables: Vec<MissingDbObjects>,
     check_type: CheckType,
     ddl_for_validation: &[(&str, &str, &str, &str)],
@@ -296,7 +300,7 @@ async fn create_tables(
 
             let postgres_dbconfig: DbConfigAndPool =
                 DbConfigAndPool::new(cfg, DatabaseType::Postgres).await;
-            let mut postgres_db = Db::new(postgres_dbconfig).unwrap();
+            let  postgres_db = Db::new(postgres_dbconfig).unwrap();
 
             let pg_objs = vec![
                 MissingDbObjects {
@@ -308,7 +312,7 @@ async fn create_tables(
             ];
 
             // create two test tables
-            let pg_create_result = create_tables(pg_objs, CheckType::Table, TABLE_DDL)
+            let pg_create_result = create_tables(&postgres_db,pg_objs, CheckType::Table, TABLE_DDL)
                 .await
                 .unwrap();
 
@@ -340,7 +344,7 @@ async fn create_tables(
             }];
 
             // create a test table
-            let pg_create_result = create_tables(pg_objs, CheckType::Table, TABLE_DDL_SYNTAX_ERR)
+            let pg_create_result = create_tables(&postgres_db,pg_objs, CheckType::Table, TABLE_DDL_SYNTAX_ERR)
                 .await
                 .unwrap();
 
