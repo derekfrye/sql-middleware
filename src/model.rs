@@ -83,11 +83,13 @@ pub enum CheckType {
     Constraint,
 }
 
+#[derive(Debug, Clone)]
 pub struct DatabaseTable {
     pub table_name: String,
     pub ddl: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct DatabaseConstraint {
     pub table_name: String,
     pub constraint_name: String,
@@ -95,6 +97,7 @@ pub struct DatabaseConstraint {
     pub ddl: String,
 }
 
+#[derive(Debug, Clone)]
 pub enum DatabaseItem {
     Table(DatabaseTable),
     Constraint(DatabaseConstraint),

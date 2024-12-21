@@ -1,19 +1,32 @@
 use crate::db::db::{DatabaseSetupState, Db};
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
+use serde::Deserialize;
 // use sqlx::query;
 
-#[derive(Debug, Clone)]
+/// we need this to deserialize the json, even though it seems trivial, it's needed for data validation
+#[derive(Deserialize, Debug, Clone)]
 pub struct MissingDbObjects {
     pub missing_object: String,
 }
 
-/// Check if tables or constraints are setup.
+/// Check if tables or constraints are setup. Expects a particular query result format.
+/// This format, from rusty-golf 0x_tables_exist.sql, expects this result format from they query:
+///```text
+///             tbl        | exists
+///     -------------------+--------
+///      eup_statistic     | f
+///      event             | t
+///      event_user_player | t
+///      golfstatistic     | t
+///      golf_user         | t
+///      player            | t
+///```
 pub async fn test_is_db_setup(
-    db: &Db, 
+    db: &Db,
     check_type: &CheckType,
     query: &str,
-    ddl: Vec<DatabaseItem>,
+    ddl: &Vec<DatabaseItem>,
 ) -> Result<Vec<DatabaseResult<String>>, Box<dyn std::error::Error>> {
     let mut dbresults = vec![];
 
@@ -97,7 +110,7 @@ pub async fn test_is_db_setup(
 
 #[named]
 pub async fn create_tables(
-    db: Db,
+    db: &Db,
     tables: Vec<MissingDbObjects>,
     check_type: CheckType,
     ddl_for_validation: &[(&str, &str, &str, &str)],
