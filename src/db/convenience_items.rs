@@ -26,7 +26,7 @@ pub async fn test_is_db_setup(
     db: &Db,
     check_type: &CheckType,
     query: &str,
-    ddl: &Vec<DatabaseItem>,
+    ddl: &[DatabaseItem],
 ) -> Result<Vec<DatabaseResult<String>>, Box<dyn std::error::Error>> {
     let mut dbresults = vec![];
 
@@ -92,7 +92,7 @@ pub async fn test_is_db_setup(
         })
     }
 
-    for table in local_fn_get_iter(&ddl, &check_type) {
+    for table in local_fn_get_iter(ddl, check_type) {
         let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
         dbresult.db_object_name = table.to_string();
 

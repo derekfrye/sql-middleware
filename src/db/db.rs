@@ -209,7 +209,7 @@ impl Db {
                                         .collect::<Vec<_>>();
 
                                     let custom_row = CustomDbRow {
-                                        column_names: column_names,
+                                        column_names,
                                         rows: values,
                                     };
                                     result_set.results.push(custom_row);
@@ -292,7 +292,7 @@ impl Db {
                                         .collect::<Vec<_>>();
 
                                     let custom_row = CustomDbRow {
-                                        column_names: column_names,
+                                        column_names,
                                         rows: values,
                                     };
                                     result_set.results.push(custom_row);
