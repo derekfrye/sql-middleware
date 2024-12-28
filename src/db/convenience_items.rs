@@ -179,7 +179,7 @@ mod tests {
 
     use crate::db::db::{DatabaseType, DbConfigAndPool};
     use crate::model::CustomDbRow;
-    use chrono::NaiveDateTime;
+    use chrono::{NaiveDateTime, Utc};
     use function_name::named;
     // use sqlx::query;
     use tokio::runtime::Runtime;
@@ -256,7 +256,7 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let mut cfg = deadpool_postgres::Config::new();
-            cfg.dbname = Some(":memory:".to_string());
+            cfg.dbname = Some("test.db".to_string());
 
             let sqlite_configandpool = DbConfigAndPool::new(cfg, DatabaseType::Sqlite).await;
             let sql_db = Db::new(sqlite_configandpool.clone()).unwrap();
@@ -327,11 +327,34 @@ mod tests {
                 DatabaseSetupState::QueryReturnedSuccessfully
             );
 
+            let qry = "SELECT DATE('now') as dt;";
+            let query_and_params = QueryAndParams {
+                query: qry.to_string(),
+                params: vec![],
+            };
+            let res = sql_db
+                .exec_general_query(vec![query_and_params], true)
+                .await
+                .unwrap();
+            assert_eq!(
+                res.db_last_exec_state,
+                DatabaseSetupState::QueryReturnedSuccessfully
+            );
+            assert_eq!(res.return_result.len(), 1);
+
+            let todays_date_computed=Utc::now().date_naive().format("%Y-%m-%d").to_string();
+            assert_eq!(
+                res.return_result[0].results[0].get("dt").unwrap().as_text().unwrap(),
+                todays_date_computed
+                .to_string()
+                .replace(" ", "T")
+                );
+
             // now ck event_user_player has three entries for player1
             // lets use a param
-            let qry = "SELECT count(*) as cnt FROM event_user_player WHERE player_id = ?;";
+            let qry = "SELECT count(*) as cnt FROM event_user_player WHERE user_id = (select user_id from golfuser where name = ?);";
             // let params = vec![1];
-            let param = "player1";
+            let param = "Player1";
             let query_and_params = QueryAndParams {
                 query: qry.to_string(),
                 params: vec![RowValues::Text(param.to_string())],
@@ -347,11 +370,16 @@ mod tests {
 
             let count = res.return_result[0].results[0]
                 .get("cnt")
-                .unwrap()
+                .unwrap();
+
+            // print the type of the var
+            println!("count: {:?}", count);
+
+            let count1 = count
                 .as_int()
                 .unwrap();
             // let cnt = count.
-            assert_eq!(*count, 3);
+            assert_eq!(*count1, 3);
         })
     }
 

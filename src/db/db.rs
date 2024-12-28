@@ -143,6 +143,17 @@ impl Db {
     ) -> Result<DatabaseResult<Vec<ResultSet>>, sqlx::Error> {
         let mut final_result = DatabaseResult::<Vec<ResultSet>>::default();
 
+        #[cfg(debug_assertions)]
+        {
+            if !queries.is_empty()
+                && !queries[0].params.is_empty()
+                && queries[0].params[0].as_text().is_some()
+                && queries[0].params[0].as_text().unwrap().contains("Player1")
+            {
+                eprintln!("query about to run: {}", queries[0].query);
+            }
+        }
+
         if expect_rows {
             match &self.pool {
                 DbPool::Postgres(pool) => {
@@ -164,6 +175,7 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => query_item.bind::<Option<i64>>(None),
                             };
                         }
 
@@ -246,6 +258,9 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => {
+                                    query_item.bind(sqlx::types::chrono::NaiveDateTime::MIN)
+                                }
                             };
                         }
 
@@ -266,19 +281,37 @@ impl Db {
                                         .iter()
                                         .map(|col| {
                                             let type_info = col.type_info().to_string();
-                                            let value = match type_info.as_str() {
+                                            let column_name = col.name();
+                                            match type_info.as_str() {
                                                 "INTEGER" => {
-                                                    RowValues::Int(row.get::<i64, _>(col.name()))
+                                                    let value: Option<i64> =
+                                                        row.try_get(column_name).unwrap_or(None);
+                                                    value
+                                                        .map(RowValues::Int)
+                                                        .unwrap_or(RowValues::Null)
                                                 }
-                                                "TEXT" => RowValues::Text(
-                                                    row.get::<String, _>(col.name()),
-                                                ),
+                                                "TEXT" => {
+                                                    let value: Option<String> =
+                                                        row.try_get(column_name).unwrap_or(None);
+                                                    value
+                                                        .map(RowValues::Text)
+                                                        .unwrap_or(RowValues::Null)
+                                                }
                                                 "BOOLEAN" => {
-                                                    RowValues::Bool(row.get::<bool, _>(col.name()))
+                                                    let value: Option<bool> =
+                                                        row.try_get(column_name).unwrap_or(None);
+                                                    value
+                                                        .map(RowValues::Bool)
+                                                        .unwrap_or(RowValues::Null)
                                                 }
                                                 "TIMESTAMP" => {
-                                                    RowValues::Timestamp(row.get(col.name()))
+                                                    let value: Option<chrono::NaiveDateTime> =
+                                                        row.try_get(column_name).unwrap_or(None);
+                                                    value
+                                                        .map(RowValues::Timestamp)
+                                                        .unwrap_or(RowValues::Null)
                                                 }
+                                                "NULL" => RowValues::Null,
                                                 _ => {
                                                     eprintln!("Unknown column type: {}", type_info);
                                                     unimplemented!(
@@ -286,10 +319,11 @@ impl Db {
                                                         type_info
                                                     )
                                                 }
-                                            };
-                                            value
+                                            }
                                         })
                                         .collect::<Vec<_>>();
+
+                                    dbg!(&values);
 
                                     let custom_row = CustomDbRow {
                                         column_names,
@@ -333,6 +367,7 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => query_item.bind::<Option<i64>>(None),
                             };
                         }
 
@@ -374,6 +409,7 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => query_item.bind::<Option<i64>>(None),
                             };
                         }
 
@@ -386,6 +422,7 @@ impl Db {
                                     .push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
+                                eprintln!("sqlx-middleware error: {}", e);
                                 let _ = transaction.rollback().await;
                                 final_result.db_last_exec_state = DatabaseSetupState::QueryError;
                                 final_result.error_message = Some(e.to_string());

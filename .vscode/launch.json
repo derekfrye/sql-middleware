@@ -13,7 +13,8 @@
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=sqlx-middleware"
+                    "--package=sqlx-middleware",
+                    "a_sqlite"
                 ],
                 "filter": {
                     "name": "sqlx_middleware",
@@ -22,11 +23,6 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}",
-            "skipFiles": [
-                "/rustc/*",
-                "*/.cargo/registry/*",
-                "*/tokio/src/*"
-            ]
         }
     ]
 }

@@ -9,6 +9,7 @@ pub enum RowValues {
     Text(String),
     Bool(bool),
     Timestamp(NaiveDateTime),
+    Null,
     // Add other types as needed
 }
 

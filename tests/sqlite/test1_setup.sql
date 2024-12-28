@@ -34,7 +34,7 @@ insert into golfuser (name) values ('Player3');
 insert into golfuser (name) values ('Player4');
 insert into golfuser (name) values ('Player5');
 
-begin transaction;
+-- begin transaction;
 
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player1'), (select player_id from player where espn_id = 3470);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player2'), (select player_id from player where espn_id = 4364873);
@@ -42,18 +42,16 @@ insert into event_user_player (event_id, user_id, player_id)select (select event
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player4'), (select player_id from player where espn_id = 10140);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player5'), (select player_id from player where espn_id = 5467);
 
--- chase, derek, chris, tina, jim
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player1'), (select player_id from player where espn_id = 10592);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player2'), (select player_id from player where espn_id = 5860);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player3'), (select player_id from player where espn_id = 4375972);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player4'), (select player_id from player where espn_id = 11119);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player5'), (select player_id from player where espn_id = 9037);
 
--- chase, derek, chris, tina, jim
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player1'), (select player_id from player where espn_id = 1680);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player2'), (select player_id from player where espn_id = 10046);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player3'), (select player_id from player where espn_id = 9780);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player4'), (select player_id from player where espn_id = 8973);
 insert into event_user_player (event_id, user_id, player_id)select (select event_id from event where espn_id = 401580351), (select user_id from golfuser where name = 'Player5'), (select player_id from player where espn_id = 6798);
 
-commit;
+-- commit;
