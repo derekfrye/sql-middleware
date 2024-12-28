@@ -1,8 +1,8 @@
 use deadpool_postgres::Config;
-use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row};
+use sqlx::{ self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row };
 // use ::function_name::named;
 
-use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
+use crate::model::{ CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues };
 
 #[derive(Debug, Clone)]
 pub enum DbPool {
@@ -72,21 +72,20 @@ impl DbConfigAndPool {
                     config.dbname.unwrap()
                 )
             }
-            DatabaseType::Sqlite => {
-                format!("sqlite://{}", config.dbname.unwrap())
-            }
+            DatabaseType::Sqlite => { format!("sqlite://{}", config.dbname.unwrap()) }
         };
 
         match db_type {
             DatabaseType::Postgres => {
-                let pool_result = sqlx::postgres::PgPoolOptions::new()
-                    .connect(&connection_string)
-                    .await;
+                let pool_result = sqlx::postgres::PgPoolOptions
+                    ::new()
+                    .connect(&connection_string).await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Postgres(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        DbConfigAndPool {
+                            pool: DbPool::Postgres(pool),
+                            // db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create Postgres pool: {}", e);
                     }
@@ -100,24 +99,28 @@ impl DbConfigAndPool {
                 let connect = SqliteConnectOptions::new()
                     .filename(&config_db_name)
                     .create_if_missing(true)
-                    .connect()
-                    .await;
+                    .connect().await;
                 match connect {
                     Ok(_) => {}
                     Err(e) => {
-                        let emessage =
-                            format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
+                        let emessage = format!(
+                            "Failed in {}, {}: {}",
+                            std::file!(),
+                            std::line!(),
+                            e
+                        );
                         panic!("failed here 1, {}", emessage);
                     }
                 }
-                let pool_result = sqlx::sqlite::SqlitePoolOptions::new()
-                    .connect(&connection_string)
-                    .await;
+                let pool_result = sqlx::sqlite::SqlitePoolOptions
+                    ::new()
+                    .connect(&connection_string).await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Sqlite(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        DbConfigAndPool {
+                            pool: DbPool::Sqlite(pool),
+                            // db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create SQLite pool: {}", e);
                     }
@@ -139,16 +142,17 @@ impl Db {
     pub async fn exec_general_query(
         &self,
         queries: Vec<QueryAndParams>,
-        expect_rows: bool,
+        expect_rows: bool
     ) -> Result<DatabaseResult<Vec<ResultSet>>, sqlx::Error> {
         let mut final_result = DatabaseResult::<Vec<ResultSet>>::default();
 
         #[cfg(debug_assertions)]
         {
-            if !queries.is_empty()
-                && !queries[0].params.is_empty()
-                && queries[0].params[0].as_text().is_some()
-                && queries[0].params[0].as_text().unwrap().contains("Player1")
+            if
+                !queries.is_empty() &&
+                !queries[0].params.is_empty() &&
+                queries[0].params[0].as_text().is_some() &&
+                queries[0].params[0].as_text().unwrap().contains("Player1")
             {
                 eprintln!("query about to run: {}", queries[0].query);
             }
@@ -201,14 +205,17 @@ impl Db {
                                                     RowValues::Int(row.get::<i64, _>(col.name()))
                                                 }
                                                 "TEXT" => {
-                                                    RowValues::Text(row.get::<String, _>(col.name()))
+                                                    RowValues::Text(
+                                                        row.get::<String, _>(col.name())
+                                                    )
                                                 }
                                                 "BOOL" | "BOOLEAN" => {
                                                     RowValues::Bool(row.get::<bool, _>(col.name()))
                                                 }
                                                 "TIMESTAMP" => {
-                                                    let timestamp: sqlx::types::chrono::NaiveDateTime =
-                                                        row.get(col.name());
+                                                    let timestamp: sqlx::types::chrono::NaiveDateTime = row.get(
+                                                        col.name()
+                                                    );
                                                     RowValues::Timestamp(timestamp)
                                                 }
                                                 _ => {
@@ -278,9 +285,10 @@ impl Db {
 
                                     #[cfg(debug_assertions)]
                                     {
-                                        if !q.params.is_empty()
-                                            && q.params[0].as_text().is_some()
-                                            && q.params[0].as_text().unwrap().contains("Player1")
+                                        if
+                                            !q.params.is_empty() &&
+                                            q.params[0].as_text().is_some() &&
+                                            q.params[0].as_text().unwrap().contains("Player1")
                                         {
                                             // eprintln!("query about to run: {}", queries[0].query);
                                             // for row in rows {
@@ -292,8 +300,8 @@ impl Db {
                                                     type_info
                                                 );
 
-                                                let val = row.try_get::<i64, _>("cnt");
-                                                eprintln!("cnt returned val = {:?}", val);
+                                                // let val = row.try_get::<i64, _>("cnt");
+                                                // eprintln!("cnt returned val = {:?}", val);
                                             }
                                         }
                                     }
@@ -302,18 +310,24 @@ impl Db {
                                         .columns()
                                         .iter()
                                         .map(|col| {
+                                            // this is null all the time, ugh
+                                            // https://github.com/launchbadge/sqlx/discussions/1759 might help
                                             let type_info = col.type_info().to_string();
                                             let column_name = col.name();
                                             match type_info.as_str() {
-                                                "INTEGER" => match row
-                                                    .try_get::<Option<i64>, _>(column_name)
-                                                {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Int)
-                                                        .unwrap_or(RowValues::Null)),
-                                                    Err(err) => Err(err),
-                                                },
-                                                "TEXT_NEW" =>
+                                                "INTEGER" =>
+                                                    match
+                                                        row.try_get::<Option<i64>, _>(column_name)
+                                                    {
+                                                        Ok(value) =>
+                                                            Ok(
+                                                                value
+                                                                    .map(RowValues::Int)
+                                                                    .unwrap_or(RowValues::Null)
+                                                            ),
+                                                        Err(err) => Err(err),
+                                                    }
+                                                "TEXT" =>
                                                     match
                                                         row.try_get::<Option<String>, _>(
                                                             column_name
@@ -334,46 +348,64 @@ impl Db {
                                                             Err(err)
                                                         }
                                                     }
-                                                "TEXT" => match row
-                                                    .try_get::<Option<String>, _>(column_name)
-                                                {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Text)
-                                                        .unwrap_or(RowValues::Null)),
-                                                    Err(err) => Err(err),
-                                                },
-                                                "BOOLEAN" => match row
-                                                    .try_get::<Option<bool>, _>(column_name)
-                                                {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Bool)
-                                                        .unwrap_or(RowValues::Null)),
-                                                    Err(err) => Err(err),
-                                                },
-                                                "TIMESTAMP" => match row.try_get::<Option<
-                                                    chrono::NaiveDateTime,
-                                                >, _>(
-                                                    column_name
-                                                ) {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Timestamp)
-                                                        .unwrap_or(RowValues::Null)),
-                                                    Err(err) => Err(err),
-                                                },
-                                                "NULL" => match row
-                                                    .try_get::<Option<String>, _>(column_name)
-                                                {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Text)
-                                                        .unwrap_or(RowValues::Null)),
-                                                    Err(err) => Err(err),
-                                                },
+                                                // "TEXT_non" =>
+                                                //     match
+                                                //         row.try_get::<Option<String>, _>(
+                                                //             column_name
+                                                //         )
+                                                //     {
+                                                //         Ok(value) =>
+                                                //             Ok(
+                                                //                 value
+                                                //                     .map(RowValues::Text)
+                                                //                     .unwrap_or(RowValues::Null)
+                                                //             ),
+                                                //         Err(err) => Err(err),
+                                                //     }
+                                                "BOOLEAN" =>
+                                                    match
+                                                        row.try_get::<Option<bool>, _>(column_name)
+                                                    {
+                                                        Ok(value) =>
+                                                            Ok(
+                                                                value
+                                                                    .map(RowValues::Bool)
+                                                                    .unwrap_or(RowValues::Null)
+                                                            ),
+                                                        Err(err) => Err(err),
+                                                    }
+                                                "TIMESTAMP" =>
+                                                    match
+                                                        row.try_get::<
+                                                            Option<chrono::NaiveDateTime>,
+                                                            _
+                                                        >(column_name)
+                                                    {
+                                                        Ok(value) =>
+                                                            Ok(
+                                                                value
+                                                                    .map(RowValues::Timestamp)
+                                                                    .unwrap_or(RowValues::Null)
+                                                            ),
+                                                        Err(err) => Err(err),
+                                                    }
+                                                "NULL" =>
+                                                    match
+                                                        row.try_get::<Option<String>, _>(
+                                                            column_name
+                                                        )
+                                                    {
+                                                        Ok(value) =>
+                                                            Ok(
+                                                                value
+                                                                    .map(RowValues::Text)
+                                                                    .unwrap_or(RowValues::Null)
+                                                            ),
+                                                        Err(err) => Err(err),
+                                                    }
                                                 _ => {
                                                     eprintln!("Unknown column type: {}", type_info);
-                                                    unimplemented!(
-                                                        "Unknown column type: {}",
-                                                        type_info
-                                                    );
+                                                    unimplemented!("Unknown column type: {}", type_info);
                                                 }
                                             }
                                         })
@@ -431,9 +463,7 @@ impl Db {
 
                         match exec_result {
                             Ok(_) => {
-                                final_result
-                                    .return_result
-                                    .push(ResultSet { results: vec![] });
+                                final_result.return_result.push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
                                 let _ = transaction.rollback().await;
@@ -473,9 +503,7 @@ impl Db {
 
                         match exec_result {
                             Ok(_) => {
-                                final_result
-                                    .return_result
-                                    .push(ResultSet { results: vec![] });
+                                final_result.return_result.push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
                                 eprintln!("sqlx-middleware error: {}", e);
