@@ -1,5 +1,5 @@
 use deadpool_postgres::Config;
-use sqlx::{ self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row };
+use sqlx::{ self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef };
 // use ::function_name::named;
 
 use crate::model::{ CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues };
@@ -293,7 +293,20 @@ impl Db {
                                             // eprintln!("query about to run: {}", queries[0].query);
                                             // for row in rows {
                                             for col in row.columns() {
-                                                let type_info = col.type_info().to_string();
+                                                 let mut type_info = col.type_info().to_string();
+                                                 eprintln!(
+                                                    "Debugging Column '{}', type_info: {}",
+                                                    col.name(),
+                                                    type_info
+                                                );
+                                                let col_number = col.ordinal();
+                                            // let mut type_info = col.type_info().to_string();
+                                            if type_info == "NULL" {
+                                                let typ = row.try_get_raw(col_number).unwrap();
+                                                if !typ.is_null() {
+                                                    type_info = typ.type_info().to_string();
+                                                }
+                                            }
                                                 eprintln!(
                                                     "Debugging Column '{}', type_info: {}",
                                                     col.name(),
@@ -312,7 +325,16 @@ impl Db {
                                         .map(|col| {
                                             // this is null all the time, ugh
                                             // https://github.com/launchbadge/sqlx/discussions/1759 might help
-                                            let type_info = col.type_info().to_string();
+                                            let col_number = col.ordinal();
+                                            let mut type_info = col.type_info().to_string();
+                                            if type_info == "NULL" {
+                                                let typ = row.try_get_raw(col_number).unwrap();
+                                                if !typ.is_null() {
+                                                    type_info = typ.type_info().to_string();
+                                                }
+                                            }
+
+                                            //
                                             let column_name = col.name();
                                             match type_info.as_str() {
                                                 "INTEGER" =>
