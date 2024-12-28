@@ -256,7 +256,7 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let mut cfg = deadpool_postgres::Config::new();
-            cfg.dbname = Some("test.db".to_string());
+            cfg.dbname = Some(":memory:".to_string());
 
             let sqlite_configandpool = DbConfigAndPool::new(cfg, DatabaseType::Sqlite).await;
             let sql_db = Db::new(sqlite_configandpool.clone()).unwrap();
@@ -327,10 +327,11 @@ mod tests {
                 DatabaseSetupState::QueryReturnedSuccessfully
             );
 
-            let qry = "SELECT DATE('now') as dt;";
+            let qry = "SELECT DATE(?) as dt;";
+            let param="now";
             let query_and_params = QueryAndParams {
                 query: qry.to_string(),
-                params: vec![],
+                params: vec![RowValues::Text(param.to_string())],
             };
             let res = sql_db
                 .exec_general_query(vec![query_and_params], true)
@@ -363,6 +364,9 @@ mod tests {
                 .exec_general_query(vec![query_and_params], true)
                 .await
                 .unwrap();
+            if res.db_last_exec_state != DatabaseSetupState::QueryReturnedSuccessfully {
+                eprintln!("Error: {}", res.error_message.unwrap());
+            }
             assert_eq!(
                 res.db_last_exec_state,
                 DatabaseSetupState::QueryReturnedSuccessfully
@@ -376,10 +380,10 @@ mod tests {
             println!("count: {:?}", count);
 
             let count1 = count
-                .as_int()
+                .as_text()
                 .unwrap();
             // let cnt = count.
-            assert_eq!(*count1, 3);
+            assert_eq!(*count1, 3.to_string());
         })
     }
 

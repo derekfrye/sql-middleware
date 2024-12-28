@@ -252,7 +252,7 @@ impl Db {
                     for q in queries {
                         let mut query_item = sqlx::query(&q.query);
 
-                        for param in q.params {
+                        for param in &q.params {
                             query_item = match param {
                                 RowValues::Int(value) => query_item.bind(value),
                                 RowValues::Text(value) => query_item.bind(value),
@@ -276,58 +276,114 @@ impl Db {
                                         .map(|c| c.name().to_string())
                                         .collect::<Vec<_>>();
 
-                                    let values = row
+                                    #[cfg(debug_assertions)]
+                                    {
+                                        if !q.params.is_empty()
+                                            && q.params[0].as_text().is_some()
+                                            && q.params[0].as_text().unwrap().contains("Player1")
+                                        {
+                                            // eprintln!("query about to run: {}", queries[0].query);
+                                            // for row in rows {
+                                            for col in row.columns() {
+                                                let type_info = col.type_info().to_string();
+                                                eprintln!(
+                                                    "Debugging Column '{}', type_info: {}",
+                                                    col.name(),
+                                                    type_info
+                                                );
+
+                                                let val = row.try_get::<i64, _>("cnt");
+                                                eprintln!("cnt returned val = {:?}", val);
+                                            }
+                                        }
+                                    }
+
+                                    let values: Result<Vec<RowValues>, sqlx::Error> = row
                                         .columns()
                                         .iter()
                                         .map(|col| {
                                             let type_info = col.type_info().to_string();
                                             let column_name = col.name();
                                             match type_info.as_str() {
-                                                "INTEGER" => {
-                                                    let value: Option<i64> =
-                                                        row.try_get(column_name).unwrap_or(None);
-                                                    value
+                                                "INTEGER" => match row
+                                                    .try_get::<Option<i64>, _>(column_name)
+                                                {
+                                                    Ok(value) => Ok(value
                                                         .map(RowValues::Int)
-                                                        .unwrap_or(RowValues::Null)
-                                                }
-                                                "TEXT" => {
-                                                    let value: Option<String> =
-                                                        row.try_get(column_name).unwrap_or(None);
-                                                    value
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                },
+                                                "TEXT_NEW" =>
+                                                    match
+                                                        row.try_get::<Option<String>, _>(
+                                                            column_name
+                                                        )
+                                                    {
+                                                        Ok(value) =>
+                                                            Ok(
+                                                                value
+                                                                    .map(RowValues::Text)
+                                                                    .unwrap_or(RowValues::Null)
+                                                            ),
+                                                        Err(err) => {
+                                                            eprintln!(
+                                                                "Error decoding TEXT for column '{}': {}",
+                                                                column_name,
+                                                                err
+                                                            );
+                                                            Err(err)
+                                                        }
+                                                    }
+                                                "TEXT" => match row
+                                                    .try_get::<Option<String>, _>(column_name)
+                                                {
+                                                    Ok(value) => Ok(value
                                                         .map(RowValues::Text)
-                                                        .unwrap_or(RowValues::Null)
-                                                }
-                                                "BOOLEAN" => {
-                                                    let value: Option<bool> =
-                                                        row.try_get(column_name).unwrap_or(None);
-                                                    value
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                },
+                                                "BOOLEAN" => match row
+                                                    .try_get::<Option<bool>, _>(column_name)
+                                                {
+                                                    Ok(value) => Ok(value
                                                         .map(RowValues::Bool)
-                                                        .unwrap_or(RowValues::Null)
-                                                }
-                                                "TIMESTAMP" => {
-                                                    let value: Option<chrono::NaiveDateTime> =
-                                                        row.try_get(column_name).unwrap_or(None);
-                                                    value
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                },
+                                                "TIMESTAMP" => match row.try_get::<Option<
+                                                    chrono::NaiveDateTime,
+                                                >, _>(
+                                                    column_name
+                                                ) {
+                                                    Ok(value) => Ok(value
                                                         .map(RowValues::Timestamp)
-                                                        .unwrap_or(RowValues::Null)
-                                                }
-                                                "NULL" => RowValues::Null,
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                },
+                                                "NULL" => match row
+                                                    .try_get::<Option<String>, _>(column_name)
+                                                {
+                                                    Ok(value) => Ok(value
+                                                        .map(RowValues::Text)
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                },
                                                 _ => {
                                                     eprintln!("Unknown column type: {}", type_info);
                                                     unimplemented!(
                                                         "Unknown column type: {}",
                                                         type_info
-                                                    )
+                                                    );
                                                 }
                                             }
                                         })
-                                        .collect::<Vec<_>>();
+                                        .collect();
 
-                                    dbg!(&values);
+                                    // dbg!(&values);
 
                                     let custom_row = CustomDbRow {
                                         column_names,
-                                        rows: values,
+                                        rows: values?,
                                     };
                                     result_set.results.push(custom_row);
                                 }
