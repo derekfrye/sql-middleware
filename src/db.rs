@@ -1,6 +1,6 @@
 use deadpool_postgres::Config;
+// use serde_json::Value;
 use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef};
-use serde_json::Value;
 // use ::function_name::named;
 
 use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
@@ -179,6 +179,7 @@ impl Db {
                                 RowValues::Null => query_item.bind::<Option<i64>>(None),
                                 RowValues::Blob(value) => query_item.bind(value),
                                 RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -266,9 +267,10 @@ impl Db {
                                 RowValues::Timestamp(value) => query_item.bind(value),
                                 RowValues::Null => {
                                     query_item.bind(sqlx::types::chrono::NaiveDateTime::MIN)
-                                },
+                                }
                                 RowValues::Blob(value) => query_item.bind(value),
                                 RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -375,20 +377,25 @@ impl Db {
                                             "REAL" => {
                                                 let result = row.try_get::<f64, _>(column_name);
                                                 match result {
-                                                    Ok(value) => Ok(RowValues::Int(value as i64)),
+                                                    Ok(value) => Ok(RowValues::Float(value)),
                                                     Err(err) => Err(err),
                                                 }
                                             }
-                                            "JSON" => {
-                                                let result =
-                                                    row.try_get::<Option<Value>, _>(column_name);
-                                                match result {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::JSON)
-                                                        .unwrap_or(RowValues::Null)),
-                                                    Err(err) => Err(err),
-                                                }
-                                            }
+                                            // not actually a type stored in sqlite, so we can't detect and decode it
+                                            // see https://www.sqlite.org/json1.html#compiling_in_json_support, 3. Interface Overview
+                                            // "SQLite stores JSON as ordinary text.
+                                            // Backwards compatibility constraints mean that SQLite is only able to store values that are NULL,
+                                            // integers, floating-point numbers, text, and BLOBs. It is not possible to add a new "JSON" type."
+                                            // "JSON" => {
+                                            //     let result =
+                                            //         row.try_get::<Option<Value>, _>(column_name);
+                                            //     match result {
+                                            //         Ok(value) => Ok(value
+                                            //             .map(RowValues::JSON)
+                                            //             .unwrap_or(RowValues::Null)),
+                                            //         Err(err) => Err(err),
+                                            //     }
+                                            // }
                                             "NULL" => {
                                                 let result =
                                                     row.try_get::<Option<String>, _>(column_name);
@@ -411,10 +418,7 @@ impl Db {
                                             }
                                             _ => {
                                                 eprintln!("sqlx-middleware custom err: Unknown column type: {}", type_info);
-                                                unimplemented!(
-                                                    "sqlx-middleware custom err: Unknown column type: {}",
-                                                    type_info
-                                                );
+                                                unimplemented!("sqlx-middleware custom err: Unknown column type: {}", type_info);
                                             }
                                         }
                                     }
@@ -436,6 +440,21 @@ impl Db {
 
                                         // Step 3: Get column name
                                         let column_name = col.name();
+
+                                        #[cfg(debug_assertions)]
+                                        {
+                                            if column_name == "g"
+                                            // && !q.params.is_empty()
+                                            // && q.params[0].as_text().is_some()
+                                            // && q.params[0].as_text().unwrap().contains("1")
+                                            {
+                                                eprintln!(
+                                                    "Debugging Column '{}', type_info: {}",
+                                                    col.name(),
+                                                    type_info
+                                                );
+                                            }
+                                        }
 
                                         // Step 4: Process column and collect results
                                         match process_column(&row, column_name, &type_info) {
@@ -496,6 +515,7 @@ impl Db {
                                 RowValues::Null => query_item.bind::<Option<i64>>(None),
                                 RowValues::Blob(value) => query_item.bind(value),
                                 RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -540,6 +560,7 @@ impl Db {
                                 RowValues::Null => query_item.bind::<Option<i64>>(None),
                                 RowValues::Blob(value) => query_item.bind(value),
                                 RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 

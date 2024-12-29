@@ -6,7 +6,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, PartialEq)]
 pub enum RowValues {
     Int(i64),
-    // Float(f64),
+    Float(f64),
     Text(String),
     Bool(bool),
     Timestamp(NaiveDateTime),
@@ -54,6 +54,50 @@ impl RowValues {
         } else {
             None
         }
+    }
+
+    pub fn as_bool(&self) -> Option<&bool> {
+        if let RowValues::Bool(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_timestamp(&self) -> Option<&NaiveDateTime> {
+        if let RowValues::Timestamp(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_json(&self) -> Option<&Value> {
+        if let RowValues::JSON(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_blob(&self) -> Option<&Vec<u8>> {
+        if let RowValues::Blob(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_float(&self) -> Option<f64> {
+        if let RowValues::Float(value) = self {
+            Some(*value as f64)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, RowValues::Null)
     }
 }
 
