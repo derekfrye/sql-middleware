@@ -1,5 +1,5 @@
-use crate::db::db::{ DatabaseSetupState, Db };
-use crate::model::{ CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues };
+use crate::db::{DatabaseSetupState, Db};
+use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
 use serde::Deserialize;
 // use sqlx::query;
@@ -26,7 +26,7 @@ pub async fn test_is_db_setup(
     db: &Db,
     check_type: &CheckType,
     query: &str,
-    ddl: &[DatabaseItem]
+    ddl: &[DatabaseItem],
 ) -> Result<Vec<DatabaseResult<String>>, Box<dyn std::error::Error>> {
     let mut dbresults = vec![];
 
@@ -66,16 +66,14 @@ pub async fn test_is_db_setup(
 
             // Check if the "exists" column value is `Value::Bool(true)` or `Value::Text("t")`
             match &row.rows[exists_index] {
-                RowValues::Bool(true) =>
-                    match &row.rows[tbl_index] {
-                        RowValues::Text(tbl_name) => Some(tbl_name.clone()),
-                        _ => None,
-                    }
-                RowValues::Text(value) if value == "t" =>
-                    match &row.rows[tbl_index] {
-                        RowValues::Text(tbl_name) => Some(tbl_name.clone()),
-                        _ => None,
-                    }
+                RowValues::Bool(true) => match &row.rows[tbl_index] {
+                    RowValues::Text(tbl_name) => Some(tbl_name.clone()),
+                    _ => None,
+                },
+                RowValues::Text(value) if value == "t" => match &row.rows[tbl_index] {
+                    RowValues::Text(tbl_name) => Some(tbl_name.clone()),
+                    _ => None,
+                },
                 _ => None,
             }
         })
@@ -83,16 +81,14 @@ pub async fn test_is_db_setup(
 
     fn local_fn_get_iter<'a>(
         ddl: &'a [DatabaseItem],
-        check_type: &'a CheckType
+        check_type: &'a CheckType,
     ) -> impl Iterator<Item = &'a str> {
-        ddl.iter().filter_map(move |item| {
-            match (check_type, item) {
-                (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
-                (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
-                    Some(constraint.constraint_name.as_str())
-                }
-                _ => None,
+        ddl.iter().filter_map(move |item| match (check_type, item) {
+            (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
+            (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
+                Some(constraint.constraint_name.as_str())
             }
+            _ => None,
         })
     }
 
@@ -117,7 +113,7 @@ pub async fn create_tables(
     db: &Db,
     tables: Vec<MissingDbObjects>,
     check_type: CheckType,
-    ddl_for_validation: &[(&str, &str, &str, &str)]
+    ddl_for_validation: &[(&str, &str, &str, &str)],
 ) -> Result<DatabaseResult<String>, Box<dyn std::error::Error>> {
     let mut return_result: DatabaseResult<String> = DatabaseResult::<String>::default();
     return_result.db_object_name = function_name!().to_string();
@@ -142,16 +138,18 @@ pub async fn create_tables(
         // .join("")
     };
 
-    let result = db.exec_general_query(
-        entire_create_stms
-            .iter()
-            .map(|x| QueryAndParams {
-                query: x.to_string(),
-                params: vec![],
-            })
-            .collect(),
-        false
-    ).await;
+    let result = db
+        .exec_general_query(
+            entire_create_stms
+                .iter()
+                .map(|x| QueryAndParams {
+                    query: x.to_string(),
+                    params: vec![],
+                })
+                .collect(),
+            false,
+        )
+        .await;
 
     // let query_and_params = QueryAndParams {
     //     query: entire_create_stms,
@@ -177,16 +175,21 @@ pub async fn create_tables(
 
 #[cfg(test)]
 mod tests {
+    use crate::db::{DatabaseType, DbConfigAndPool};
+    use crate::model::CustomDbRow;
+    use chrono::{NaiveDateTime, Utc};
+    use function_name::named;
+    use sqlx::{Connection, Executor};
     use std::net::TcpStream;
     use std::vec;
-    use crate::db::db::{ DatabaseType, DbConfigAndPool };
-    use crate::model::CustomDbRow;
-    use chrono::{ NaiveDateTime, Utc };
-    use function_name::named;
-    use sqlx::{ Connection, Executor };
     // use sqlx::query;
+    use std::{
+        net::TcpListener,
+        process::{Command, Stdio},
+        thread,
+        time::Duration,
+    };
     use tokio::runtime::Runtime;
-    use std::{ net::TcpListener, process::{ Command, Stdio }, thread, time::Duration };
 
     use super::*;
 
@@ -195,7 +198,7 @@ mod tests {
         sself: &Db,
         tables: Vec<MissingDbObjects>,
         check_type: CheckType,
-        ddl_for_validation: &[(&str, &str, &str, &str)]
+        ddl_for_validation: &[(&str, &str, &str, &str)],
     ) -> Result<DatabaseResult<String>, Box<dyn std::error::Error>> {
         let mut return_result: DatabaseResult<String> = DatabaseResult::<String>::default();
         return_result.db_object_name = function_name!().to_string();
@@ -220,16 +223,18 @@ mod tests {
             // .join("")
         };
 
-        let result = sself.exec_general_query(
-            entire_create_stms
-                .iter()
-                .map(|x| QueryAndParams {
-                    query: x.to_string(),
-                    params: vec![],
-                })
-                .collect(),
-            false
-        ).await;
+        let result = sself
+            .exec_general_query(
+                entire_create_stms
+                    .iter()
+                    .map(|x| QueryAndParams {
+                        query: x.to_string(),
+                        params: vec![],
+                    })
+                    .collect(),
+                false,
+            )
+            .await;
 
         // let query_and_params = QueryAndParams {
         //     query: entire_create_stms,
@@ -272,12 +277,12 @@ mod tests {
                 "eup_statistic"
             ];
             let ddl = vec![
-                include_str!("../../tests/sqlite/00_event.sql"),
-                include_str!("../../tests/sqlite/01_golfstatistic.sql"),
-                include_str!("../../tests/sqlite/02_player.sql"),
-                include_str!("../../tests/sqlite/03_golfuser.sql"),
-                include_str!("../../tests/sqlite/04_event_user_player.sql"),
-                include_str!("../../tests/sqlite/05_eup_statistic.sql")
+                include_str!("../tests/sqlite/00_event.sql"),
+                include_str!("../tests/sqlite/01_golfstatistic.sql"),
+                include_str!("../tests/sqlite/02_player.sql"),
+                include_str!("../tests/sqlite/03_golfuser.sql"),
+                include_str!("../tests/sqlite/04_event_user_player.sql"),
+                include_str!("../tests/sqlite/05_eup_statistic.sql")
             ];
 
             // fixme, the conv item function shouldnt require a 4-len str array, that's silly
@@ -312,7 +317,7 @@ mod tests {
             );
             assert_eq!(create_result.return_result, String::default());
 
-            let setup_queries = include_str!("../../tests/sqlite/test1_setup.sql");
+            let setup_queries = include_str!("../tests/sqlite/test1_setup.sql");
             let query_and_params = QueryAndParams {
                 query: setup_queries.to_string(),
                 params: vec![],
@@ -387,7 +392,7 @@ mod tests {
 
     fn is_port_in_use(port: u16) -> bool {
         match TcpStream::connect(("127.0.0.1", port)) {
-            Ok(_) => true, // If the connection succeeds, the port is in use
+            Ok(_) => true,   // If the connection succeeds, the port is in use
             Err(_) => false, // If connection fails, the port is available
         }
     }
@@ -409,22 +414,20 @@ mod tests {
         //    In this example, we're running in detached mode (-d) and removing
         //    automatically when the container stops (--rm).
         let output = Command::new("podman")
-            .args(
-                &[
-                    "run",
-                    "--rm",
-                    "-d",
-                    "-p",
-                    &format!("{}:5432", port),
-                    "-e",
-                    &format!("POSTGRES_USER={}", db_user),
-                    "-e",
-                    &format!("POSTGRES_PASSWORD={}", db_pass),
-                    "-e",
-                    &format!("POSTGRES_DB={}", db_name),
-                    "postgres:latest",
-                ]
-            )
+            .args(&[
+                "run",
+                "--rm",
+                "-d",
+                "-p",
+                &format!("{}:5432", port),
+                "-e",
+                &format!("POSTGRES_USER={}", db_user),
+                "-e",
+                &format!("POSTGRES_PASSWORD={}", db_pass),
+                "-e",
+                &format!("POSTGRES_DB={}", db_name),
+                "postgres:latest",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -452,10 +455,7 @@ mod tests {
                 // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
                 let conn_str = format!(
                     "postgres://{}:{}@localhost:{}/{}",
-                    db_user,
-                    db_pass,
-                    port,
-                    db_name
+                    db_user, db_pass, port, db_name
                 );
                 thread::sleep(Duration::from_secs(4));
                 let mut conn = sqlx::PgConnection::connect(&conn_str).await.unwrap();
@@ -508,10 +508,8 @@ mod tests {
             cfg.user = Some(db_user.to_string());
             cfg.password = Some(db_pass.to_string());
 
-            let postgres_dbconfig: DbConfigAndPool = DbConfigAndPool::new(
-                cfg,
-                DatabaseType::Postgres
-            ).await;
+            let postgres_dbconfig: DbConfigAndPool =
+                DbConfigAndPool::new(cfg, DatabaseType::Postgres).await;
             let postgres_db = Db::new(postgres_dbconfig).unwrap();
 
             let pg_objs = vec![
@@ -520,16 +518,14 @@ mod tests {
                 },
                 MissingDbObjects {
                     missing_object: "test_2".to_string(),
-                }
+                },
             ];
 
             // create two test tables
-            let pg_create_result = create_tables(
-                &postgres_db,
-                pg_objs,
-                CheckType::Table,
-                TABLE_DDL
-            ).await.unwrap();
+            let pg_create_result =
+                create_tables(&postgres_db, pg_objs, CheckType::Table, TABLE_DDL)
+                    .await
+                    .unwrap();
 
             if pg_create_result.db_last_exec_state == DatabaseSetupState::QueryError {
                 eprintln!("Error: {}", pg_create_result.error_message.unwrap());
@@ -541,20 +537,18 @@ mod tests {
             );
             assert_eq!(pg_create_result.return_result, String::default());
 
-            const TABLE_DDL_SYNTAX_ERR: &[(&str, &str, &str, &str)] = &[
-                (
-                    "testa",
-                    "CREATE TABLEXXXXXXXX IF NOT EXISTS -- drop table event cascade
+            const TABLE_DDL_SYNTAX_ERR: &[(&str, &str, &str, &str)] = &[(
+                "testa",
+                "CREATE TABLEXXXXXXXX IF NOT EXISTS -- drop table event cascade
                     test (
                     event_id BIGSERIAL NOT NULL PRIMARY KEY,
                     espn_id BIGINT NOT NULL,
                     name TEXT NOT NULL,
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );",
-                    "",
-                    "",
-                ),
-            ];
+                "",
+                "",
+            )];
 
             let pg_objs = vec![MissingDbObjects {
                 missing_object: "testa".to_string(),
@@ -565,10 +559,15 @@ mod tests {
                 &postgres_db,
                 pg_objs,
                 CheckType::Table,
-                TABLE_DDL_SYNTAX_ERR
-            ).await.unwrap();
+                TABLE_DDL_SYNTAX_ERR,
+            )
+            .await
+            .unwrap();
 
-            assert_eq!(pg_create_result.db_last_exec_state, DatabaseSetupState::QueryError);
+            assert_eq!(
+                pg_create_result.db_last_exec_state,
+                DatabaseSetupState::QueryError
+            );
             assert_eq!(pg_create_result.return_result, String::default());
 
             let query = "DELETE FROM test;";
@@ -579,8 +578,9 @@ mod tests {
                         query: query.to_string(),
                         params: params,
                     }],
-                    false
-                ).await
+                    false,
+                )
+                .await
                 .unwrap();
 
             let query = "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)";
@@ -588,11 +588,9 @@ mod tests {
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
                 RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str(
-                        "2021-08-06 16:00:00",
-                        "%Y-%m-%d %H:%M:%S"
-                    ).unwrap()
-                )
+                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
+                        .unwrap(),
+                ),
             ];
             // params.push("test name".to_string());
             let x = postgres_db
@@ -601,15 +599,19 @@ mod tests {
                         query: query.to_string(),
                         params: params,
                     }],
-                    false
-                ).await
+                    false,
+                )
+                .await
                 .unwrap();
 
             if x.db_last_exec_state == DatabaseSetupState::QueryError {
                 eprintln!("Error: {}", x.error_message.unwrap());
             }
 
-            assert_eq!(x.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+            assert_eq!(
+                x.db_last_exec_state,
+                DatabaseSetupState::QueryReturnedSuccessfully
+            );
 
             let query = "SELECT * FROM test";
             let params: Vec<RowValues> = vec![];
@@ -619,8 +621,9 @@ mod tests {
                         query: query.to_string(),
                         params: params,
                     }],
-                    true
-                ).await
+                    true,
+                )
+                .await
                 .unwrap();
 
             let expected_result = DatabaseResult {
@@ -630,7 +633,7 @@ mod tests {
                         "event_id".to_string(),
                         "espn_id".to_string(),
                         "name".to_string(),
-                        "ins_ts".to_string()
+                        "ins_ts".to_string(),
                     ],
                     rows: vec![
                         RowValues::Int(1),
@@ -639,22 +642,27 @@ mod tests {
                         RowValues::Timestamp(
                             NaiveDateTime::parse_from_str(
                                 "2021-08-06 16:00:00",
-                                "%Y-%m-%d %H:%M:%S"
-                            ).unwrap()
-                        )
+                                "%Y-%m-%d %H:%M:%S",
+                            )
+                            .unwrap(),
+                        ),
                     ],
                 }],
                 error_message: None,
                 db_object_name: "exec_general_query".to_string(),
             };
 
-            assert_eq!(result.db_last_exec_state, expected_result.db_last_exec_state);
+            assert_eq!(
+                result.db_last_exec_state,
+                expected_result.db_last_exec_state
+            );
             assert_eq!(result.error_message, expected_result.error_message);
 
             let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
 
             for (index, row) in result.return_result.iter().enumerate() {
-                let left: Vec<RowValues> = row.results[0].column_names
+                let left: Vec<RowValues> = row.results[0]
+                    .column_names
                     .iter()
                     .zip(&row.results[0].rows) // Pair column names with corresponding row values
                     .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -662,7 +670,8 @@ mod tests {
                     .collect();
 
                 // Get column names and row values from the expected result
-                let right: Vec<RowValues> = expected_result.return_result[index].column_names
+                let right: Vec<RowValues> = expected_result.return_result[index]
+                    .column_names
                     .iter()
                     .zip(&expected_result.return_result[index].rows) // Pair column names with corresponding row values
                     .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -680,11 +689,15 @@ mod tests {
                         query: query.to_string(),
                         params: params,
                     }],
-                    false
-                ).await
+                    false,
+                )
+                .await
                 .unwrap();
 
-            assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+            assert_eq!(
+                result.db_last_exec_state,
+                DatabaseSetupState::QueryReturnedSuccessfully
+            );
 
             let query = "DROP TABLE test_2;";
             let params: Vec<RowValues> = vec![];
@@ -694,14 +707,18 @@ mod tests {
                         query: query.to_string(),
                         params: params,
                     }],
-                    false
-                ).await
+                    false,
+                )
+                .await
                 .unwrap();
 
-            assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+            assert_eq!(
+                result.db_last_exec_state,
+                DatabaseSetupState::QueryReturnedSuccessfully
+            );
 
             // stop the container
-            let stop_cmd = Command::new("podman")
+            let _stop_cmd = Command::new("podman")
                 .args(&["stop", &container_id])
                 .output()
                 .expect("Failed to stop container");

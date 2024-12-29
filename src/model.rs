@@ -1,4 +1,4 @@
-use crate::db::db::DatabaseSetupState;
+use crate::db::DatabaseSetupState;
 use chrono::NaiveDateTime;
 
 // Custom Value enum to support multiple data types
