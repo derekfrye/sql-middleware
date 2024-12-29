@@ -177,14 +177,16 @@ pub async fn create_tables(
 
 #[cfg(test)]
 mod tests {
-    use std::{ env, vec };
-
+    use std::net::TcpStream;
+    use std::vec;
     use crate::db::db::{ DatabaseType, DbConfigAndPool };
     use crate::model::CustomDbRow;
     use chrono::{ NaiveDateTime, Utc };
     use function_name::named;
+    use sqlx::{ Connection, Executor };
     // use sqlx::query;
     use tokio::runtime::Runtime;
+    use std::{ net::TcpListener, process::{ Command, Stdio }, thread, time::Duration };
 
     use super::*;
 
@@ -252,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sqlite() {
+    fn sqlite_rusty_golf_test() {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let mut cfg = deadpool_postgres::Config::new();
@@ -371,8 +373,103 @@ mod tests {
         })
     }
 
+    // A small helper function to find an available port by trying to bind
+    // starting from `start_port`, then incrementing until a bind succeeds.
+    fn find_available_port(start_port: u16) -> u16 {
+        let mut port = start_port;
+        loop {
+            if TcpListener::bind(("127.0.0.1", port)).is_ok() && !is_port_in_use(port) {
+                return port;
+            }
+            port += 1;
+        }
+    }
+
+    fn is_port_in_use(port: u16) -> bool {
+        match TcpStream::connect(("127.0.0.1", port)) {
+            Ok(_) => true, // If the connection succeeds, the port is in use
+            Err(_) => false, // If connection fails, the port is available
+        }
+    }
+
     #[test]
-    fn a_pg_create_and_update_tbls() {
+    fn postgres_cr_and_del_tables() {
+        // 1. Find a free TCP port (starting from 5432, increment if taken)
+        let start_port = 9050;
+        let port = find_available_port(start_port);
+        println!("Using port: {}", port);
+
+        let db_user = "test_user";
+        // don't use @ or # in here, it fails
+        // https://github.com/launchbadge/sqlx/issues/1624
+        let db_pass = "test_passwordx(!323341";
+        let db_name = "test_db";
+
+        // 2. Start the Podman container
+        //    In this example, we're running in detached mode (-d) and removing
+        //    automatically when the container stops (--rm).
+        let output = Command::new("podman")
+            .args(
+                &[
+                    "run",
+                    "--rm",
+                    "-d",
+                    "-p",
+                    &format!("{}:5432", port),
+                    "-e",
+                    &format!("POSTGRES_USER={}", db_user),
+                    "-e",
+                    &format!("POSTGRES_PASSWORD={}", db_pass),
+                    "-e",
+                    &format!("POSTGRES_DB={}", db_name),
+                    "postgres:latest",
+                ]
+            )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("Failed to start Podman Postgres container");
+
+        // Ensure Podman started successfully
+        assert!(
+            output.status.success(),
+            "Failed to run podman command: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // Grab the container ID from stdout
+        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // println!("Started container ID: {}", container_id);
+
+        // 3. Wait a few seconds to ensure Postgres inside the container is up
+        //   poll the DB in a loop until successful)
+        let mut success = false;
+        let mut attempt = 0;
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            while !success && attempt < 10 {
+                attempt += 1;
+                // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
+                let conn_str = format!(
+                    "postgres://{}:{}@localhost:{}/{}",
+                    db_user,
+                    db_pass,
+                    port,
+                    db_name
+                );
+                thread::sleep(Duration::from_secs(4));
+                let mut conn = sqlx::PgConnection::connect(&conn_str).await.unwrap();
+                let res = conn.execute("SELECT 1").await.unwrap();
+                if res.rows_affected() == 1 {
+                    success = true;
+                    // println!("Successfully connected to Postgres!");
+                } else {
+                    // println!("Failed to connect to Postgres. Retrying...");
+                    thread::sleep(Duration::from_secs(1));
+                }
+            }
+        });
+
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             // env::var("DB_USER") = Ok("postgres".to_string());
@@ -404,23 +501,12 @@ mod tests {
                 ),
             ];
 
-            dotenv::dotenv().unwrap();
-
-            let mut db_pwd = env::var("DB_PASSWORD").unwrap();
-            if db_pwd == "/secrets/db_password" {
-                // open the file and read the contents
-                let contents = std::fs
-                    ::read_to_string("/secrets/db_password")
-                    .unwrap_or("tempPasswordWillbeReplacedIn!AdminPanel".to_string());
-                // set the password to the contents of the file
-                db_pwd = contents.trim().to_string();
-            }
             let mut cfg = deadpool_postgres::Config::new();
-            cfg.dbname = Some(env::var("DB_NAME").unwrap());
-            cfg.host = Some(env::var("DB_HOST").unwrap());
-            cfg.port = Some(env::var("DB_PORT").unwrap().parse::<u16>().unwrap());
-            cfg.user = Some(env::var("DB_USER").unwrap());
-            cfg.password = Some(db_pwd);
+            cfg.dbname = Some(db_name.to_string());
+            cfg.host = Some("localhost".to_string());
+            cfg.port = Some(port);
+            cfg.user = Some(db_user.to_string());
+            cfg.password = Some(db_pass.to_string());
 
             let postgres_dbconfig: DbConfigAndPool = DbConfigAndPool::new(
                 cfg,
