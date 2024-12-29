@@ -699,6 +699,12 @@ mod tests {
                 .unwrap();
 
             assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+
+            // stop the container
+            let stop_cmd = Command::new("podman")
+                .args(&["stop", &container_id])
+                .output()
+                .expect("Failed to stop container");
         });
     }
 }
