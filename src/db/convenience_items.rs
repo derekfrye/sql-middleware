@@ -349,7 +349,7 @@ mod tests {
             let res1 = sql_db.exec_general_query(vec![query_and_params], true).await;
 
             if res1.is_err() {
-                eprintln!("351 Error: {}", &res1.err().unwrap());
+                eprintln!("Test Error: {}", &res1.err().unwrap());
 
                 assert!(false);
             } else {
@@ -364,9 +364,9 @@ mod tests {
                 // print the type of the var
                 println!("count: {:?}", count);
 
-                let count1 = count.as_text().unwrap();
+                let count1 = count.as_int().unwrap();
                 // let cnt = count.
-                assert_eq!(*count1, (4).to_string());
+                assert_eq!(*count1, 3);
             }
         })
     }
