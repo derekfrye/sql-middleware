@@ -1,5 +1,6 @@
 use crate::db::DatabaseSetupState;
 use chrono::NaiveDateTime;
+use serde_json::Value;
 
 // Custom Value enum to support multiple data types
 #[derive(Debug, Clone, PartialEq)]
@@ -10,7 +11,8 @@ pub enum RowValues {
     Bool(bool),
     Timestamp(NaiveDateTime),
     Null,
-    // Add other types as needed
+    JSON(Value),
+    Blob(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]

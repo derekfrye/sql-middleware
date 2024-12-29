@@ -1,5 +1,6 @@
 use deadpool_postgres::Config;
 use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef};
+use serde_json::Value;
 // use ::function_name::named;
 
 use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
@@ -176,6 +177,8 @@ impl Db {
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
                                 RowValues::Null => query_item.bind::<Option<i64>>(None),
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
                             };
                         }
 
@@ -263,7 +266,9 @@ impl Db {
                                 RowValues::Timestamp(value) => query_item.bind(value),
                                 RowValues::Null => {
                                     query_item.bind(sqlx::types::chrono::NaiveDateTime::MIN)
-                                }
+                                },
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
                             };
                         }
 
@@ -355,7 +360,7 @@ impl Db {
                                                     Err(err) => Err(err),
                                                 }
                                             }
-                                            "TIMESTAMP" => {
+                                            "DATETIME" => {
                                                 let result = row
                                                     .try_get::<Option<chrono::NaiveDateTime>, _>(
                                                         column_name,
@@ -363,6 +368,23 @@ impl Db {
                                                 match result {
                                                     Ok(value) => Ok(value
                                                         .map(RowValues::Timestamp)
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            "REAL" => {
+                                                let result = row.try_get::<f64, _>(column_name);
+                                                match result {
+                                                    Ok(value) => Ok(RowValues::Int(value as i64)),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            "JSON" => {
+                                                let result =
+                                                    row.try_get::<Option<Value>, _>(column_name);
+                                                match result {
+                                                    Ok(value) => Ok(value
+                                                        .map(RowValues::JSON)
                                                         .unwrap_or(RowValues::Null)),
                                                     Err(err) => Err(err),
                                                 }
@@ -377,10 +399,20 @@ impl Db {
                                                     Err(err) => Err(err),
                                                 }
                                             }
+                                            "BLOB" => {
+                                                let result =
+                                                    row.try_get::<Option<Vec<u8>>, _>(column_name);
+                                                match result {
+                                                    Ok(value) => Ok(value
+                                                        .map(RowValues::Blob)
+                                                        .unwrap_or(RowValues::Null)),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
                                             _ => {
-                                                eprintln!("Unknown column type: {}", type_info);
+                                                eprintln!("sqlx-middleware custom err: Unknown column type: {}", type_info);
                                                 unimplemented!(
-                                                    "Unknown column type: {}",
+                                                    "sqlx-middleware custom err: Unknown column type: {}",
                                                     type_info
                                                 );
                                             }
@@ -462,6 +494,8 @@ impl Db {
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
                                 RowValues::Null => query_item.bind::<Option<i64>>(None),
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
                             };
                         }
 
@@ -504,6 +538,8 @@ impl Db {
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
                                 RowValues::Null => query_item.bind::<Option<i64>>(None),
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
                             };
                         }
 
