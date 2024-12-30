@@ -1,15 +1,18 @@
-use crate::db::db::DatabaseSetupState;
+use crate::db::DatabaseSetupState;
 use chrono::NaiveDateTime;
+use serde_json::Value;
 
 // Custom Value enum to support multiple data types
 #[derive(Debug, Clone, PartialEq)]
 pub enum RowValues {
     Int(i64),
-    // Float(f64),
+    Float(f64),
     Text(String),
     Bool(bool),
     Timestamp(NaiveDateTime),
-    // Add other types as needed
+    Null,
+    JSON(Value),
+    Blob(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +55,50 @@ impl RowValues {
             None
         }
     }
+
+    pub fn as_bool(&self) -> Option<&bool> {
+        if let RowValues::Bool(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_timestamp(&self) -> Option<&NaiveDateTime> {
+        if let RowValues::Timestamp(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_json(&self) -> Option<&Value> {
+        if let RowValues::JSON(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_blob(&self) -> Option<&Vec<u8>> {
+        if let RowValues::Blob(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_float(&self) -> Option<f64> {
+        if let RowValues::Float(value) = self {
+            Some(*value as f64)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, RowValues::Null)
+    }
 }
 
 impl CustomDbRow {
@@ -83,11 +130,13 @@ pub enum CheckType {
     Constraint,
 }
 
+#[derive(Debug, Clone)]
 pub struct DatabaseTable {
     pub table_name: String,
     pub ddl: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct DatabaseConstraint {
     pub table_name: String,
     pub constraint_name: String,
@@ -95,6 +144,7 @@ pub struct DatabaseConstraint {
     pub ddl: String,
 }
 
+#[derive(Debug, Clone)]
 pub enum DatabaseItem {
     Table(DatabaseTable),
     Constraint(DatabaseConstraint),

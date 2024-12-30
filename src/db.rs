@@ -1,8 +1,9 @@
-use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row};
 use deadpool_postgres::Config;
+// use serde_json::Value;
+use sqlx::{ self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef };
 // use ::function_name::named;
 
-use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
+use crate::model::{ CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues };
 
 #[derive(Debug, Clone)]
 pub enum DbPool {
@@ -72,21 +73,20 @@ impl DbConfigAndPool {
                     config.dbname.unwrap()
                 )
             }
-            DatabaseType::Sqlite => {
-                format!("sqlite://{}", config.dbname.unwrap())
-            }
+            DatabaseType::Sqlite => { format!("sqlite://{}", config.dbname.unwrap()) }
         };
 
         match db_type {
             DatabaseType::Postgres => {
-                let pool_result = sqlx::postgres::PgPoolOptions::new()
-                    .connect(&connection_string)
-                    .await;
+                let pool_result = sqlx::postgres::PgPoolOptions
+                    ::new()
+                    .connect(&connection_string).await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Postgres(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        DbConfigAndPool {
+                            pool: DbPool::Postgres(pool),
+                            // db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create Postgres pool: {}", e);
                     }
@@ -100,24 +100,28 @@ impl DbConfigAndPool {
                 let connect = SqliteConnectOptions::new()
                     .filename(&config_db_name)
                     .create_if_missing(true)
-                    .connect()
-                    .await;
+                    .connect().await;
                 match connect {
                     Ok(_) => {}
                     Err(e) => {
-                        let emessage =
-                            format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
+                        let emessage = format!(
+                            "Failed in {}, {}: {}",
+                            std::file!(),
+                            std::line!(),
+                            e
+                        );
                         panic!("failed here 1, {}", emessage);
                     }
                 }
-                let pool_result = sqlx::sqlite::SqlitePoolOptions::new()
-                    .connect(&connection_string)
-                    .await;
+                let pool_result = sqlx::sqlite::SqlitePoolOptions
+                    ::new()
+                    .connect(&connection_string).await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Sqlite(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        DbConfigAndPool {
+                            pool: DbPool::Sqlite(pool),
+                            // db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create SQLite pool: {}", e);
                     }
@@ -126,8 +130,6 @@ impl DbConfigAndPool {
         }
     }
 }
-
-
 
 impl Db {
     pub fn new(cnf: DbConfigAndPool) -> Result<Self, String> {
@@ -141,9 +143,21 @@ impl Db {
     pub async fn exec_general_query(
         &self,
         queries: Vec<QueryAndParams>,
-        expect_rows: bool,
+        expect_rows: bool
     ) -> Result<DatabaseResult<Vec<ResultSet>>, sqlx::Error> {
         let mut final_result = DatabaseResult::<Vec<ResultSet>>::default();
+
+        #[cfg(debug_assertions)]
+        {
+            if
+                !queries.is_empty() &&
+                !queries[0].params.is_empty() &&
+                queries[0].params[0].as_text().is_some() &&
+                queries[0].params[0].as_text().unwrap().contains("Player1")
+            {
+                eprintln!("query about to run: {}", queries[0].query);
+            }
+        }
 
         if expect_rows {
             match &self.pool {
@@ -166,6 +180,10 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => query_item.bind::<Option<i64>>(None),
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -191,14 +209,17 @@ impl Db {
                                                     RowValues::Int(row.get::<i64, _>(col.name()))
                                                 }
                                                 "TEXT" => {
-                                                    RowValues::Text(row.get::<String, _>(col.name()))
+                                                    RowValues::Text(
+                                                        row.get::<String, _>(col.name())
+                                                    )
                                                 }
                                                 "BOOL" | "BOOLEAN" => {
                                                     RowValues::Bool(row.get::<bool, _>(col.name()))
                                                 }
                                                 "TIMESTAMP" => {
-                                                    let timestamp: sqlx::types::chrono::NaiveDateTime =
-                                                        row.get(col.name());
+                                                    let timestamp: sqlx::types::chrono::NaiveDateTime = row.get(
+                                                        col.name()
+                                                    );
                                                     RowValues::Timestamp(timestamp)
                                                 }
                                                 _ => {
@@ -211,7 +232,7 @@ impl Db {
                                         .collect::<Vec<_>>();
 
                                     let custom_row = CustomDbRow {
-                                        column_names: column_names,
+                                        column_names,
                                         rows: values,
                                     };
                                     result_set.results.push(custom_row);
@@ -242,12 +263,18 @@ impl Db {
                     for q in queries {
                         let mut query_item = sqlx::query(&q.query);
 
-                        for param in q.params {
+                        for param in &q.params {
                             query_item = match param {
                                 RowValues::Int(value) => query_item.bind(value),
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => {
+                                    query_item.bind(sqlx::types::chrono::NaiveDateTime::MIN)
+                                }
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -263,39 +290,207 @@ impl Db {
                                         .map(|c| c.name().to_string())
                                         .collect::<Vec<_>>();
 
-                                    let values = row
+                                    #[cfg(debug_assertions)]
+                                    {
+                                        if
+                                            !q.params.is_empty() &&
+                                            q.params[0].as_text().is_some() &&
+                                            q.params[0].as_text().unwrap().contains("Player1")
+                                        {
+                                            // eprintln!("query about to run: {}", queries[0].query);
+                                            // for row in rows {
+                                            for col in row.columns() {
+                                                let mut type_info = col.type_info().to_string();
+                                                eprintln!(
+                                                    "Debugging Column '{}', type_info: {}",
+                                                    col.name(),
+                                                    type_info
+                                                );
+                                                let col_number = col.ordinal();
+                                                // let mut type_info = col.type_info().to_string();
+                                                if type_info == "NULL" {
+                                                    let typ = row.try_get_raw(col_number).unwrap();
+                                                    if !typ.is_null() {
+                                                        type_info = typ.type_info().to_string();
+                                                    }
+                                                }
+                                                eprintln!(
+                                                    "Debugging Column '{}', type_info: {}",
+                                                    col.name(),
+                                                    type_info
+                                                );
+
+                                                // let val = row.try_get::<i64, _>("cnt");
+                                                // eprintln!("cnt returned val = {:?}", val);
+                                            }
+                                        }
+                                    }
+
+                                    fn process_column(
+                                        row: &sqlx::sqlite::SqliteRow,
+                                        column_name: &str,
+                                        type_info: &str
+                                    ) -> Result<RowValues, sqlx::Error> {
+                                        match type_info {
+                                            "INTEGER" => {
+                                                let result = row.try_get::<i64, _>(column_name);
+                                                match result {
+                                                    Ok(value) => Ok(RowValues::Int(value)),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            "TEXT" => {
+                                                let result = row.try_get::<Option<String>, _>(
+                                                    column_name
+                                                );
+                                                match result {
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Text)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
+                                                    Err(err) => {
+                                                        eprintln!(
+                                                            "Error decoding TEXT for column '{}': {}",
+                                                            column_name,
+                                                            err
+                                                        );
+                                                        Err(err)
+                                                    }
+                                                }
+                                            }
+                                            "BOOLEAN" => {
+                                                let result = row.try_get::<Option<bool>, _>(
+                                                    column_name
+                                                );
+                                                match result {
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Bool)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            "DATETIME" => {
+                                                let result = row.try_get::<
+                                                    Option<chrono::NaiveDateTime>,
+                                                    _
+                                                >(column_name);
+                                                match result {
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Timestamp)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            "REAL" => {
+                                                let result = row.try_get::<f64, _>(column_name);
+                                                match result {
+                                                    Ok(value) => Ok(RowValues::Float(value)),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            // not actually a type stored in sqlite, so we can't detect and decode it
+                                            // see https://www.sqlite.org/json1.html#compiling_in_json_support, 3. Interface Overview
+                                            // "SQLite stores JSON as ordinary text.
+                                            // Backwards compatibility constraints mean that SQLite is only able to store values that are NULL,
+                                            // integers, floating-point numbers, text, and BLOBs. It is not possible to add a new "JSON" type."
+                                            // "JSON" => {
+                                            //     let result =
+                                            //         row.try_get::<Option<Value>, _>(column_name);
+                                            //     match result {
+                                            //         Ok(value) => Ok(value
+                                            //             .map(RowValues::JSON)
+                                            //             .unwrap_or(RowValues::Null)),
+                                            //         Err(err) => Err(err),
+                                            //     }
+                                            // }
+                                            "NULL" => {
+                                                let result = row.try_get::<Option<String>, _>(
+                                                    column_name
+                                                );
+                                                match result {
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Text)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            "BLOB" => {
+                                                let result = row.try_get::<Option<Vec<u8>>, _>(
+                                                    column_name
+                                                );
+                                                match result {
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Blob)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
+                                                    Err(err) => Err(err),
+                                                }
+                                            }
+                                            _ => {
+                                                eprintln!("sqlx-middleware custom err: Unknown column type: {}", type_info);
+                                                unimplemented!("sqlx-middleware custom err: Unknown column type: {}", type_info);
+                                            }
+                                        }
+                                    }
+
+                                    let values1: Result<Vec<RowValues>, sqlx::Error> = row
                                         .columns()
                                         .iter()
                                         .map(|col| {
-                                            let type_info = col.type_info().to_string();
-                                            let value = match type_info.as_str() {
-                                                "INTEGER" => {
-                                                    RowValues::Int(row.get::<i64, _>(col.name()))
+                                            // Step 1: Get column number and initial type info
+                                            let col_number = col.ordinal();
+                                            let initial_type_info = col.type_info().to_string();
+
+                                            // Step 2: Adjust type info if it is "NULL"
+                                            let type_info = if initial_type_info == "NULL" {
+                                                let typ = row.try_get_raw(col_number).unwrap();
+                                                if !typ.is_null() {
+                                                    typ.type_info().to_string()
+                                                } else {
+                                                    initial_type_info
                                                 }
-                                                "TEXT" => RowValues::Text(
-                                                    row.get::<String, _>(col.name()),
-                                                ),
-                                                "BOOLEAN" => {
-                                                    RowValues::Bool(row.get::<bool, _>(col.name()))
-                                                }
-                                                "TIMESTAMP" => {
-                                                    RowValues::Timestamp(row.get(col.name()))
-                                                }
-                                                _ => {
-                                                    eprintln!("Unknown column type: {}", type_info);
-                                                    unimplemented!(
-                                                        "Unknown column type: {}",
-                                                        type_info
-                                                    )
-                                                }
+                                            } else {
+                                                initial_type_info
                                             };
-                                            value
+
+                                            // Step 3: Get column name
+                                            let column_name = col.name();
+
+                                            // Debugging block (only active in debug builds)
+                                            #[cfg(debug_assertions)]
+                                            {
+                                                if column_name == "g" {
+                                                    eprintln!(
+                                                        "Debugging Column '{}', type_info: {}",
+                                                        col.name(),
+                                                        type_info
+                                                    );
+                                                }
+                                            }
+
+                                            // Step 4: Process column and propagate any errors
+                                            process_column(&row, column_name, &type_info)
                                         })
-                                        .collect::<Vec<_>>();
+                                        .collect();
+
+                                    // dbg!(&values);
 
                                     let custom_row = CustomDbRow {
-                                        column_names: column_names,
-                                        rows: values,
+                                        column_names,
+                                        rows: values1?,
                                     };
                                     result_set.results.push(custom_row);
                                 }
@@ -335,6 +530,10 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => query_item.bind::<Option<i64>>(None),
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -342,9 +541,7 @@ impl Db {
 
                         match exec_result {
                             Ok(_) => {
-                                final_result
-                                    .return_result
-                                    .push(ResultSet { results: vec![] });
+                                final_result.return_result.push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
                                 let _ = transaction.rollback().await;
@@ -376,6 +573,10 @@ impl Db {
                                 RowValues::Text(value) => query_item.bind(value),
                                 RowValues::Bool(value) => query_item.bind(value),
                                 RowValues::Timestamp(value) => query_item.bind(value),
+                                RowValues::Null => query_item.bind::<Option<i64>>(None),
+                                RowValues::Blob(value) => query_item.bind(value),
+                                RowValues::JSON(value) => query_item.bind(value),
+                                RowValues::Float(value) => query_item.bind(value),
                             };
                         }
 
@@ -383,11 +584,10 @@ impl Db {
 
                         match exec_result {
                             Ok(_) => {
-                                final_result
-                                    .return_result
-                                    .push(ResultSet { results: vec![] });
+                                final_result.return_result.push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
+                                eprintln!("sqlx-middleware error: {}", e);
                                 let _ = transaction.rollback().await;
                                 final_result.db_last_exec_state = DatabaseSetupState::QueryError;
                                 final_result.error_message = Some(e.to_string());
@@ -404,6 +604,3 @@ impl Db {
         Ok(final_result)
     }
 }
-
-
-
