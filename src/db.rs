@@ -1,9 +1,9 @@
 use deadpool_postgres::Config;
 // use serde_json::Value;
-use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef};
+use sqlx::{ self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef };
 // use ::function_name::named;
 
-use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
+use crate::model::{ CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues };
 
 #[derive(Debug, Clone)]
 pub enum DbPool {
@@ -73,21 +73,20 @@ impl DbConfigAndPool {
                     config.dbname.unwrap()
                 )
             }
-            DatabaseType::Sqlite => {
-                format!("sqlite://{}", config.dbname.unwrap())
-            }
+            DatabaseType::Sqlite => { format!("sqlite://{}", config.dbname.unwrap()) }
         };
 
         match db_type {
             DatabaseType::Postgres => {
-                let pool_result = sqlx::postgres::PgPoolOptions::new()
-                    .connect(&connection_string)
-                    .await;
+                let pool_result = sqlx::postgres::PgPoolOptions
+                    ::new()
+                    .connect(&connection_string).await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Postgres(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        DbConfigAndPool {
+                            pool: DbPool::Postgres(pool),
+                            // db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create Postgres pool: {}", e);
                     }
@@ -101,24 +100,28 @@ impl DbConfigAndPool {
                 let connect = SqliteConnectOptions::new()
                     .filename(&config_db_name)
                     .create_if_missing(true)
-                    .connect()
-                    .await;
+                    .connect().await;
                 match connect {
                     Ok(_) => {}
                     Err(e) => {
-                        let emessage =
-                            format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
+                        let emessage = format!(
+                            "Failed in {}, {}: {}",
+                            std::file!(),
+                            std::line!(),
+                            e
+                        );
                         panic!("failed here 1, {}", emessage);
                     }
                 }
-                let pool_result = sqlx::sqlite::SqlitePoolOptions::new()
-                    .connect(&connection_string)
-                    .await;
+                let pool_result = sqlx::sqlite::SqlitePoolOptions
+                    ::new()
+                    .connect(&connection_string).await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Sqlite(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        DbConfigAndPool {
+                            pool: DbPool::Sqlite(pool),
+                            // db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create SQLite pool: {}", e);
                     }
@@ -140,16 +143,17 @@ impl Db {
     pub async fn exec_general_query(
         &self,
         queries: Vec<QueryAndParams>,
-        expect_rows: bool,
+        expect_rows: bool
     ) -> Result<DatabaseResult<Vec<ResultSet>>, sqlx::Error> {
         let mut final_result = DatabaseResult::<Vec<ResultSet>>::default();
 
         #[cfg(debug_assertions)]
         {
-            if !queries.is_empty()
-                && !queries[0].params.is_empty()
-                && queries[0].params[0].as_text().is_some()
-                && queries[0].params[0].as_text().unwrap().contains("Player1")
+            if
+                !queries.is_empty() &&
+                !queries[0].params.is_empty() &&
+                queries[0].params[0].as_text().is_some() &&
+                queries[0].params[0].as_text().unwrap().contains("Player1")
             {
                 eprintln!("query about to run: {}", queries[0].query);
             }
@@ -288,9 +292,10 @@ impl Db {
 
                                     #[cfg(debug_assertions)]
                                     {
-                                        if !q.params.is_empty()
-                                            && q.params[0].as_text().is_some()
-                                            && q.params[0].as_text().unwrap().contains("Player1")
+                                        if
+                                            !q.params.is_empty() &&
+                                            q.params[0].as_text().is_some() &&
+                                            q.params[0].as_text().unwrap().contains("Player1")
                                         {
                                             // eprintln!("query about to run: {}", queries[0].query);
                                             // for row in rows {
@@ -324,9 +329,8 @@ impl Db {
                                     fn process_column(
                                         row: &sqlx::sqlite::SqliteRow,
                                         column_name: &str,
-                                        type_info: &str,
-                                    ) -> Result<RowValues, sqlx::Error>
-                                    {
+                                        type_info: &str
+                                    ) -> Result<RowValues, sqlx::Error> {
                                         match type_info {
                                             "INTEGER" => {
                                                 let result = row.try_get::<i64, _>(column_name);
@@ -336,12 +340,16 @@ impl Db {
                                                 }
                                             }
                                             "TEXT" => {
-                                                let result =
-                                                    row.try_get::<Option<String>, _>(column_name);
+                                                let result = row.try_get::<Option<String>, _>(
+                                                    column_name
+                                                );
                                                 match result {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Text)
-                                                        .unwrap_or(RowValues::Null)),
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Text)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
                                                     Err(err) => {
                                                         eprintln!(
                                                             "Error decoding TEXT for column '{}': {}",
@@ -353,24 +361,31 @@ impl Db {
                                                 }
                                             }
                                             "BOOLEAN" => {
-                                                let result =
-                                                    row.try_get::<Option<bool>, _>(column_name);
+                                                let result = row.try_get::<Option<bool>, _>(
+                                                    column_name
+                                                );
                                                 match result {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Bool)
-                                                        .unwrap_or(RowValues::Null)),
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Bool)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
                                                     Err(err) => Err(err),
                                                 }
                                             }
                                             "DATETIME" => {
-                                                let result = row
-                                                    .try_get::<Option<chrono::NaiveDateTime>, _>(
-                                                        column_name,
-                                                    );
+                                                let result = row.try_get::<
+                                                    Option<chrono::NaiveDateTime>,
+                                                    _
+                                                >(column_name);
                                                 match result {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Timestamp)
-                                                        .unwrap_or(RowValues::Null)),
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Timestamp)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
                                                     Err(err) => Err(err),
                                                 }
                                             }
@@ -397,22 +412,30 @@ impl Db {
                                             //     }
                                             // }
                                             "NULL" => {
-                                                let result =
-                                                    row.try_get::<Option<String>, _>(column_name);
+                                                let result = row.try_get::<Option<String>, _>(
+                                                    column_name
+                                                );
                                                 match result {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Text)
-                                                        .unwrap_or(RowValues::Null)),
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Text)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
                                                     Err(err) => Err(err),
                                                 }
                                             }
                                             "BLOB" => {
-                                                let result =
-                                                    row.try_get::<Option<Vec<u8>>, _>(column_name);
+                                                let result = row.try_get::<Option<Vec<u8>>, _>(
+                                                    column_name
+                                                );
                                                 match result {
-                                                    Ok(value) => Ok(value
-                                                        .map(RowValues::Blob)
-                                                        .unwrap_or(RowValues::Null)),
+                                                    Ok(value) =>
+                                                        Ok(
+                                                            value
+                                                                .map(RowValues::Blob)
+                                                                .unwrap_or(RowValues::Null)
+                                                        ),
                                                     Err(err) => Err(err),
                                                 }
                                             }
@@ -423,50 +446,45 @@ impl Db {
                                         }
                                     }
 
-                                    let mut values = Vec::new();
+                                    let values1: Result<Vec<RowValues>, sqlx::Error> = row
+                                        .columns()
+                                        .iter()
+                                        .map(|col| {
+                                            // Step 1: Get column number and initial type info
+                                            let col_number = col.ordinal();
+                                            let initial_type_info = col.type_info().to_string();
 
-                                    for col in row.columns().iter() {
-                                        // Step 1: Get column number and initial type info
-                                        let col_number = col.ordinal();
-                                        let mut type_info = col.type_info().to_string();
+                                            // Step 2: Adjust type info if it is "NULL"
+                                            let type_info = if initial_type_info == "NULL" {
+                                                let typ = row.try_get_raw(col_number).unwrap();
+                                                if !typ.is_null() {
+                                                    typ.type_info().to_string()
+                                                } else {
+                                                    initial_type_info
+                                                }
+                                            } else {
+                                                initial_type_info
+                                            };
 
-                                        // Step 2: Adjust type info if it is "NULL"
-                                        if type_info == "NULL" {
-                                            let typ = row.try_get_raw(col_number).unwrap();
-                                            if !typ.is_null() {
-                                                type_info = typ.type_info().to_string();
-                                            }
-                                        }
+                                            // Step 3: Get column name
+                                            let column_name = col.name();
 
-                                        // Step 3: Get column name
-                                        let column_name = col.name();
-
-                                        #[cfg(debug_assertions)]
-                                        {
-                                            if column_name == "g"
-                                            // && !q.params.is_empty()
-                                            // && q.params[0].as_text().is_some()
-                                            // && q.params[0].as_text().unwrap().contains("1")
+                                            // Debugging block (only active in debug builds)
+                                            #[cfg(debug_assertions)]
                                             {
-                                                eprintln!(
-                                                    "Debugging Column '{}', type_info: {}",
-                                                    col.name(),
-                                                    type_info
-                                                );
+                                                if column_name == "g" {
+                                                    eprintln!(
+                                                        "Debugging Column '{}', type_info: {}",
+                                                        col.name(),
+                                                        type_info
+                                                    );
+                                                }
                                             }
-                                        }
 
-                                        // Step 4: Process column and collect results
-                                        match process_column(&row, column_name, &type_info) {
-                                            Ok(value) => values.push(value),
-                                            Err(err) => {
-                                                // Return the error early if any column processing fails
-                                                return Err(err);
-                                            }
-                                        }
-                                    }
-
-                                    let values1: Result<Vec<RowValues>, sqlx::Error> = Ok(values);
+                                            // Step 4: Process column and propagate any errors
+                                            process_column(&row, column_name, &type_info)
+                                        })
+                                        .collect();
 
                                     // dbg!(&values);
 
@@ -523,9 +541,7 @@ impl Db {
 
                         match exec_result {
                             Ok(_) => {
-                                final_result
-                                    .return_result
-                                    .push(ResultSet { results: vec![] });
+                                final_result.return_result.push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
                                 let _ = transaction.rollback().await;
@@ -568,9 +584,7 @@ impl Db {
 
                         match exec_result {
                             Ok(_) => {
-                                final_result
-                                    .return_result
-                                    .push(ResultSet { results: vec![] });
+                                final_result.return_result.push(ResultSet { results: vec![] });
                             }
                             Err(e) => {
                                 eprintln!("sqlx-middleware error: {}", e);
