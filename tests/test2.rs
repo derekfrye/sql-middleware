@@ -1,12 +1,17 @@
-use sqlx_middleware::convenience_items::{ create_tables, MissingDbObjects };
-use sqlx_middleware::db::{ DatabaseSetupState, DatabaseType, Db, DbConfigAndPool };
-use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
 use chrono::NaiveDateTime;
-use sqlx::{ Connection, Executor };
 use regex::Regex;
+use sqlx::{Connection, Executor};
+use sqlx_middleware::convenience_items::{create_tables, MissingDbObjects};
+use sqlx_middleware::db::{DatabaseSetupState, DatabaseType, Db, DbConfigAndPool};
+use sqlx_middleware::model::{CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues};
 use std::net::TcpStream;
 use std::vec;
-use std::{ net::TcpListener, process::{ Command, Stdio }, thread, time::Duration };
+use std::{
+    net::TcpListener,
+    process::{Command, Stdio},
+    thread,
+    time::Duration,
+};
 use tokio::runtime::Runtime;
 
 #[test]
@@ -26,22 +31,20 @@ fn postgres_cr_and_del_tables() {
     //    In this example, we're running in detached mode (-d) and removing
     //    automatically when the container stops (--rm).
     let output = Command::new("podman")
-        .args(
-            &[
-                "run",
-                "--rm",
-                "-d",
-                "-p",
-                &format!("{}:5432", port),
-                "-e",
-                &format!("POSTGRES_USER={}", db_user),
-                "-e",
-                &format!("POSTGRES_PASSWORD={}", db_pass),
-                "-e",
-                &format!("POSTGRES_DB={}", db_name),
-                "postgres:latest",
-            ]
-        )
+        .args(&[
+            "run",
+            "--rm",
+            "-d",
+            "-p",
+            &format!("{}:5432", port),
+            "-e",
+            &format!("POSTGRES_USER={}", db_user),
+            "-e",
+            &format!("POSTGRES_PASSWORD={}", db_pass),
+            "-e",
+            &format!("POSTGRES_DB={}", db_name),
+            "postgres:latest",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -69,16 +72,12 @@ fn postgres_cr_and_del_tables() {
             // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
             let conn_str = format!(
                 "postgres://{}:{}@localhost:{}/{}",
-                db_user,
-                db_pass,
-                port,
-                db_name
+                db_user, db_pass, port, db_name
             );
 
             loop {
                 let podman_logs = Command::new("podman")
                     .args(&["logs", &container_id])
-
                     .output()
                     .expect("Failed to get logs from container");
                 let re = Regex::new(r"listening on IPv6 address [^,]+, port 5432").unwrap();
@@ -139,10 +138,8 @@ fn postgres_cr_and_del_tables() {
         cfg.user = Some(db_user.to_string());
         cfg.password = Some(db_pass.to_string());
 
-        let postgres_dbconfig: DbConfigAndPool = DbConfigAndPool::new(
-            cfg,
-            DatabaseType::Postgres
-        ).await;
+        let postgres_dbconfig: DbConfigAndPool =
+            DbConfigAndPool::new(cfg, DatabaseType::Postgres).await;
         let postgres_db = Db::new(postgres_dbconfig).unwrap();
 
         let pg_objs = vec![
@@ -151,16 +148,13 @@ fn postgres_cr_and_del_tables() {
             },
             MissingDbObjects {
                 missing_object: "test_2".to_string(),
-            }
+            },
         ];
 
         // create two test tables
-        let pg_create_result = create_tables(
-            &postgres_db,
-            pg_objs,
-            CheckType::Table,
-            TABLE_DDL
-        ).await.unwrap();
+        let pg_create_result = create_tables(&postgres_db, pg_objs, CheckType::Table, TABLE_DDL)
+            .await
+            .unwrap();
 
         if pg_create_result.db_last_exec_state == DatabaseSetupState::QueryError {
             eprintln!("Error: {}", pg_create_result.error_message.unwrap());
@@ -172,20 +166,18 @@ fn postgres_cr_and_del_tables() {
         );
         assert_eq!(pg_create_result.return_result, String::default());
 
-        const TABLE_DDL_SYNTAX_ERR: &[(&str, &str, &str, &str)] = &[
-            (
-                "testa",
-                "CREATE TABLEXXXXXXXX IF NOT EXISTS -- drop table event cascade
+        const TABLE_DDL_SYNTAX_ERR: &[(&str, &str, &str, &str)] = &[(
+            "testa",
+            "CREATE TABLEXXXXXXXX IF NOT EXISTS -- drop table event cascade
                     test (
                     event_id BIGSERIAL NOT NULL PRIMARY KEY,
                     espn_id BIGINT NOT NULL,
                     name TEXT NOT NULL,
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );",
-                "",
-                "",
-            ),
-        ];
+            "",
+            "",
+        )];
 
         let pg_objs = vec![MissingDbObjects {
             missing_object: "testa".to_string(),
@@ -196,10 +188,15 @@ fn postgres_cr_and_del_tables() {
             &postgres_db,
             pg_objs,
             CheckType::Table,
-            TABLE_DDL_SYNTAX_ERR
-        ).await.unwrap();
+            TABLE_DDL_SYNTAX_ERR,
+        )
+        .await
+        .unwrap();
 
-        assert_eq!(pg_create_result.db_last_exec_state, DatabaseSetupState::QueryError);
+        assert_eq!(
+            pg_create_result.db_last_exec_state,
+            DatabaseSetupState::QueryError
+        );
         assert_eq!(pg_create_result.return_result, String::default());
 
         let query = "DELETE FROM test;";
@@ -210,8 +207,9 @@ fn postgres_cr_and_del_tables() {
                     query: query.to_string(),
                     params: params,
                 }],
-                false
-            ).await
+                false,
+            )
+            .await
             .unwrap();
 
         let query = "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)";
@@ -219,8 +217,8 @@ fn postgres_cr_and_del_tables() {
             RowValues::Int(123456),
             RowValues::Text("test name".to_string()),
             RowValues::Timestamp(
-                NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
-            )
+                NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S").unwrap(),
+            ),
         ];
         // params.push("test name".to_string());
         let x = postgres_db
@@ -229,15 +227,19 @@ fn postgres_cr_and_del_tables() {
                     query: query.to_string(),
                     params: params,
                 }],
-                false
-            ).await
+                false,
+            )
+            .await
             .unwrap();
 
         if x.db_last_exec_state == DatabaseSetupState::QueryError {
             eprintln!("Error: {}", x.error_message.unwrap());
         }
 
-        assert_eq!(x.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(
+            x.db_last_exec_state,
+            DatabaseSetupState::QueryReturnedSuccessfully
+        );
 
         let query = "SELECT * FROM test";
         let params: Vec<RowValues> = vec![];
@@ -247,8 +249,9 @@ fn postgres_cr_and_del_tables() {
                     query: query.to_string(),
                     params: params,
                 }],
-                true
-            ).await
+                true,
+            )
+            .await
             .unwrap();
 
         let expected_result = DatabaseResult {
@@ -258,31 +261,33 @@ fn postgres_cr_and_del_tables() {
                     "event_id".to_string(),
                     "espn_id".to_string(),
                     "name".to_string(),
-                    "ins_ts".to_string()
+                    "ins_ts".to_string(),
                 ],
                 rows: vec![
                     RowValues::Int(1),
                     RowValues::Int(123456),
                     RowValues::Text("test name".to_string()),
                     RowValues::Timestamp(
-                        NaiveDateTime::parse_from_str(
-                            "2021-08-06 16:00:00",
-                            "%Y-%m-%d %H:%M:%S"
-                        ).unwrap()
-                    )
+                        NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
+                            .unwrap(),
+                    ),
                 ],
             }],
             error_message: None,
             db_object_name: "exec_general_query".to_string(),
         };
 
-        assert_eq!(result.db_last_exec_state, expected_result.db_last_exec_state);
+        assert_eq!(
+            result.db_last_exec_state,
+            expected_result.db_last_exec_state
+        );
         assert_eq!(result.error_message, expected_result.error_message);
 
         let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
 
         for (index, row) in result.return_result.iter().enumerate() {
-            let left: Vec<RowValues> = row.results[0].column_names
+            let left: Vec<RowValues> = row.results[0]
+                .column_names
                 .iter()
                 .zip(&row.results[0].rows) // Pair column names with corresponding row values
                 .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -290,7 +295,8 @@ fn postgres_cr_and_del_tables() {
                 .collect();
 
             // Get column names and row values from the expected result
-            let right: Vec<RowValues> = expected_result.return_result[index].column_names
+            let right: Vec<RowValues> = expected_result.return_result[index]
+                .column_names
                 .iter()
                 .zip(&expected_result.return_result[index].rows) // Pair column names with corresponding row values
                 .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -308,11 +314,15 @@ fn postgres_cr_and_del_tables() {
                     query: query.to_string(),
                     params: params,
                 }],
-                false
-            ).await
+                false,
+            )
+            .await
             .unwrap();
 
-        assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(
+            result.db_last_exec_state,
+            DatabaseSetupState::QueryReturnedSuccessfully
+        );
 
         let query = "DROP TABLE test_2;";
         let params: Vec<RowValues> = vec![];
@@ -322,11 +332,15 @@ fn postgres_cr_and_del_tables() {
                     query: query.to_string(),
                     params: params,
                 }],
-                false
-            ).await
+                false,
+            )
+            .await
             .unwrap();
 
-        assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(
+            result.db_last_exec_state,
+            DatabaseSetupState::QueryReturnedSuccessfully
+        );
 
         // stop the container
         let _stop_cmd = Command::new("podman")
@@ -350,7 +364,7 @@ fn find_available_port(start_port: u16) -> u16 {
 
 fn is_port_in_use(port: u16) -> bool {
     match TcpStream::connect(("127.0.0.1", port)) {
-        Ok(_) => true, // If the connection succeeds, the port is in use
+        Ok(_) => true,   // If the connection succeeds, the port is in use
         Err(_) => false, // If connection fails, the port is available
     }
 }

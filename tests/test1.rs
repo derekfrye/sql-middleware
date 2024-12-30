@@ -1,8 +1,8 @@
-use sqlx_middleware::convenience_items::{ create_tables, MissingDbObjects };
-use sqlx_middleware::db::{ DatabaseSetupState, DatabaseType, Db, DbConfigAndPool };
-use sqlx_middleware::model::{ CheckType, QueryAndParams, RowValues };
-use chrono::{ NaiveDateTime, Utc };
+use chrono::{NaiveDateTime, Utc};
 use serde_json::json;
+use sqlx_middleware::convenience_items::{create_tables, MissingDbObjects};
+use sqlx_middleware::db::{DatabaseSetupState, DatabaseType, Db, DbConfigAndPool};
+use sqlx_middleware::model::{CheckType, QueryAndParams, RowValues};
 use std::vec;
 use tokio::runtime::Runtime;
 
@@ -145,7 +145,7 @@ fn sqlite_mutltiple_column_test() {
                 , e boolean
                 , f blob
                 , g json
-                );"
+                );",
         ];
 
         // fixme, the conv item function shouldnt require a 4-len str array, that's silly
@@ -168,14 +168,19 @@ fn sqlite_mutltiple_column_test() {
             &table_ddl
                 .iter()
                 .map(|(a, b, c, d)| (**a, *b, *c, *d))
-                .collect::<Vec<_>>()
-        ).await.unwrap();
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
 
         // fixme, should just come back with an error rather than requiring caller to check results of last_exec_state
         if create_result.db_last_exec_state == DatabaseSetupState::QueryError {
             eprintln!("Error: {}", create_result.error_message.unwrap());
         }
-        assert_eq!(create_result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(
+            create_result.db_last_exec_state,
+            DatabaseSetupState::QueryReturnedSuccessfully
+        );
         assert_eq!(create_result.return_result, String::default());
 
         let setup_queries = include_str!("../tests/sqlite/test2_setup.sql");
@@ -183,9 +188,15 @@ fn sqlite_mutltiple_column_test() {
             query: setup_queries.to_string(),
             params: vec![],
         };
-        let res = sql_db.exec_general_query(vec![query_and_params], false).await.unwrap();
+        let res = sql_db
+            .exec_general_query(vec![query_and_params], false)
+            .await
+            .unwrap();
 
-        assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(
+            res.db_last_exec_state,
+            DatabaseSetupState::QueryReturnedSuccessfully
+        );
 
         let qry = "SELECT * from test where recid in (?,?, ?);";
         // let param = [RowValues::Int(1), RowValues::Int(2), RowValues::Int(3)];
@@ -194,8 +205,14 @@ fn sqlite_mutltiple_column_test() {
             query: qry.to_string(),
             params: param.to_vec(),
         };
-        let res = sql_db.exec_general_query(vec![query_and_params], true).await.unwrap();
-        assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        let res = sql_db
+            .exec_general_query(vec![query_and_params], true)
+            .await
+            .unwrap();
+        assert_eq!(
+            res.db_last_exec_state,
+            DatabaseSetupState::QueryReturnedSuccessfully
+        );
         // we expect 1 result set
         assert_eq!(res.return_result.len(), 1);
         // we expect 1 row
@@ -204,19 +221,69 @@ fn sqlite_mutltiple_column_test() {
         // dbg!(&res.return_result[0].results[0]);
 
         // row 1 should decode as: 1, 'Alpha', '2024-01-01 08:00:01', 10.5, 1, X'426C6F623132', '{"name": "Alice", "age": 30}'
-        assert_eq!(*res.return_result[0].results[0].get("recid").unwrap().as_int().unwrap(), 1);
-        assert_eq!(*res.return_result[0].results[0].get("a").unwrap().as_int().unwrap(), 1);
-        assert_eq!(res.return_result[0].results[0].get("b").unwrap().as_text().unwrap(), "Alpha");
         assert_eq!(
-            *res.return_result[0].results[0].get("c").unwrap().as_timestamp().unwrap(),
+            *res.return_result[0].results[0]
+                .get("recid")
+                .unwrap()
+                .as_int()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            *res.return_result[0].results[0]
+                .get("a")
+                .unwrap()
+                .as_int()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            res.return_result[0].results[0]
+                .get("b")
+                .unwrap()
+                .as_text()
+                .unwrap(),
+            "Alpha"
+        );
+        assert_eq!(
+            *res.return_result[0].results[0]
+                .get("c")
+                .unwrap()
+                .as_timestamp()
+                .unwrap(),
             NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
         );
-        assert_eq!(res.return_result[0].results[0].get("d").unwrap().as_float().unwrap(), 10.5);
-        assert_eq!(*res.return_result[0].results[0].get("e").unwrap().as_bool().unwrap(), true);
-        assert_eq!(res.return_result[0].results[0].get("f").unwrap().as_blob().unwrap(), b"Blob12");
+        assert_eq!(
+            res.return_result[0].results[0]
+                .get("d")
+                .unwrap()
+                .as_float()
+                .unwrap(),
+            10.5
+        );
+        assert_eq!(
+            *res.return_result[0].results[0]
+                .get("e")
+                .unwrap()
+                .as_bool()
+                .unwrap(),
+            true
+        );
+        assert_eq!(
+            res.return_result[0].results[0]
+                .get("f")
+                .unwrap()
+                .as_blob()
+                .unwrap(),
+            b"Blob12"
+        );
         // troubleshoot this around step 3 of db.rs
         assert_eq!(
-            json!(res.return_result[0].results[0].get("g").unwrap().as_text().unwrap()),
+            json!(res.return_result[0].results[0]
+                .get("g")
+                .unwrap()
+                .as_text()
+                .unwrap()),
             json!(r#"{"name": "Alice", "age": 30}"#)
         );
     })

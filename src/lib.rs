@@ -4,6 +4,6 @@
 //! - Connection pooling for Postgres and SQLite.
 //! - Query execution with abstracted row handling.
 //! - Models for database tables, rows, and states.
-pub mod model;
 pub mod convenience_items;
 pub mod db;
+pub mod model;
