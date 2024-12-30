@@ -1,5 +1,5 @@
-use crate::db::{ DatabaseSetupState, Db };
-use crate::model::{ CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues };
+use crate::db::{DatabaseSetupState, Db};
+use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
 use serde::Deserialize;
 // use sqlx::query;
@@ -26,7 +26,7 @@ pub async fn test_is_db_setup(
     db: &Db,
     check_type: &CheckType,
     query: &str,
-    ddl: &[DatabaseItem]
+    ddl: &[DatabaseItem],
 ) -> Result<Vec<DatabaseResult<String>>, Box<dyn std::error::Error>> {
     let mut dbresults = vec![];
 
@@ -66,16 +66,14 @@ pub async fn test_is_db_setup(
 
             // Check if the "exists" column value is `Value::Bool(true)` or `Value::Text("t")`
             match &row.rows[exists_index] {
-                RowValues::Bool(true) =>
-                    match &row.rows[tbl_index] {
-                        RowValues::Text(tbl_name) => Some(tbl_name.clone()),
-                        _ => None,
-                    }
-                RowValues::Text(value) if value == "t" =>
-                    match &row.rows[tbl_index] {
-                        RowValues::Text(tbl_name) => Some(tbl_name.clone()),
-                        _ => None,
-                    }
+                RowValues::Bool(true) => match &row.rows[tbl_index] {
+                    RowValues::Text(tbl_name) => Some(tbl_name.clone()),
+                    _ => None,
+                },
+                RowValues::Text(value) if value == "t" => match &row.rows[tbl_index] {
+                    RowValues::Text(tbl_name) => Some(tbl_name.clone()),
+                    _ => None,
+                },
                 _ => None,
             }
         })
@@ -83,16 +81,14 @@ pub async fn test_is_db_setup(
 
     fn local_fn_get_iter<'a>(
         ddl: &'a [DatabaseItem],
-        check_type: &'a CheckType
+        check_type: &'a CheckType,
     ) -> impl Iterator<Item = &'a str> {
-        ddl.iter().filter_map(move |item| {
-            match (check_type, item) {
-                (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
-                (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
-                    Some(constraint.constraint_name.as_str())
-                }
-                _ => None,
+        ddl.iter().filter_map(move |item| match (check_type, item) {
+            (CheckType::Table, DatabaseItem::Table(table)) => Some(table.table_name.as_str()),
+            (CheckType::Constraint, DatabaseItem::Constraint(constraint)) => {
+                Some(constraint.constraint_name.as_str())
             }
+            _ => None,
         })
     }
 
@@ -117,7 +113,7 @@ pub async fn create_tables(
     db: &Db,
     tables: Vec<MissingDbObjects>,
     check_type: CheckType,
-    ddl_for_validation: &[(&str, &str, &str, &str)]
+    ddl_for_validation: &[(&str, &str, &str, &str)],
 ) -> Result<DatabaseResult<String>, Box<dyn std::error::Error>> {
     let mut return_result: DatabaseResult<String> = DatabaseResult::<String>::default();
     return_result.db_object_name = function_name!().to_string();
@@ -142,16 +138,18 @@ pub async fn create_tables(
         // .join("")
     };
 
-    let result = db.exec_general_query(
-        entire_create_stms
-            .iter()
-            .map(|x| QueryAndParams {
-                query: x.to_string(),
-                params: vec![],
-            })
-            .collect(),
-        false
-    ).await;
+    let result = db
+        .exec_general_query(
+            entire_create_stms
+                .iter()
+                .map(|x| QueryAndParams {
+                    query: x.to_string(),
+                    params: vec![],
+                })
+                .collect(),
+            false,
+        )
+        .await;
 
     // let query_and_params = QueryAndParams {
     //     query: entire_create_stms,
