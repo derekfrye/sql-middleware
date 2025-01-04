@@ -1,5 +1,5 @@
 use sqlx_middleware::convenience_items::{ create_tables, MissingDbObjects };
-use sqlx_middleware::db::{ DatabaseSetupState, DatabaseType, Db, DbConfigAndPool };
+use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
 use chrono::NaiveDateTime;
 use sqlx::{ Connection, Executor };
@@ -139,7 +139,7 @@ fn postgres_cr_and_del_tables() {
         cfg.user = Some(db_user.to_string());
         cfg.password = Some(db_pass.to_string());
 
-        let postgres_dbconfig: DbConfigAndPool = DbConfigAndPool::new(
+        let postgres_dbconfig: ConfigAndPool = ConfigAndPool::new(
             cfg,
             DatabaseType::Postgres
         ).await;
@@ -162,13 +162,13 @@ fn postgres_cr_and_del_tables() {
             TABLE_DDL
         ).await.unwrap();
 
-        if pg_create_result.db_last_exec_state == DatabaseSetupState::QueryError {
+        if pg_create_result.db_last_exec_state == QueryState::QueryError {
             eprintln!("Error: {}", pg_create_result.error_message.unwrap());
         }
 
         assert_eq!(
             pg_create_result.db_last_exec_state,
-            DatabaseSetupState::QueryReturnedSuccessfully
+            QueryState::QueryReturnedSuccessfully
         );
         assert_eq!(pg_create_result.return_result, String::default());
 
@@ -199,7 +199,7 @@ fn postgres_cr_and_del_tables() {
             TABLE_DDL_SYNTAX_ERR
         ).await.unwrap();
 
-        assert_eq!(pg_create_result.db_last_exec_state, DatabaseSetupState::QueryError);
+        assert_eq!(pg_create_result.db_last_exec_state, QueryState::QueryError);
         assert_eq!(pg_create_result.return_result, String::default());
 
         let query = "DELETE FROM test;";
@@ -233,11 +233,11 @@ fn postgres_cr_and_del_tables() {
             ).await
             .unwrap();
 
-        if x.db_last_exec_state == DatabaseSetupState::QueryError {
+        if x.db_last_exec_state == QueryState::QueryError {
             eprintln!("Error: {}", x.error_message.unwrap());
         }
 
-        assert_eq!(x.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(x.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
 
         let query = "SELECT * FROM test";
         let params: Vec<RowValues> = vec![];
@@ -252,7 +252,7 @@ fn postgres_cr_and_del_tables() {
             .unwrap();
 
         let expected_result = DatabaseResult {
-            db_last_exec_state: DatabaseSetupState::QueryReturnedSuccessfully,
+            db_last_exec_state: QueryState::QueryReturnedSuccessfully,
             return_result: vec![CustomDbRow {
                 column_names: vec![
                     "event_id".to_string(),
@@ -312,7 +312,7 @@ fn postgres_cr_and_del_tables() {
             ).await
             .unwrap();
 
-        assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(result.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
 
         let query = "DROP TABLE test_2;";
         let params: Vec<RowValues> = vec![];
@@ -326,7 +326,7 @@ fn postgres_cr_and_del_tables() {
             ).await
             .unwrap();
 
-        assert_eq!(result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(result.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
 
         // stop the container
         let _stop_cmd = Command::new("podman")

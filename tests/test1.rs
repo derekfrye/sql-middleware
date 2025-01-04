@@ -1,5 +1,5 @@
 use sqlx_middleware::convenience_items::{ create_tables, MissingDbObjects };
-use sqlx_middleware::db::{ DatabaseSetupState, DatabaseType, Db, DbConfigAndPool };
+use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 use sqlx_middleware::model::{ CheckType, QueryAndParams, RowValues };
 use chrono::{ NaiveDateTime, Utc };
 use serde_json::json;
@@ -13,7 +13,7 @@ fn sqlite_rusty_golf_test() {
         let mut cfg = deadpool_postgres::Config::new();
         cfg.dbname = Some(":memory:".to_string());
 
-        let sqlite_configandpool = DbConfigAndPool::new(cfg, DatabaseType::Sqlite).await;
+        let sqlite_configandpool = ConfigAndPool::new(cfg, DatabaseType::Sqlite).await;
         let sql_db = Db::new(sqlite_configandpool.clone()).unwrap();
 
         let tables = vec![
@@ -56,10 +56,10 @@ fn sqlite_rusty_golf_test() {
                 .collect::<Vec<_>>()
         ).await.unwrap();
 
-        if create_result.db_last_exec_state == DatabaseSetupState::QueryError {
+        if create_result.db_last_exec_state == QueryState::QueryError {
             eprintln!("Error: {}", create_result.error_message.unwrap());
         }
-        assert_eq!(create_result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(create_result.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
         assert_eq!(create_result.return_result, String::default());
 
         let setup_queries = include_str!("../tests/sqlite/test1_setup.sql");
@@ -69,7 +69,7 @@ fn sqlite_rusty_golf_test() {
         };
         let res = sql_db.exec_general_query(vec![query_and_params], false).await.unwrap();
 
-        assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(res.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
 
         let qry = "SELECT DATE(?)||'asdf' as dt;";
         let param = "now";
@@ -78,7 +78,7 @@ fn sqlite_rusty_golf_test() {
             params: vec![RowValues::Text(param.to_string())],
         };
         let res = sql_db.exec_general_query(vec![query_and_params], true).await.unwrap();
-        assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(res.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
         assert_eq!(res.return_result.len(), 1);
 
         let todays_date_computed = Utc::now().date_naive().format("%Y-%m-%d").to_string();
@@ -106,10 +106,10 @@ fn sqlite_rusty_golf_test() {
             assert!(false);
         } else {
             let res = res1.unwrap();
-            if res.db_last_exec_state != DatabaseSetupState::QueryReturnedSuccessfully {
+            if res.db_last_exec_state != QueryState::QueryReturnedSuccessfully {
                 eprintln!("Error: {}", res.error_message.unwrap());
             }
-            assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+            assert_eq!(res.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
 
             let count = res.return_result[0].results[0].get("cnt").unwrap();
 
@@ -130,7 +130,8 @@ fn sqlite_mutltiple_column_test() {
         let mut cfg = deadpool_postgres::Config::new();
         cfg.dbname = Some(":memory:".to_string());
 
-        let sqlite_configandpool = DbConfigAndPool::new(cfg, DatabaseType::Sqlite).await;
+        let sqlite_configandpool = ConfigAndPool::new(cfg, DatabaseType::Sqlite).await;
+        assert_eq!(sqlite_configandpool.db_type, DatabaseType::Sqlite);
         let sql_db = Db::new(sqlite_configandpool.clone()).unwrap();
 
         let tables = vec!["test"];
@@ -172,10 +173,10 @@ fn sqlite_mutltiple_column_test() {
         ).await.unwrap();
 
         // fixme, should just come back with an error rather than requiring caller to check results of last_exec_state
-        if create_result.db_last_exec_state == DatabaseSetupState::QueryError {
+        if create_result.db_last_exec_state == QueryState::QueryError {
             eprintln!("Error: {}", create_result.error_message.unwrap());
         }
-        assert_eq!(create_result.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(create_result.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
         assert_eq!(create_result.return_result, String::default());
 
         let setup_queries = include_str!("../tests/sqlite/test2_setup.sql");
@@ -185,7 +186,7 @@ fn sqlite_mutltiple_column_test() {
         };
         let res = sql_db.exec_general_query(vec![query_and_params], false).await.unwrap();
 
-        assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(res.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
 
         let qry = "SELECT * from test where recid in (?,?, ?);";
         // let param = [RowValues::Int(1), RowValues::Int(2), RowValues::Int(3)];
@@ -195,7 +196,7 @@ fn sqlite_mutltiple_column_test() {
             params: param.to_vec(),
         };
         let res = sql_db.exec_general_query(vec![query_and_params], true).await.unwrap();
-        assert_eq!(res.db_last_exec_state, DatabaseSetupState::QueryReturnedSuccessfully);
+        assert_eq!(res.db_last_exec_state, QueryState::QueryReturnedSuccessfully);
         // we expect 1 result set
         assert_eq!(res.return_result.len(), 1);
         // we expect 1 row

@@ -1,5 +1,5 @@
-use crate::db::{DatabaseSetupState, Db};
-use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
+use crate::db::{ QueryState, Db };
+use crate::model::{ CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues };
 use function_name::named;
 use serde::Deserialize;
 // use sqlx::query;
@@ -39,7 +39,7 @@ pub async fn test_is_db_setup(
 
     let missing_tables = match result {
         Ok(r) => {
-            if r.db_last_exec_state == DatabaseSetupState::QueryReturnedSuccessfully {
+            if r.db_last_exec_state == QueryState::QueryReturnedSuccessfully {
                 r.return_result[0].results.clone()
             } else {
                 let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
@@ -97,9 +97,9 @@ pub async fn test_is_db_setup(
         dbresult.db_object_name = table.to_string();
 
         if zz.iter().any(|x| x == table) {
-            dbresult.db_last_exec_state = DatabaseSetupState::QueryReturnedSuccessfully;
+            dbresult.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
         } else {
-            dbresult.db_last_exec_state = DatabaseSetupState::MissingRelations;
+            dbresult.db_last_exec_state = QueryState::MissingRelations;
         }
 
         dbresults.push(dbresult);

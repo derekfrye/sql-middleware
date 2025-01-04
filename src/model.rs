@@ -1,4 +1,4 @@
-use crate::db::DatabaseSetupState;
+use crate::db::QueryState;
 use chrono::NaiveDateTime;
 use serde_json::Value;
 
@@ -33,7 +33,7 @@ pub struct QueryAndParams {
 
 #[derive(Debug, Clone)]
 pub struct DatabaseResult<T: Default> {
-    pub db_last_exec_state: DatabaseSetupState,
+    pub db_last_exec_state: QueryState,
     pub return_result: T,
     pub error_message: Option<String>,
     pub db_object_name: String,
@@ -116,7 +116,7 @@ impl CustomDbRow {
 impl<T: Default> DatabaseResult<T> {
     pub fn default() -> DatabaseResult<T> {
         DatabaseResult {
-            db_last_exec_state: DatabaseSetupState::NoConnection,
+            db_last_exec_state: QueryState::NoConnection,
             return_result: Default::default(),
             error_message: None,
             db_object_name: "".to_string(),

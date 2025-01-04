@@ -3,10 +3,19 @@ use deadpool_postgres::Config;
 use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef};
 // use ::function_name::named;
 
-use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
+use crate::model::{ CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues };
+
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QueryState {
+    NoConnection,
+    MissingRelations,
+    QueryReturnedSuccessfully,
+    QueryError,
+}
 
 #[derive(Debug, Clone)]
-pub enum DbPool {
+pub enum MiddlewarePool {
     Postgres(Pool<sqlx::Postgres>),
     Sqlite(Pool<sqlx::Sqlite>),
 }
@@ -18,26 +27,18 @@ pub enum DatabaseType {
 }
 
 #[derive(Clone, Debug)]
-pub struct DbConfigAndPool {
-    pool: DbPool,
-    // db_type: DatabaseType,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DatabaseSetupState {
-    NoConnection,
-    MissingRelations,
-    QueryReturnedSuccessfully,
-    QueryError,
+pub struct ConfigAndPool {
+    pub pool: MiddlewarePool,
+    pub db_type: DatabaseType,
 }
 
 #[derive(Clone, Debug)]
 pub struct Db {
     // pub config_and_pool: DbConfigAndPool,
-    pub pool: DbPool,
+    pub config_and_pool: ConfigAndPool,
 }
 
-impl DbConfigAndPool {
+impl ConfigAndPool {
     pub async fn new(config: Config, db_type: DatabaseType) -> Self {
         if config.dbname.is_none() {
             panic!("dbname is required");
@@ -84,10 +85,11 @@ impl DbConfigAndPool {
                     .connect(&connection_string)
                     .await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Postgres(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        ConfigAndPool {
+                            pool: MiddlewarePool::Postgres(pool),
+                            db_type: db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create Postgres pool: {}", e);
                     }
@@ -115,10 +117,11 @@ impl DbConfigAndPool {
                     .connect(&connection_string)
                     .await;
                 match pool_result {
-                    Ok(pool) => DbConfigAndPool {
-                        pool: DbPool::Sqlite(pool),
-                        // db_type,
-                    },
+                    Ok(pool) =>
+                        ConfigAndPool {
+                            pool: MiddlewarePool::Sqlite(pool),
+                            db_type: db_type,
+                        },
                     Err(e) => {
                         panic!("Failed to create SQLite pool: {}", e);
                     }
@@ -129,11 +132,11 @@ impl DbConfigAndPool {
 }
 
 impl Db {
-    pub fn new(cnf: DbConfigAndPool) -> Result<Self, String> {
+    pub fn new(cnf: ConfigAndPool) -> Result<Self, String> {
         // let cnf_clone = cnf.clone();
         Ok(Self {
             // config_and_pool: cnf,
-            pool: cnf.pool,
+            config_and_pool: cnf,
         })
     }
 
@@ -156,12 +159,12 @@ impl Db {
         }
 
         if expect_rows {
-            match &self.pool {
-                DbPool::Postgres(pool) => {
+            match &self.config_and_pool.pool {
+                MiddlewarePool::Postgres(pool) => {
                     let mut transaction = match pool.begin().await {
                         Ok(tx) => tx,
                         Err(e) => {
-                            final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                            final_result.db_last_exec_state = QueryState::QueryError;
                             final_result.error_message = Some(e.to_string());
                             return Ok(final_result);
                         }
@@ -237,20 +240,20 @@ impl Db {
                             }
                             Err(e) => {
                                 let _ = transaction.rollback().await;
-                                final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                                final_result.db_last_exec_state = QueryState::QueryError;
                                 final_result.error_message = Some(e.to_string());
                                 return Ok(final_result);
                             }
                         }
                     }
                     let _ = transaction.commit().await;
-                    final_result.db_last_exec_state = DatabaseSetupState::QueryReturnedSuccessfully;
+                    final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
                 }
-                DbPool::Sqlite(pool) => {
+                MiddlewarePool::Sqlite(pool) => {
                     let mut transaction = match pool.begin().await {
                         Ok(tx) => tx,
                         Err(e) => {
-                            final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                            final_result.db_last_exec_state = QueryState::QueryError;
                             final_result.error_message = Some(e.to_string());
                             return Ok(final_result);
                         }
@@ -475,24 +478,24 @@ impl Db {
                             }
                             Err(e) => {
                                 let _ = transaction.rollback().await;
-                                final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                                final_result.db_last_exec_state = QueryState::QueryError;
                                 final_result.error_message = Some(e.to_string());
                                 return Ok(final_result);
                             }
                         }
                     }
                     let _ = transaction.commit().await;
-                    final_result.db_last_exec_state = DatabaseSetupState::QueryReturnedSuccessfully;
+                    final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
                 }
             }
         } else {
             // expect_rows = false
-            match &self.pool {
-                DbPool::Postgres(pool) => {
+            match &self.config_and_pool.pool {
+                MiddlewarePool::Postgres(pool) => {
                     let mut transaction = match pool.begin().await {
                         Ok(tx) => tx,
                         Err(e) => {
-                            final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                            final_result.db_last_exec_state = QueryState::QueryError;
                             final_result.error_message = Some(e.to_string());
                             return Ok(final_result);
                         }
@@ -524,20 +527,20 @@ impl Db {
                             }
                             Err(e) => {
                                 let _ = transaction.rollback().await;
-                                final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                                final_result.db_last_exec_state = QueryState::QueryError;
                                 final_result.error_message = Some(e.to_string());
                                 return Ok(final_result);
                             }
                         }
                     }
                     let _ = transaction.commit().await;
-                    final_result.db_last_exec_state = DatabaseSetupState::QueryReturnedSuccessfully;
+                    final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
                 }
-                DbPool::Sqlite(pool) => {
+                MiddlewarePool::Sqlite(pool) => {
                     let mut transaction = match pool.begin().await {
                         Ok(tx) => tx,
                         Err(e) => {
-                            final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                            final_result.db_last_exec_state = QueryState::QueryError;
                             final_result.error_message = Some(e.to_string());
                             return Ok(final_result);
                         }
@@ -570,14 +573,14 @@ impl Db {
                             Err(e) => {
                                 eprintln!("sqlx-middleware error: {}", e);
                                 let _ = transaction.rollback().await;
-                                final_result.db_last_exec_state = DatabaseSetupState::QueryError;
+                                final_result.db_last_exec_state = QueryState::QueryError;
                                 final_result.error_message = Some(e.to_string());
                                 return Ok(final_result);
                             }
                         }
                     }
                     let _ = transaction.commit().await;
-                    final_result.db_last_exec_state = DatabaseSetupState::QueryReturnedSuccessfully;
+                    final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
                 }
             }
         }
