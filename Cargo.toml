@@ -13,15 +13,17 @@ serde_json = "1.0"
 #axum = "0.7"
 #dotenv = "0.15"
 #reqwest = { version = "0.12", features = ["json"] }
-#tokio-postgres = "0.7"
-chrono = "0.4"
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1"] }
+chrono = {version = "0.4", features = ["serde"] }
 function_name = "0.3"
 deadpool-postgres = "0.14"
 sqlx = { version = "0.8", features = ["runtime-tokio", "macros", "postgres", "sqlite", "chrono"] }
 regex = "1"
 clap = { version = "4", features = ["derive"] }
 #tokio-rusqlite = "0.6.0"
-rusqlite = "0.32"
+rusqlite = "0.32.1"
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
 
 
 [dependencies.tokio-util]
