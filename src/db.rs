@@ -1,3 +1,4 @@
+use clap:: ValueEnum;
 use deadpool_postgres::Config;
 // use serde_json::Value;
 use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef};
@@ -20,7 +21,7 @@ pub enum MiddlewarePool {
     Sqlite(Pool<sqlx::Sqlite>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
 pub enum DatabaseType {
     Postgres,
     Sqlite,

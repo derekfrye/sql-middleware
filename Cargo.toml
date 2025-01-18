@@ -19,6 +19,7 @@ function_name = "0.3"
 deadpool-postgres = "0.14"
 sqlx = { version = "0.8", features = ["runtime-tokio", "macros", "postgres", "sqlite", "chrono"] }
 regex = "1"
+clap = { version = "4", features = ["derive"] }
 
 
 [dependencies.tokio-util]
