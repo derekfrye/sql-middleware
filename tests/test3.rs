@@ -16,6 +16,7 @@ fn sqlite_mutltiple_column_test_db2() {
     rt.block_on(async {
         let mut cfg = deadpool_postgres::Config::new();
         cfg.dbname = Some("file::memory:?cache=shared".to_string());
+        // cfg.dbname = Some("xxx".to_string());
         let sqlite_configandpool = ConfigAndPool2::new(&cfg, DatabaseType2::Sqlite).await;
         let sql_db = Db2::new(sqlite_configandpool).unwrap();
 
@@ -88,9 +89,9 @@ fn sqlite_mutltiple_column_test_db2() {
             QueryState2::QueryReturnedSuccessfully
         );
 
-        let qry = "SELECT * from test where recid = ?1;";
-        // let param = [RowValues2::Int(1), RowValues2::Int(2), RowValues2::Int(3)];
-        let param = [RowValues2::Int(1)];
+        let qry = "SELECT * from test where recid in ( ?1, ?2, ?3);";
+        let param = [RowValues2::Int(1), RowValues2::Int(2), RowValues2::Int(3)];
+        // let param = [RowValues2::Int(1)];
         // let param = vec![RowValues::Int(1)];
         let query_and_params = QueryAndParams2 {
             query: qry.to_string(),

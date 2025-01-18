@@ -5,7 +5,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{types::ToSqlOutput, ToSql};
 use serde_json::Value as JsonValue;
 use std::error::Error;
-use std::thread::{self, sleep};
+use std::thread::{self};
 use std::{
     fmt,
     sync::{
@@ -415,16 +415,27 @@ impl ConfigAndPool {
                 }
             }
             DatabaseType::Sqlite => {
-                // Initialize the read-only worker
-                let read_only_worker = ReadOnlyWorker::new(connection_string.clone());
-
                 // Setup the write connection pool using r2d2
                 let manager = SqliteConnectionManager::file(&connection_string).with_flags(
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-                        | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
+                        | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+                        | rusqlite::OpenFlags::SQLITE_OPEN_URI,
                 );
                 // Build r2d2 pool
                 let write_pool = r2d2::Pool::builder().max_size(10).build(manager).unwrap();
+
+                {
+                    let conn = write_pool
+                        .get()
+                        .expect("Failed to get initial write connection");
+                    // Run any trivial query to initialize the DB in read‐write mode
+                    conn.execute("SELECT 1;", []).ok();
+                    // Or possibly run a PRAGMA / or even create some DDL. Just enough to ensure
+                    // the underlying DB handle is opened in R/W mode first.
+                }
+
+                // Initialize the read-only worker
+                let read_only_worker = ReadOnlyWorker::new(connection_string.clone());
 
                 ConfigAndPool {
                     pool: MiddlewarePool::Sqlite {
@@ -620,6 +631,8 @@ impl Db {
             Err(e) => return Err(e),
         };
 
+        // let x = query;
+        // dbg!(x);
         let mut stmt = match conn.prepare(query) {
             Ok(s) => s,
             Err(e) => return Err(DbError::SqliteError(e)),
