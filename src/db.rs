@@ -97,10 +97,10 @@ impl ConfigAndPool {
                 }
             }
             DatabaseType::Sqlite => {
-                #[cfg(debug_assertions)]
-                {
-                    dbg!(&connection_string);
-                }
+                // #[cfg(debug_assertions)]
+                // {
+                //     dbg!(&connection_string);
+                // }
                 let connect = SqliteConnectOptions::new()
                     .filename(&config_db_name)
                     .create_if_missing(true)
