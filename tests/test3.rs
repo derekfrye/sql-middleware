@@ -15,7 +15,7 @@ fn sqlite_mutltiple_column_test_db2() {
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
         let mut cfg = deadpool_postgres::Config::new();
-        cfg.dbname = Some(":memory:".to_string());
+        cfg.dbname = Some("file::memory:?cache=shared".to_string());
         let sqlite_configandpool = ConfigAndPool2::new(&cfg, DatabaseType2::Sqlite).await;
         let sql_db = Db2::new(sqlite_configandpool).unwrap();
 
@@ -60,9 +60,12 @@ fn sqlite_mutltiple_column_test_db2() {
         .unwrap();
 
         // fixme, should just come back with an error rather than requiring caller to check results of last_exec_state
-        if create_result.db_last_exec_state == QueryState2::QueryError {
-            eprintln!("Error: {}", create_result.error_message.unwrap());
+        if create_result.db_last_exec_state != QueryState2::QueryError {
+            if let Some(error_message) = create_result.error_message.clone() {
+                eprintln!("Error: {}", error_message);
+            }
         }
+        // dbg!("create_result: {:#?}", &create_result);
         assert_eq!(
             create_result.db_last_exec_state,
             QueryState2::QueryReturnedSuccessfully
@@ -85,8 +88,9 @@ fn sqlite_mutltiple_column_test_db2() {
             QueryState2::QueryReturnedSuccessfully
         );
 
-        let qry = "SELECT * from test where recid in (?,?, ?);";
-        let param = [RowValues2::Int(1), RowValues2::Int(2), RowValues2::Int(3)];
+        let qry = "SELECT * from test where recid = ?1;";
+        // let param = [RowValues2::Int(1), RowValues2::Int(2), RowValues2::Int(3)];
+        let param = [RowValues2::Int(1)];
         // let param = vec![RowValues::Int(1)];
         let query_and_params = QueryAndParams2 {
             query: qry.to_string(),

@@ -5,7 +5,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{types::ToSqlOutput, ToSql};
 use serde_json::Value as JsonValue;
 use std::error::Error;
-use std::thread;
+use std::thread::{self, sleep};
 use std::{
     fmt,
     sync::{
@@ -562,6 +562,17 @@ impl Db {
                                     Ok(c) => c,
                                     Err(e) => return Err(DbError::Other(e.to_string())),
                                 };
+                                // let x = match conn.is_readonly(rusqlite::DatabaseName::Main) {
+                                //     Ok(true) => {
+                                //         return Err(DbError::Other(
+                                //             "Connection is read-only".to_string(),
+                                //         ))
+                                //     }
+                                //     Ok(false) => {}
+                                //     Err(e) => return Err(DbError::SqliteError(e)),
+                                // };
+                                // dbg!(&x);
+                                // sleep(std::time::Duration::from_secs(1));
                                 let e = Self::exec_write_query_sync(&conn, &query, &params);
                                 match e {
                                     Ok(x) => Ok(ResultSet {
