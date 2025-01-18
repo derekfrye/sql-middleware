@@ -4,11 +4,15 @@ use r2d2::Pool as R2D2Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{types::ToSqlOutput, ToSql};
 use serde_json::Value as JsonValue;
-use std::sync::{
-    mpsc::{self, Receiver, Sender},
-    Arc,
-};
+use std::error::Error;
 use std::thread;
+use std::{
+    fmt,
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc,
+    },
+};
 use tokio::sync::oneshot;
 use tokio_postgres::NoTls;
 
@@ -86,6 +90,18 @@ impl From<r2d2::Error> for DbError {
     }
 }
 
+impl fmt::Display for DbError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
+            DbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
+            DbError::Other(msg) => write!(f, "Other: {}", msg),
+        }
+    }
+}
+
+impl Error for DbError {}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum QueryState {
     #[default]
@@ -104,6 +120,7 @@ pub struct CustomDbRow {
 #[derive(Debug, Clone, Default)]
 pub struct ResultSet {
     pub results: Vec<CustomDbRow>,
+    pub rows_affected: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -132,7 +149,10 @@ impl CustomDbRow {
     }
 
     pub fn get(&self, column_name: &str) -> Option<&RowValues> {
-        let index = self.get_column_index(column_name)?;
+        let index = match self.get_column_index(column_name) {
+            Some(idx) => idx,
+            None => return None,
+        };
         self.rows.get(index)
     }
 }
@@ -241,9 +261,15 @@ impl ReadOnlyWorker {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, DbError> {
-        let bound_params = Self::convert_params(params)?;
+        let bound_params = match Self::convert_params(params) {
+            Ok(bp) => bp,
+            Err(e) => return Err(e),
+        };
 
-        let mut stmt = conn.prepare(query)?;
+        let mut stmt = match conn.prepare(query) {
+            Ok(s) => s,
+            Err(e) => return Err(DbError::SqliteError(e)),
+        };
 
         // Get column names outside of the closure
         let column_names = stmt
@@ -252,12 +278,24 @@ impl ReadOnlyWorker {
             .map(|&c| c.to_string())
             .collect::<Vec<_>>();
 
-        let mut result_set = ResultSet { results: vec![] };
+        let mut result_set = ResultSet {
+            results: vec![],
+            rows_affected: 0,
+        };
 
-        let rows = stmt.query_map(rusqlite::params_from_iter(bound_params), |row| {
+        let rows = match stmt.query_map(rusqlite::params_from_iter(bound_params), |row| {
             let mut row_values = Vec::new();
             for (i, _col_name) in column_names.iter().enumerate() {
-                let rv = Self::sqlite_extract_value_sync(row, i).unwrap();
+                // Previously: let rv = Self::sqlite_extract_value_sync(row, i).unwrap();
+                // We'll do error handling here explicitly:
+                let rv = match Self::sqlite_extract_value_sync(row, i) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        // If an error occurs extracting a single row/column, we return early
+                        // from the closure. The query_map will then yield an error.
+                        return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(e)));
+                    }
+                };
                 row_values.push(rv);
             }
 
@@ -265,12 +303,19 @@ impl ReadOnlyWorker {
                 column_names: column_names.clone(),
                 rows: row_values,
             })
-        })?;
+        }) {
+            Ok(r) => r,
+            Err(e) => return Err(DbError::SqliteError(e)),
+        };
 
         for row_result in rows {
-            let custom_row = row_result.map_err(DbError::SqliteError)?;
+            let custom_row = match row_result {
+                Ok(r) => r,
+                Err(e) => return Err(DbError::SqliteError(e)),
+            };
             result_set.results.push(custom_row);
         }
+        result_set.rows_affected = result_set.results.len();
 
         Ok(result_set)
     }
@@ -287,7 +332,7 @@ impl ReadOnlyWorker {
                     Ok(ToSqlOutput::Owned(v)) => v,
                     Ok(ToSqlOutput::Borrowed(v)) => v.into(),
                     Err(e) => return Err(DbError::SqliteError(e)),
-                    _ => return Err(DbError::Other("Unexpected ToSqlOutput".to_string())),
+                    _ => return Err(DbError::Other("Unexpected ToSqlOutput variant".to_string())),
                 },
                 RowValues::Null => rusqlite::types::Value::Null,
                 RowValues::JSON(jsval) => {
@@ -351,7 +396,8 @@ impl ConfigAndPool {
                 )
             }
             DatabaseType::Sqlite => {
-                config.dbname.as_ref().unwrap().clone() // SQLite uses the file path directly
+                // SQLite uses the file path directly
+                config.dbname.as_ref().unwrap().clone()
             }
         };
 
@@ -377,11 +423,8 @@ impl ConfigAndPool {
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
                         | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
                 );
-                // let config = r2d2::Config::default();
+                // Build r2d2 pool
                 let write_pool = r2d2::Pool::builder().max_size(10).build(manager).unwrap();
-                // .expect("Failed to create r2d2 Sqlite write pool");
-                // R2D2Pool::new(config, manager)
-                //    .expect("Failed to create r2d2 Sqlite write pool");
 
                 ConfigAndPool {
                     pool: MiddlewarePool::Sqlite {
@@ -409,16 +452,10 @@ impl Db {
     ) -> Result<DatabaseResult<Vec<ResultSet>>, DbError> {
         let mut final_result = DatabaseResult::<Vec<ResultSet>>::default();
 
-        // Debug block remains unchanged
+        // Debug block remains unchanged (or commented out)
         #[cfg(debug_assertions)]
         {
-            // if !queries.is_empty()
-            //     && !queries[0].params.is_empty()
-            //     && queries[0].params[0].as_text().is_some()
-            //     && queries[0].params[0].as_text().unwrap().contains("Player1")
-            // {
-            //     eprintln!("query about to run: {}", queries[0].query);
-            // }
+            // ...
         }
 
         for q in queries {
@@ -427,11 +464,23 @@ impl Db {
                 match &self.config_and_pool.pool {
                     MiddlewarePool::Postgres(pg_pool) => {
                         if expect_rows {
-                            self.exec_pg_returning(pg_pool, &[q], &mut final_result)
-                                .await?;
+                            // was: self.exec_pg_returning(pg_pool, &[q], &mut final_result).await?;
+                            match self
+                                .exec_pg_returning(pg_pool, &[q], &mut final_result)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => return Err(e),
+                            }
                         } else {
-                            self.exec_pg_nonreturning(pg_pool, &[q], &mut final_result)
-                                .await?;
+                            // was: self.exec_pg_nonreturning(pg_pool, &[q], &mut final_result).await?;
+                            match self
+                                .exec_pg_nonreturning(pg_pool, &[q], &mut final_result)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => return Err(e),
+                            }
                         }
                     }
                     MiddlewarePool::Sqlite {
@@ -455,21 +504,23 @@ impl Db {
                             )));
                         }
 
-                        // Await the response
-                        match rx.await {
-                            Ok(result) => match result {
-                                Ok(result_set) => {
-                                    final_result.return_result.push(result_set);
-                                }
-                                Err(e) => {
-                                    return Err(e);
-                                }
-                            },
+                        // Await the response (was: let res = rx.await?;)
+                        let res = match rx.await {
+                            Ok(r) => r,
                             Err(e) => {
                                 return Err(DbError::Other(format!(
                                     "Read-only query receiver error: {}",
                                     e
-                                )));
+                                )))
+                            }
+                        };
+
+                        match res {
+                            Ok(result_set) => {
+                                final_result.return_result.push(result_set);
+                            }
+                            Err(e) => {
+                                return Err(e);
                             }
                         }
                     }
@@ -479,11 +530,21 @@ impl Db {
                 match &self.config_and_pool.pool {
                     MiddlewarePool::Postgres(pg_pool) => {
                         if expect_rows {
-                            self.exec_pg_returning(pg_pool, &[q], &mut final_result)
-                                .await?;
+                            match self
+                                .exec_pg_returning(pg_pool, &[q], &mut final_result)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => return Err(e),
+                            }
                         } else {
-                            self.exec_pg_nonreturning(pg_pool, &[q], &mut final_result)
-                                .await?;
+                            match self
+                                .exec_pg_nonreturning(pg_pool, &[q], &mut final_result)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => return Err(e),
+                            }
                         }
                     }
                     MiddlewarePool::Sqlite { write_pool, .. } => {
@@ -494,17 +555,38 @@ impl Db {
                         let write_pool = Arc::clone(write_pool);
 
                         // Spawn a blocking task to handle the write query
-                        let write_result =
-                            tokio::task::spawn_blocking(move || -> Result<ResultSet, DbError> {
-                                let conn = write_pool.get()?;
-                                Self::exec_write_query_sync(&conn, &query, &params)?;
+                        // was: .await??;
+                        let write_result = match tokio::task::spawn_blocking(
+                            move || -> Result<ResultSet, DbError> {
+                                let conn = match write_pool.get() {
+                                    Ok(c) => c,
+                                    Err(e) => return Err(DbError::Other(e.to_string())),
+                                };
+                                let e = Self::exec_write_query_sync(&conn, &query, &params);
+                                match e {
+                                    Ok(x) => Ok(ResultSet {
+                                        rows_affected: x,
+                                        results: vec![],
+                                    }),
+                                    Err(e) => {
+                                        Err(DbError::Other(format!("Spawn blocking error: {}", e)))
+                                    }
+                                }
+
                                 // For write queries, we assume no rows are returned
-                                Ok(ResultSet { results: vec![] })
-                            })
-                            .await
-                            .map_err(|e| {
-                                DbError::Other(format!("Spawn blocking error: {}", e))
-                            })??;
+                                // Ok(ResultSet { results: vec![] })
+                            },
+                        )
+                        .await
+                        {
+                            Ok(inner) => match inner {
+                                Ok(res) => res,
+                                Err(e) => return Err(e),
+                            },
+                            Err(e) => {
+                                return Err(DbError::Other(format!("Spawn blocking error: {}", e)))
+                            }
+                        };
 
                         final_result.return_result.push(write_result);
                     }
@@ -521,13 +603,24 @@ impl Db {
         conn: &rusqlite::Connection,
         query: &str,
         params: &[RowValues],
-    ) -> Result<(), DbError> {
-        let bound_params = Self::convert_params(params)?;
+    ) -> Result<usize, DbError> {
+        let bound_params = match Self::convert_params(params) {
+            Ok(bp) => bp,
+            Err(e) => return Err(e),
+        };
 
-        let mut stmt = conn.prepare(query)?;
-        stmt.execute(rusqlite::params_from_iter(bound_params))?;
+        let mut stmt = match conn.prepare(query) {
+            Ok(s) => s,
+            Err(e) => return Err(DbError::SqliteError(e)),
+        };
 
-        Ok(())
+        match stmt.execute(rusqlite::params_from_iter(bound_params)) {
+            Ok(x) => {
+                // Return the number of affected rows
+                Ok(x)
+            }
+            Err(e) => Err(DbError::SqliteError(e)),
+        }
     }
 
     /// Convert `RowValues` to a `Vec<rusqlite::types::Value>` for binding.
@@ -564,15 +657,15 @@ impl Db {
         final_result: &mut DatabaseResult<Vec<ResultSet>>,
     ) -> Result<(), DbError> {
         for q in queries {
-            let client = pg_pool
-                .get()
-                .await
-                .map_err(|e| DbError::Other(e.to_string()))?;
+            let client = match pg_pool.get().await {
+                Ok(c) => c,
+                Err(e) => return Err(DbError::Other(e.to_string())),
+            };
 
-            let stmt = client
-                .prepare(&q.query)
-                .await
-                .map_err(DbError::PostgresError)?;
+            let stmt = match client.prepare(&q.query).await {
+                Ok(s) => s,
+                Err(e) => return Err(DbError::PostgresError(e)),
+            };
 
             let bound_params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = q
                 .params
@@ -591,12 +684,15 @@ impl Db {
                 })
                 .collect();
 
-            let rows = client
-                .query(&stmt, &bound_params)
-                .await
-                .map_err(DbError::PostgresError)?;
+            let rows = match client.query(&stmt, &bound_params).await {
+                Ok(r) => r,
+                Err(e) => return Err(DbError::PostgresError(e)),
+            };
 
-            let mut result_set = ResultSet { results: vec![] };
+            let mut result_set = ResultSet {
+                results: vec![],
+                rows_affected: 0,
+            };
 
             for row in rows {
                 let column_names = row
@@ -639,6 +735,8 @@ impl Db {
                 });
             }
 
+            result_set.rows_affected = result_set.results.len();
+
             final_result.return_result.push(result_set);
         }
 
@@ -652,15 +750,15 @@ impl Db {
         final_result: &mut DatabaseResult<Vec<ResultSet>>,
     ) -> Result<(), DbError> {
         for q in queries {
-            let client = pg_pool
-                .get()
-                .await
-                .map_err(|e| DbError::Other(e.to_string()))?;
+            let client = match pg_pool.get().await {
+                Ok(c) => c,
+                Err(e) => return Err(DbError::Other(e.to_string())),
+            };
 
-            let stmt = client
-                .prepare(&q.query)
-                .await
-                .map_err(DbError::PostgresError)?;
+            let stmt = match client.prepare(&q.query).await {
+                Ok(s) => s,
+                Err(e) => return Err(DbError::PostgresError(e)),
+            };
 
             let bound_params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = q
                 .params
@@ -679,15 +777,16 @@ impl Db {
                 })
                 .collect();
 
-            client
-                .execute(&stmt, &bound_params)
-                .await
-                .map_err(DbError::PostgresError)?;
+            let rows_affected = match client.execute(&stmt, &bound_params).await {
+                Ok(x) => x,
+                Err(e) => return Err(DbError::PostgresError(e)),
+            };
 
             // Push an empty result set as the query does not return rows
-            final_result
-                .return_result
-                .push(ResultSet { results: vec![] });
+            final_result.return_result.push(ResultSet {
+                results: vec![],
+                rows_affected: rows_affected.try_into().unwrap(),
+            });
         }
 
         Ok(())

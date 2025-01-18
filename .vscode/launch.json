@@ -14,7 +14,6 @@
                     "--no-run",
                     "--lib",
                     "--package=sqlx-middleware",
-                    "a_sqlite"
                 ],
                 "filter": {
                     "name": "sqlx_middleware",
