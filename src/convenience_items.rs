@@ -1,5 +1,5 @@
-use crate::db::{ QueryState, Db };
-use crate::model::{ CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues };
+use crate::db::{Db, QueryState};
+use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
 use serde::Deserialize;
 // use sqlx::query;
@@ -49,7 +49,7 @@ pub async fn test_is_db_setup(
             }
         }
         Err(e) => {
-            let emessage = format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
+            let emessage = format!("Failed in {}, {}: {:?}", std::file!(), std::line!(), e);
             let mut dbresult: DatabaseResult<String> = DatabaseResult::<String>::default();
             dbresult.error_message = Some(emessage);
             dbresults.push(dbresult);
@@ -166,7 +166,7 @@ pub async fn create_tables(
             // r.return_result
         }
         Err(e) => {
-            let emessage = format!("Failed in {}, {}: {}", std::file!(), std::line!(), e);
+            let emessage = format!("Failed in {}, {}: {:?}", std::file!(), std::line!(), e);
             dbresult.error_message = Some(emessage);
         }
     }

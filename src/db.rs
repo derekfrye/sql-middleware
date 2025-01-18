@@ -1,11 +1,10 @@
-use clap:: ValueEnum;
+use clap::ValueEnum;
 use deadpool_postgres::Config;
 // use serde_json::Value;
 use sqlx::{self, sqlite::SqliteConnectOptions, Column, ConnectOptions, Pool, Row, ValueRef};
 // use ::function_name::named;
 
-use crate::model::{ CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues };
-
+use crate::model::{CustomDbRow, DatabaseResult, QueryAndParams, ResultSet, RowValues};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum QueryState {
@@ -86,11 +85,10 @@ impl ConfigAndPool {
                     .connect(&connection_string)
                     .await;
                 match pool_result {
-                    Ok(pool) =>
-                        ConfigAndPool {
-                            pool: MiddlewarePool::Postgres(pool),
-                            db_type: db_type,
-                        },
+                    Ok(pool) => ConfigAndPool {
+                        pool: MiddlewarePool::Postgres(pool),
+                        db_type: db_type,
+                    },
                     Err(e) => {
                         panic!("Failed to create Postgres pool: {}", e);
                     }
@@ -118,11 +116,10 @@ impl ConfigAndPool {
                     .connect(&connection_string)
                     .await;
                 match pool_result {
-                    Ok(pool) =>
-                        ConfigAndPool {
-                            pool: MiddlewarePool::Sqlite(pool),
-                            db_type: db_type,
-                        },
+                    Ok(pool) => ConfigAndPool {
+                        pool: MiddlewarePool::Sqlite(pool),
+                        db_type: db_type,
+                    },
                     Err(e) => {
                         panic!("Failed to create SQLite pool: {}", e);
                     }

@@ -26,6 +26,7 @@ pub struct ResultSet {
     pub results: Vec<CustomDbRow>,
 }
 
+#[derive(Debug, Clone)]
 pub struct QueryAndParams {
     pub query: String,
     pub params: Vec<RowValues>,
