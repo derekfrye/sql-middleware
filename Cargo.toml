@@ -21,7 +21,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "macros", "postgres", "sq
 regex = "1"
 clap = { version = "4", features = ["derive"] }
 #tokio-rusqlite = "0.6.0"
-rusqlite = "0.32.1"
+rusqlite = {version = "0.32.1", features = ["chrono"]}
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
 
