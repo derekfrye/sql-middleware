@@ -1,5 +1,5 @@
 use crate::db::{Db, QueryState};
-use crate::db2::{Db as Db2, QueryState as QueryState2, DatabaseResult as DatabaseResult2, QueryAndParams as QueryAndParams2};
+use crate::db2::{Db as Db2, DatabaseResult as DatabaseResult2, QueryAndParams as QueryAndParams2};
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
 use serde::Deserialize;
