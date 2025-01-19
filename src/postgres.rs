@@ -1,12 +1,11 @@
 // postgres.rs
 
-use tokio_postgres::types::ToSql as PgToSql;
 use tokio_postgres::NoTls;
-use deadpool_postgres::{Config as PgConfig, Runtime, Pool};
+use deadpool_postgres::{Config as PgConfig, Runtime};
 
 
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues
+    ConfigAndPool, DatabaseType, DbError, MiddlewarePool, RowValues
 };
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,

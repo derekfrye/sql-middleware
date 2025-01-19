@@ -2,8 +2,8 @@
 
 use chrono::NaiveDateTime;
 use serde_json::Value as JsonValue;
-use std::{sync::Arc, error::Error};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
+use std::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use deadpool_postgres::Pool as DeadpoolPostgresPool;
 use r2d2_sqlite::SqliteConnectionManager;

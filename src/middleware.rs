@@ -4,16 +4,15 @@ use std::fmt;
 use std::error::Error;
 use tokio::task::spawn_blocking;
 
-use deadpool_postgres::{Config as PgConfig, Runtime};
+use deadpool_postgres::Config as PgConfig;
 
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db, DbError::{self, *}, MiddlewarePool, QueryAndParams, QueryState, ReadOnlyWorker, ResultSet, RowValues
+    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db, DbError::{self}, MiddlewarePool, QueryAndParams, QueryState, ResultSet, RowValues
 };
 
 use crate::postgres::extract_pg_value;
 use crate::sqlite::exec_write_query_sync;
 
-use rusqlite::Connection;
 
 // ----------------------------------------
 // Common impl blocks for DbError

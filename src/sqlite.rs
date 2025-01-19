@@ -3,14 +3,12 @@
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::Arc;
 use std::thread;
-use tokio::sync::oneshot;
 use rusqlite::{Connection, types::ToSqlOutput,ToSql};
-use r2d2::PooledConnection;
 use rusqlite::OpenFlags;
 use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ReadOnlyQuery, ReadOnlyWorker, ResultSet, RowValues, SqliteWritePool
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ReadOnlyQuery, ReadOnlyWorker, ResultSet, RowValues
 };
 
 impl TryFrom<String> for ConfigAndPool {
