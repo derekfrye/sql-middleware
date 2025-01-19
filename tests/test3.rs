@@ -4,7 +4,7 @@ use sqlx_middleware::convenience_items::{create_tables2, MissingDbObjects};
 
 use sqlx_middleware::db2::{
     ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2,
-    QueryState as QueryState2, QueryAndParams as QueryAndParams2, RowValues as RowValues2,
+    QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2,
 };
 use sqlx_middleware::model::CheckType;
 use std::vec;
@@ -73,14 +73,45 @@ fn sqlite_mutltiple_column_test_db2() {
         );
         assert_eq!(create_result.return_result, String::default());
 
-        let setup_queries = include_str!("../tests/sqlite/test2_setup.sql");
-        let query_and_params = QueryAndParams2 {
-            query: setup_queries.to_string(),
-            params: vec![],
-            is_read_only: false,
-        };
+        let setup_queries = vec![
+            include_str!("../tests/sqlite/test3/test3_01_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_02_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_03_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_04_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_05_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_06_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_07_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_08_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_09_setup.sql"),
+            include_str!("../tests/sqlite/test3/test3_10_setup.sql"),
+        ];
+        let params = vec![
+            vec![RowValues2::Int(1)],
+            vec![RowValues2::Int(2)],
+            vec![RowValues2::Int(3)],
+            vec![RowValues2::Int(4)],
+            vec![RowValues2::Int(5)],
+            vec![RowValues2::Int(6)],
+            vec![RowValues2::Int(7)],
+            vec![RowValues2::Int(8)],
+            vec![RowValues2::Int(9)],
+            vec![
+                RowValues2::Int(10),
+                RowValues2::Text("Juliet".to_string()),
+                RowValues2::Float(100.75),
+            ],
+        ];
+        let query_and_params_vec = setup_queries
+            .iter()
+            .zip(params.iter())
+            .map(|(a, b)| QueryAndParams2 {
+                query: a.to_string(),
+                params: b.to_vec(),
+                is_read_only: false,
+            })
+            .collect::<Vec<_>>();
         let res = sql_db
-            .exec_general_query(vec![query_and_params], false)
+            .exec_general_query(query_and_params_vec, false)
             .await
             .unwrap();
 
