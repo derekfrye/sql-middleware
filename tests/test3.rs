@@ -170,7 +170,7 @@ fn sqlite_mutltiple_column_test_db2() {
             "Alpha"
         );
         assert_eq!(
-            *res.return_result[0].results[0]
+            res.return_result[0].results[0]
                 .get("c")
                 .unwrap()
                 .as_timestamp()

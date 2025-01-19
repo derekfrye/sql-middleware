@@ -194,6 +194,8 @@ impl CustomDbRow {
 
 impl RowValues {
     pub fn as_int(&self) -> Option<&i64> {
+        // let x = &self;
+        // dbg!(x);
         if let RowValues::Int(value) = self {
             Some(value)
         } else {
@@ -211,18 +213,38 @@ impl RowValues {
 
     pub fn as_bool(&self) -> Option<&bool> {
         if let RowValues::Bool(value) = self {
-            Some(value)
+            return Some(value);
         } else {
-            None
+            if let Some(s) = self.as_int() {
+                if *s == 1 {
+                    return Some(&true);
+                } else if *s == 0 {
+                    return Some(&false);
+                }
+            }
         }
+        None
     }
 
-    pub fn as_timestamp(&self) -> Option<&NaiveDateTime> {
+    pub fn as_timestamp(&self) -> Option<NaiveDateTime> {
         if let RowValues::Timestamp(value) = self {
-            Some(value)
+            return Some(value.clone());
         } else {
-            None
+            if let Some(s) = self.as_text() {
+                // Store as string "YYYY-MM-DD HH:MM:SS"
+                let dt = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S");
+                if let Ok(d) = dt {
+                    return Some(d);
+                } else if let Some(s) = self.as_text() {
+                    // Store as string "YYYY-MM-DD HH:MM:SS.SSS"
+                    let dt = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S.%3f");
+                    if let Ok(d) = dt {
+                        return Some(d);
+                    }
+                }
+            }
         }
+        None
     }
 
     pub fn as_json(&self) -> Option<&JsonValue> {
@@ -562,9 +584,8 @@ impl Db {
                             RowValues::Blob(bytes) => bound_params.push(bytes),
                         }
                     }
-
-                    if q.is_read_only {
-                        // Use `query(...)` for read-only
+                    if expect_rows {
+                        // Use query(..) if you want to fetch data
                         let rows_res = client.query(&stmt, &bound_params[..]).await;
                         match rows_res {
                             Ok(rows) => {
@@ -595,53 +616,19 @@ impl Db {
                             }
                         }
                     } else {
-                        // Non-read (write) queries
-                        if expect_rows {
-                            // Use query(..) if you want to fetch data
-                            let rows_res = client.query(&stmt, &bound_params[..]).await;
-                            match rows_res {
-                                Ok(rows) => {
-                                    let mut rs = ResultSet {
-                                        results: vec![],
-                                        rows_affected: 0,
-                                    };
-                                    for row in rows {
-                                        let mut col_names = Vec::new();
-                                        let mut row_vals = Vec::new();
-                                        for col in row.columns() {
-                                            col_names.push(col.name().to_owned());
-                                            let type_name = col.type_().name();
-                                            let val = extract_pg_value(&row, col.name(), type_name);
-                                            row_vals.push(val);
-                                        }
-                                        rs.results.push(CustomDbRow {
-                                            column_names: col_names,
-                                            rows: row_vals,
-                                        });
-                                    }
-                                    rs.rows_affected = rs.results.len();
-                                    result_sets.push(rs);
-                                }
-                                Err(e) => {
-                                    let _ = client.execute("ROLLBACK", &[]).await;
-                                    return Err(DbError::PostgresError(e));
-                                }
+                        // Use execute(..) if we don't expect rows returned
+                        let exec_res = client.execute(&stmt, &bound_params[..]).await;
+                        match exec_res {
+                            Ok(rows_affected) => {
+                                let rs = ResultSet {
+                                    results: vec![],
+                                    rows_affected: rows_affected as usize,
+                                };
+                                result_sets.push(rs);
                             }
-                        } else {
-                            // Use execute(..) if we don't expect rows returned
-                            let exec_res = client.execute(&stmt, &bound_params[..]).await;
-                            match exec_res {
-                                Ok(rows_affected) => {
-                                    let rs = ResultSet {
-                                        results: vec![],
-                                        rows_affected: rows_affected as usize,
-                                    };
-                                    result_sets.push(rs);
-                                }
-                                Err(e) => {
-                                    let _ = client.execute("ROLLBACK", &[]).await;
-                                    return Err(DbError::PostgresError(e));
-                                }
+                            Err(e) => {
+                                let _ = client.execute("ROLLBACK", &[]).await;
+                                return Err(DbError::PostgresError(e));
                             }
                         }
                     }
@@ -822,9 +809,13 @@ impl Db {
                 RowValues::Text(s) => rusqlite::types::Value::Text(s.clone()),
                 RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
                 RowValues::Timestamp(dt) => {
-                    // Store as string "YYYY-MM-DD HH:MM:SS"
-                    let s = dt.format("%Y-%m-%d %H:%M:%S").to_string();
-                    rusqlite::types::Value::Text(s)
+                    let to_sql_res = dt.to_sql();
+                    match to_sql_res {
+                        Ok(ToSqlOutput::Owned(v)) => v,
+                        Ok(ToSqlOutput::Borrowed(vref)) => vref.into(),
+                        Ok(_) => rusqlite::types::Value::Null, // Handle any other Ok variants
+                        Err(e) => return Err(DbError::SqliteError(e)),
+                    }
                 }
                 RowValues::Null => rusqlite::types::Value::Null,
                 RowValues::JSON(jsval) => rusqlite::types::Value::Text(jsval.to_string()),
