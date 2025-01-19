@@ -1,14 +1,15 @@
 // sqlite.rs
 
-use std::sync::mpsc::{Sender, Receiver};
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::OpenFlags;
+use rusqlite::{types::ToSqlOutput, Connection, ToSql};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
-use rusqlite::{Connection, types::ToSqlOutput,ToSql};
-use rusqlite::OpenFlags;
-use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ReadOnlyQuery, ReadOnlyWorker, ResultSet, RowValues
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ReadOnlyQuery,
+    ReadOnlyWorker, ResultSet, RowValues,
 };
 
 impl TryFrom<String> for ConfigAndPool {
@@ -21,10 +22,13 @@ impl TryFrom<String> for ConfigAndPool {
                 | OpenFlags::SQLITE_OPEN_CREATE
                 | OpenFlags::SQLITE_OPEN_URI,
         );
-        let write_pool = r2d2::Pool::builder()
-            .max_size(10)
-            .build(manager)
-            .map_err(|e| DbError::Other(format!("r2d2 error: {}", e))).unwrap();
+        let write_pool_res = r2d2::Pool::builder().max_size(10).build(manager);
+        let write_pool = match write_pool_res {
+            Ok(p) => p,
+            Err(e) => {
+                panic!("Failed building r2d2 pool for SQLite: {}", e);
+            }
+        };
 
         // Quick test
         if let Ok(conn) = write_pool.get() {
@@ -68,8 +72,7 @@ impl ReadOnlyWorker {
             // Open the shared read-only connection
             let conn_result = Connection::open_with_flags(
                 &db_path,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
-                    | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
             );
             let conn = match conn_result {
                 Ok(c) => c,
@@ -193,12 +196,13 @@ impl ReadOnlyWorker {
     /// Extract a single column value from a rusqlite Row by index.
     fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, DbError> {
         use rusqlite::types::ValueRef::*;
-        match row.get_ref(idx)? {
-            Null => Ok(RowValues::Null),
-            Integer(i) => Ok(RowValues::Int(i)),
-            Real(f) => Ok(RowValues::Float(f)),
-            Text(bytes) => Ok(RowValues::Text(String::from_utf8_lossy(bytes).to_string())),
-            Blob(b) => Ok(RowValues::Blob(b.to_vec())),
+        match row.get_ref(idx) {
+            Err(e) => Err(DbError::SqliteError(e)),
+            Ok(Null) => Ok(RowValues::Null),
+            Ok(Integer(i)) => Ok(RowValues::Int(i)),
+            Ok(Real(f)) => Ok(RowValues::Float(f)),
+            Ok(Text(bytes)) => Ok(RowValues::Text(String::from_utf8_lossy(bytes).to_string())),
+            Ok(Blob(b)) => Ok(RowValues::Blob(b.to_vec())),
         }
     }
 }
@@ -209,10 +213,27 @@ pub fn exec_write_query_sync(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, DbError> {
-    let bound_params = convert_params_for_write(params)?;
-    let mut stmt = conn.prepare(query)?;
-    let rows_affected = stmt.execute(rusqlite::params_from_iter(bound_params))?;
-    Ok(rows_affected)
+    let bound_params_res = convert_params_for_write(params);
+    let bound_params = match bound_params_res {
+        Ok(bp) => bp,
+        Err(e) => {
+            return Err(e);
+        }
+    };
+
+    let stmt_res = conn.prepare(query);
+    let mut stmt = match stmt_res {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(DbError::SqliteError(e));
+        }
+    };
+
+    let exec_res = stmt.execute(rusqlite::params_from_iter(bound_params));
+    match exec_res {
+        Ok(rows_affected) => Ok(rows_affected),
+        Err(e) => Err(DbError::SqliteError(e)),
+    }
 }
 
 /// A small helper for re-binding params specifically in the write context.

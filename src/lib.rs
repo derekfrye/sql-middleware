@@ -12,4 +12,4 @@ pub mod db2;
 pub mod middleware;
 mod sqlite;
 mod postgres;
-mod db_model;
+pub mod db_model;

@@ -1,13 +1,13 @@
 // db_model.rs
 
 use chrono::NaiveDateTime;
-use serde_json::Value as JsonValue;
-use std::sync::Arc;
-use std::sync::mpsc::Sender;
-use tokio::sync::oneshot;
 use deadpool_postgres::Pool as DeadpoolPostgresPool;
-use r2d2_sqlite::SqliteConnectionManager;
 use r2d2::Pool as R2D2Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use serde_json::Value as JsonValue;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use tokio::sync::oneshot;
 
 // ==============================================
 // 1) Type aliases / fundamental definitions
@@ -64,7 +64,7 @@ pub struct Db {
     pub config_and_pool: ConfigAndPool,
 }
 
-#[derive(Debug, )]
+#[derive(Debug)]
 pub enum DbError {
     PostgresError(tokio_postgres::Error),
     SqliteError(rusqlite::Error),
@@ -109,4 +109,19 @@ pub struct ReadOnlyQuery {
 #[derive(Debug, Clone)]
 pub struct ReadOnlyWorker {
     pub sender: Sender<ReadOnlyQuery>,
+}
+
+impl CustomDbRow {
+    pub fn get_column_index(&self, column_name: &str) -> Option<usize> {
+        self.column_names.iter().position(|col| col == column_name)
+    }
+
+    pub fn get(&self, column_name: &str) -> Option<&RowValues> {
+        let index_opt = self.get_column_index(column_name);
+        if let Some(idx) = index_opt {
+            self.rows.get(idx)
+        } else {
+            None
+        }
+    }
 }

@@ -1,5 +1,6 @@
 use crate::db::{Db, QueryState};
-use crate::db2::{Db as Db2, DatabaseResult as DatabaseResult2, QueryAndParams as QueryAndParams2};
+use crate::db2::{DatabaseResult as DatabaseResult2, Db as Db2, QueryAndParams as QueryAndParams2};
+use crate::db_model::{DatabaseResult as DatabaseResult3, Db as Db3, QueryAndParams as QueryAndParams3};
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
 use serde::Deserialize;
@@ -225,6 +226,72 @@ pub async fn create_tables2(
     // let result = self.exec_general_query(vec![query_and_params], false).await;
 
     let mut dbresult: DatabaseResult2<String> = DatabaseResult2::<String>::default();
+
+    match result {
+        Ok(r) => {
+            dbresult.db_last_exec_state = r.db_last_exec_state;
+            dbresult.error_message = r.error_message;
+            // r.return_result
+        }
+        Err(e) => {
+            let emessage = format!("Failed in {}, {}: {:?}", std::file!(), std::line!(), e);
+            dbresult.error_message = Some(emessage);
+        }
+    }
+    Ok(dbresult)
+}
+
+#[named]
+pub async fn create_tables3(
+    db: &Db3,
+    tables: Vec<MissingDbObjects>,
+    check_type: CheckType,
+    ddl_for_validation: &[(&str, &str, &str, &str)],
+) -> Result<DatabaseResult3<String>, Box<dyn std::error::Error>> {
+    let mut return_result: DatabaseResult3<String> = DatabaseResult3::<String>::default();
+    return_result.db_object_name = function_name!().to_string();
+
+    let entire_create_stms = if check_type == CheckType::Table {
+        ddl_for_validation
+            .iter()
+            .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
+            .map(|af| af.1)
+            // .into_iter()
+            .collect::<Vec<&str>>()
+        // .join("")
+        // .flatten()
+    } else {
+        ddl_for_validation
+            .iter()
+            .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
+            .map(|af| af.3)
+            // .collect::<Vec<&str>>()
+            // .flatten()
+            .collect::<Vec<&str>>()
+        // .join("")
+    };
+
+    let result = db
+        .exec_general_query(
+            entire_create_stms
+                .iter()
+                .map(|x| QueryAndParams3 {
+                    query: x.to_string(),
+                    params: vec![],
+                    is_read_only: false,
+                })
+                .collect(),
+            false,
+        )
+        .await;
+
+    // let query_and_params = QueryAndParams {
+    //     query: entire_create_stms,
+    //     params: vec![],
+    // };
+    // let result = self.exec_general_query(vec![query_and_params], false).await;
+
+    let mut dbresult: DatabaseResult3<String> = DatabaseResult3::<String>::default();
 
     match result {
         Ok(r) => {

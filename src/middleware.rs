@@ -1,18 +1,21 @@
 // dbx.rs
 
-use std::fmt;
 use std::error::Error;
-use tokio::task::spawn_blocking;
+use std::{fmt, sync::Arc};
+use tokio::sync::oneshot;
+// use tokio::task::spawn_blocking;
 
 use deadpool_postgres::Config as PgConfig;
 
+use crate::db_model::ReadOnlyQuery;
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db, DbError::{self}, MiddlewarePool, QueryAndParams, QueryState, ResultSet, RowValues
+    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db,
+    DbError::{self},
+    MiddlewarePool, QueryAndParams, QueryState, ResultSet, RowValues,
 };
 
 use crate::postgres::extract_pg_value;
 use crate::sqlite::exec_write_query_sync;
-
 
 // ----------------------------------------
 // Common impl blocks for DbError
@@ -121,7 +124,8 @@ impl ConfigAndPool {
             }
             DatabaseType::Sqlite => {
                 // For SQLite, we interpret `config.dbname` as the file path
-                let path = config.dbname
+                let path = config
+                    .dbname
                     .clone()
                     .ok_or_else(|| DbError::Other("No dbname provided for SQLite".into()))?;
 
@@ -155,16 +159,38 @@ impl Db {
             // Postgres branch
             // -----------------------
             MiddlewarePool::Postgres(pg_pool) => {
-                let client = pg_pool.get().await
-                    .map_err(|e| DbError::Other(format!("Failed to get PG client: {}", e)))?;
+                let client_res = pg_pool.get().await;
+                let client = match client_res {
+                    Ok(c) => c,
+                    Err(e) => {
+                        return Err(DbError::Other(format!(
+                            "Failed to get PG client from pool: {}",
+                            e
+                        )));
+                    }
+                };
 
                 // BEGIN
-                client.execute("BEGIN", &[]).await?;
+                let begin_res = client.execute("BEGIN", &[]).await;
+                match begin_res {
+                    Ok(_) => { /* success */ }
+                    Err(e) => {
+                        return Err(DbError::PostgresError(e));
+                    }
+                }
 
                 for q in &queries {
-                    let stmt = client.prepare(&q.query).await?;
+                    let stmt_res = client.prepare(&q.query).await;
+                    let stmt = match stmt_res {
+                        Ok(s) => s,
+                        Err(e) => {
+                            let _ = client.execute("ROLLBACK", &[]).await;
+                            return Err(DbError::PostgresError(e));
+                        }
+                    };
                     // Build references inline
-                    let mut bound_params: Vec<&(dyn tokio_postgres::types::ToSql  + Sync)> = Vec::new();
+                    let mut bound_params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+                        Vec::new();
                     for param in &q.params {
                         match param {
                             RowValues::Int(i) => bound_params.push(i),
@@ -182,94 +208,182 @@ impl Db {
                     }
 
                     if expect_rows {
-                        let rows = client.query(&stmt, &bound_params[..]).await?;
-                        let mut rs = ResultSet::default();
-                        for row in rows {
-                            let mut col_names = Vec::new();
-                            let mut row_vals = Vec::new();
-                            for col in row.columns() {
-                                col_names.push(col.name().to_owned());
-                                let type_name = col.type_().name();
-                                let val = extract_pg_value(&row, col.name(), type_name);
-                                row_vals.push(val);
+                        let rows_res = client.query(&stmt, &bound_params[..]).await;
+                        match rows_res {
+                            Ok(rows) => {
+                                let mut rs = ResultSet {
+                                    results: vec![],
+                                    rows_affected: 0,
+                                };
+                                for row in rows {
+                                    let mut col_names = Vec::new();
+                                    let mut row_vals = Vec::new();
+                                    for col in row.columns() {
+                                        col_names.push(col.name().to_owned());
+                                        let type_name = col.type_().name();
+                                        let val = extract_pg_value(&row, col.name(), type_name);
+                                        row_vals.push(val);
+                                    }
+                                    rs.results.push(CustomDbRow {
+                                        column_names: col_names,
+                                        rows: row_vals,
+                                    });
+                                }
+                                rs.rows_affected = rs.results.len();
+                                result_sets.push(rs);
                             }
-                            rs.results.push(CustomDbRow {
-                                column_names: col_names,
-                                rows: row_vals,
-                            });
+                            Err(e) => {
+                                let _ = client.execute("ROLLBACK", &[]).await;
+                                return Err(DbError::PostgresError(e));
+                            }
                         }
-                        rs.rows_affected = rs.results.len();
-                        result_sets.push(rs);
                     } else {
-                        // If we do not expect rows
-                        let aff = client.execute(&stmt, &bound_params[..]).await?;
-                        let mut rs = ResultSet::default();
-                        rs.rows_affected = aff as usize;
-                        result_sets.push(rs);
+                        // Use execute(..) if we don't expect rows returned
+                        let exec_res = client.execute(&stmt, &bound_params[..]).await;
+                        match exec_res {
+                            Ok(rows_affected) => {
+                                let rs = ResultSet {
+                                    results: vec![],
+                                    rows_affected: rows_affected as usize,
+                                };
+                                result_sets.push(rs);
+                            }
+                            Err(e) => {
+                                let _ = client.execute("ROLLBACK", &[]).await;
+                                return Err(DbError::PostgresError(e));
+                            }
+                        }
                     }
                 }
 
                 // COMMIT
-                client.execute("COMMIT", &[]).await?;
-                final_result.return_result = result_sets;
-                final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
+                let commit_res = client.execute("COMMIT", &[]).await;
+                match commit_res {
+                    Ok(_) => {
+                        final_result.return_result = result_sets;
+                        final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
+                    }
+                    Err(e) => {
+                        let _ = client.execute("ROLLBACK", &[]).await;
+                        return Err(DbError::PostgresError(e));
+                    }
+                }
             }
 
             // -----------------------
             // SQLite branch
             // -----------------------
-            MiddlewarePool::Sqlite { write_pool, read_only_worker } => {
+            MiddlewarePool::Sqlite {
+                write_pool,
+                read_only_worker,
+            } => {
+                // We handle all queries in a single blocking transaction for writes.
+                // If the query is read-only, we still route it to read_only_worker.
                 let queries_clone = queries.clone();
-                let wp_clone = std::sync::Arc::clone(write_pool);
-                let ro_worker_clone = std::sync::Arc::clone(read_only_worker);
+                let write_pool_clone = Arc::clone(write_pool);
+                let ro_worker_clone = read_only_worker.clone();
 
-                // We use spawn_blocking for synchronous access to the r2d2 handle
-                let blocking_res = spawn_blocking(move || -> Result<Vec<ResultSet>, DbError> {
-                    let conn = wp_clone.get()?;
-                    conn.execute("BEGIN DEFERRED TRANSACTION;", [])?;
+                // Run blocking so we can do the transaction
+                let blocking_res =
+                    tokio::task::spawn_blocking(move || -> Result<Vec<ResultSet>, DbError> {
+                        let conn_res = write_pool_clone.get();
+                        let conn = match conn_res {
+                            Ok(c) => c,
+                            Err(e) => {
+                                return Err(DbError::Other(format!(
+                                    "Failed to get sqlite write-conn: {}",
+                                    e
+                                )));
+                            }
+                        };
 
-                    let mut local_results = Vec::new();
-                    for q in &queries_clone {
-                        if q.is_read_only {
-                            // READ-ONLY => send to the read-only thread
-                            let (tx, rx) = tokio::sync::oneshot::channel();
-                            let roq = crate::db_model::ReadOnlyQuery {
-                                query: q.query.clone(),
-                                params: q.params.clone(),
-                                response: tx,
-                            };
-                            ro_worker_clone.sender
-                                .send(roq)
-                                .map_err(|e| DbError::Other(format!("Send read-only query: {}", e)))?;
-
-                            // block until we get the result
-                            let ro_result = rx.blocking_recv()
-                                .map_err(|e| DbError::Other(format!("RO channel error: {}", e)))??;
-                            local_results.push(ro_result);
-                        } else {
-                            // WRITE => call synchronous exec
-                            let aff = exec_write_query_sync(&conn, &q.query, &q.params)?;
-                            let mut rs = ResultSet::default();
-                            rs.rows_affected = aff;
-                            local_results.push(rs);
+                        let begin_res = conn.execute("BEGIN DEFERRED TRANSACTION;", []);
+                        match begin_res {
+                            Ok(_) => {}
+                            Err(e) => {
+                                return Err(DbError::SqliteError(e));
+                            }
                         }
-                    }
 
-                    conn.execute("COMMIT;", [])?;
-                    Ok(local_results)
-                }).await;
+                        let mut local_results = Vec::new();
+                        for q in &queries_clone {
+                            if q.is_read_only {
+                                // Send to read-only worker
+                                let (tx, rx) = oneshot::channel();
+                                let roq = ReadOnlyQuery {
+                                    query: q.query.clone(),
+                                    params: q.params.clone(),
+                                    response: tx,
+                                };
+                                let send_res = ro_worker_clone.sender.send(roq);
+                                if let Err(e) = send_res {
+                                    let _ = conn.execute("ROLLBACK", []);
+                                    return Err(DbError::Other(format!(
+                                        "Failed sending read-only query: {}",
+                                        e
+                                    )));
+                                }
 
-                // Check the spawn_blocking result
+                                let recv_res = rx.blocking_recv();
+                                match recv_res {
+                                    Ok(res) => match res {
+                                        Ok(rs) => {
+                                            local_results.push(rs);
+                                        }
+                                        Err(e) => {
+                                            let _ = conn.execute("ROLLBACK", []);
+                                            return Err(e);
+                                        }
+                                    },
+                                    Err(e) => {
+                                        let _ = conn.execute("ROLLBACK", []);
+                                        return Err(DbError::Other(format!(
+                                            "Read-only channel error: {}",
+                                            e
+                                        )));
+                                    }
+                                }
+                            } else {
+                                // Write query => pass to exec_write_query_sync
+                                let rows_affected_res =
+                                    exec_write_query_sync(&conn, &q.query, &q.params);
+                                match rows_affected_res {
+                                    Ok(aff) => {
+                                        let rs = ResultSet {
+                                            results: vec![],
+                                            rows_affected: aff,
+                                        };
+                                        local_results.push(rs);
+                                    }
+                                    Err(e) => {
+                                        let _ = conn.execute("ROLLBACK;", []);
+                                        return Err(e);
+                                    }
+                                }
+                            }
+                        }
+
+                        let commit_res = conn.execute("COMMIT;", []);
+                        match commit_res {
+                            Ok(_) => Ok(local_results),
+                            Err(e) => Err(DbError::SqliteError(e)),
+                        }
+                    })
+                    .await;
+
+                // Now handle the result
                 match blocking_res {
-                    Ok(Ok(rsets)) => {
-                        final_result.return_result = rsets;
-                        final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
-                    }
-                    Ok(Err(db_err)) => {
-                        return Err(db_err);
-                    }
-                    Err(join_err) => {
-                        return Err(DbError::Other(format!("Join error: {}", join_err)));
+                    Ok(inner_res) => match inner_res {
+                        Ok(rsets) => {
+                            final_result.return_result = rsets;
+                            final_result.db_last_exec_state = QueryState::QueryReturnedSuccessfully;
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    },
+                    Err(e) => {
+                        return Err(DbError::Other(format!("Spawn blocking join error: {}", e)));
                     }
                 }
             }
