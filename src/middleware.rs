@@ -7,9 +7,8 @@ use deadpool_postgres::Config as PgConfig;
 
 // use crate::db_model::ReadOnlyQuery;
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db,
-    DbError,
-    MiddlewarePool, QueryAndParams, QueryState, ResultSet, RowValues,
+    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db, DbError, MiddlewarePool,
+    QueryAndParams, QueryState, ResultSet, RowValues,
 };
 
 use crate::postgres::extract_pg_value;
@@ -24,7 +23,10 @@ impl fmt::Display for DbError {
             DbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
             DbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
             DbError::Other(msg) => write!(f, "Other: {}", msg),
-            DbError::PoolError(e) => write!(f, "PoolError: {:?}", e),
+            DbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
+            DbError::PoolErrorPostgres(pool_error) => {
+                write!(f, "PoolErrorPostgres: {:?}", pool_error)
+            }
         }
     }
 }

@@ -256,32 +256,32 @@ pub async fn create_tables3(
 
     let entire_create_stms = if check_type == CheckType::Table {
         ddl_for_validation
-        .iter()
-        .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
-        .map(|af| af.1.to_string())
-        // .into_iter()
-        .collect::<Vec<String>>()
-    // .join("")
-    // .flatten()
-} else {
-    ddl_for_validation
-        .iter()
-        .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
-        .map(|af| af.3.to_string())
-        // .collect::<Vec<&str>>()
+            .iter()
+            .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
+            .map(|af| af.1.to_string())
+            // .into_iter()
+            .collect::<Vec<String>>()
+        // .join("")
         // .flatten()
-        .collect::<Vec<String>>()
-};
+    } else {
+        ddl_for_validation
+            .iter()
+            .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
+            .map(|af| af.3.to_string())
+            // .collect::<Vec<&str>>()
+            // .flatten()
+            .collect::<Vec<String>>()
+    };
 
     // let connection = conf.pool.get().await.map_err(DbError::PoolError)?;
     // let x = conf.pool;
     let _result = match &conf.pool {
         MiddlewarePool::Sqlite(zz) => {
-            let tdfda = zz.get().await.map_err(DbError::PoolError)?;
+            let tdfda = zz.get().await.map_err(DbError::PoolErrorSqlite)?;
             // let conn = connection;
             // useful: https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
 
-            tdfda
+            let _ = tdfda
                 .interact(move |conn| {
                     let query_pragmas = "
                     PRAGMA journal_mode = WAL;

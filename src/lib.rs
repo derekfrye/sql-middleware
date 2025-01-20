@@ -13,3 +13,6 @@ pub mod middleware;
 mod sqlite;
 mod postgres;
 pub mod db_model;
+
+pub use sqlite::convert_params;
+pub use sqlite::build_result_set;

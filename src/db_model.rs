@@ -1,8 +1,13 @@
 // db_model.rs
 
 use chrono::NaiveDateTime;
-use deadpool_postgres::Pool as DeadpoolPostgresPool;
-use deadpool_sqlite::Pool as DeadpoolSqlitePool;
+use deadpool::managed::{Manager, Object};
+use deadpool_postgres::{
+    Manager as PostgresManager, Object as PostgresObject, Pool as DeadpoolPostgresPool,
+};
+use deadpool_sqlite::{
+    Manager as SqliteManager, Object as SqliteObject, Pool as DeadpoolSqlitePool,
+};
 use serde_json::Value as JsonValue;
 // use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -56,6 +61,23 @@ impl MiddlewarePool {
             }
         }
     }
+    pub async fn get_connection(pool: MiddlewarePool) -> Result<MiddlewarePoolConnection, DbError> {
+        match pool {
+            MiddlewarePool::Postgres(pool) => {
+                let conn: PostgresObject = pool.get().await.map_err(DbError::PoolErrorPostgres)?;
+                Ok(MiddlewarePoolConnection::Postgres(conn))
+            }
+            MiddlewarePool::Sqlite(pool) => {
+                let conn: SqliteObject = pool.get().await.map_err(DbError::PoolErrorSqlite)?;
+                Ok(MiddlewarePoolConnection::Sqlite(conn))
+            }
+        }
+    }
+}
+
+pub enum MiddlewarePoolConnection {
+    Postgres(PostgresObject),
+    Sqlite(SqliteObject),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,8 +101,8 @@ pub struct Db {
 pub enum DbError {
     PostgresError(tokio_postgres::Error),
     SqliteError(rusqlite::Error),
-    // PoolError(deadpool::managed::PoolError<deadpool::Runtime>),
-    PoolError(deadpool::managed::PoolError<rusqlite::Error>),
+    PoolErrorPostgres(deadpool::managed::PoolError<tokio_postgres::Error>),
+    PoolErrorSqlite(deadpool::managed::PoolError<rusqlite::Error>),
     Other(String),
 }
 

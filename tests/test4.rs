@@ -1,10 +1,10 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
 use sqlx_middleware::convenience_items::{  MissingDbObjects, create_tables3};
+use sqlx_middleware::db_model::MiddlewarePoolConnection::{self, Sqlite as SqliteMiddlewarePoolConnection};
 
 use sqlx_middleware::db_model::{
-    ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2,
-    QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2,
+    ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2, MiddlewarePool, QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2
 };
 use sqlx_middleware::model::CheckType;
 use std::vec;
@@ -14,11 +14,12 @@ use tokio::runtime::Runtime;
 fn sqlite_mutltiple_column_test_db2() {
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        let mut cfg = deadpool_postgres::Config::new();
-        cfg.dbname = Some("file::memory:?cache=shared".to_string());
+        
+        let x= "file::memory:?cache=shared".to_string();
         // cfg.dbname = Some("xxx".to_string());
-        let sqlite_configandpool = ConfigAndPool2::new_auto(&cfg, DatabaseType2::Sqlite).unwrap();
-        let sql_db = Db2::new(sqlite_configandpool).unwrap();
+        let sqlite_configandpool = ConfigAndPool2::new_sqlite(x).await.unwrap();
+        let pool = sqlite_configandpool.pool.get().await.unwrap();
+        let conn = MiddlewarePool::get_connection(pool).await.unwrap();
 
         let tables = vec!["test"];
         let ddl = vec![
@@ -49,7 +50,7 @@ fn sqlite_mutltiple_column_test_db2() {
         }
 
         let create_result = create_tables3(
-            &sql_db,
+            &sqlite_configandpool,
             missing_objs,
             CheckType::Table,
             &table_ddl
@@ -110,15 +111,35 @@ fn sqlite_mutltiple_column_test_db2() {
                 is_read_only: false,
             })
             .collect::<Vec<_>>();
-        let res = sql_db
-            .exec_general_query(query_and_params_vec, false)
-            .await
-            .unwrap();
 
-        assert_eq!(
-            res.db_last_exec_state,
-            QueryState2::QueryReturnedSuccessfully
-        );
+            let res =     match conn {
+                SqliteMiddlewarePoolConnection(sqlite_conn) => {
+                     
+                    sqlite_conn.interact(|xxx|{
+                        let mut stmt = xxx.prepare(&query_and_params_vec[0].query)?;
+                        for query_param in query_and_params_vec.iter() {
+                            let  converted_params = sqlx_middleware::convert_params(&query_param.params)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        
+                            stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
+                        }
+                        Ok(())
+                })
+                }
+                _ => {
+                    panic!("Should be a sqlite connection");
+                }
+            }.await.unwrap();
+
+        // let res = sql_db
+        //     .exec_general_query(query_and_params_vec, false)
+        //     .await
+        //     .unwrap();
+
+        // assert_eq!(
+        //     res.db_last_exec_state,
+        //     QueryState2::QueryReturnedSuccessfully
+        // );
 
         let qry = "SELECT * from test where recid in ( ?1, ?2, ?3);";
         let param = [RowValues2::Int(1), RowValues2::Int(2), RowValues2::Int(3)];
@@ -129,14 +150,41 @@ fn sqlite_mutltiple_column_test_db2() {
             params: param.to_vec(),
             is_read_only: true,
         };
-        let res = sql_db
-            .exec_general_query(vec![query_and_params], true)
-            .await
-            .unwrap();
-        assert_eq!(
-            res.db_last_exec_state,
-            QueryState2::QueryReturnedSuccessfully
-        );
+
+        let res = match conn {
+            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+                sqlite_conn
+                    .interact(|conn| {
+                        // Start a transaction
+                        let tx = conn.transaction()?;
+        
+                        // Convert parameters using your helper function
+                        let converted_params = sqlx_middleware::convert_params(&query_and_params.params)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        
+                        // Prepare and execute the query
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        let result_set = sqlx_middleware::build_result_set(&mut stmt)?;
+                        tx.commit()?;
+        
+                        Ok(results)
+                    })
+                    .await
+                    .map_err(|e| format!("Error executing query: {:?}", e))
+            }
+            MiddlewarePoolConnection::Postgres(_) => {
+                Err("Expected SQLite connection, but got Postgres".to_string())
+            }
+        };
+
+        // let res = sql_db
+        //     .exec_general_query(vec![query_and_params], true)
+        //     .await
+        //     .unwrap();
+        // assert_eq!(
+        //     res.db_last_exec_state,
+        //     QueryState2::QueryReturnedSuccessfully
+        // );
         // we expect 1 result set
         assert_eq!(res.return_result.len(), 1);
         // we expect 3 rows

@@ -1,13 +1,13 @@
 use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Pool as DeadpoolSqlitePool, Runtime};
 use rusqlite::{types::ToSqlOutput, Connection, ToSql};
-use rusqlite::{OpenFlags, Transaction};
+use rusqlite::{OpenFlags, Statement, Transaction};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 use tokio::task;
 
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, RowValues,
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
 };
 
 // impl TryFrom<String> for ConfigAndPool {
@@ -69,16 +69,17 @@ impl ConfigAndPool {
 
         // Initialize the database (e.g., create tables)
         {
-            let conn = pool.get().await.map_err(DbError::PoolError)?;
-            conn.interact(|conn| {
-                conn.execute_batch(
-                    "
+            let conn = pool.get().await.map_err(DbError::PoolErrorSqlite)?;
+            let _res = conn
+                .interact(|conn| {
+                    conn.execute_batch(
+                        "
                     PRAGMA journal_mode = WAL;
                 ",
-                )
-                .map_err(|e| DbError::SqliteError(e))
-            })
-            .await?;
+                    )
+                    .map_err(|e| DbError::SqliteError(e))
+                })
+                .await?;
         }
 
         Ok(ConfigAndPool {
@@ -138,6 +139,7 @@ impl From<deadpool_sqlite::InteractError> for DbError {
 // }
 
 /// A small helper for re-binding params specifically in the write context.
+// #[allow(dead_code)]
 pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value>, DbError> {
     let mut vec_values = Vec::with_capacity(params.len());
     for p in params {
@@ -162,4 +164,47 @@ pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value
         vec_values.push(v);
     }
     Ok(vec_values)
+}
+
+fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, DbError> {
+    let val_ref_res = row.get_ref(idx);
+    match val_ref_res {
+        Err(e) => Err(DbError::SqliteError(e)),
+        Ok(rusqlite::types::ValueRef::Null) => Ok(RowValues::Null),
+        Ok(rusqlite::types::ValueRef::Integer(i)) => Ok(RowValues::Int(i)),
+        Ok(rusqlite::types::ValueRef::Real(f)) => Ok(RowValues::Float(f)),
+        Ok(rusqlite::types::ValueRef::Text(bytes)) => {
+            let s = String::from_utf8_lossy(bytes).into_owned();
+            Ok(RowValues::Text(s))
+        }
+        Ok(rusqlite::types::ValueRef::Blob(b)) => Ok(RowValues::Blob(b.to_vec())),
+    }
+}
+
+pub fn build_result_set(stmt: &mut Statement) -> Result<ResultSet, DbError> {
+    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+
+    let mut rows_iter = stmt.query([])?;
+    let mut result_set = ResultSet {
+        results: Vec::new(),
+        rows_affected: 0,
+    };
+
+    while let Some(row) = rows_iter.next()? {
+        let mut row_values = Vec::new();
+
+        for (i, _col_name) in column_names.iter().enumerate() {
+            let value = sqlite_extract_value_sync(row, i)?;
+            row_values.push(value);
+        }
+
+        result_set.results.push(CustomDbRow {
+            column_names: column_names.clone(),
+            rows: row_values,
+        });
+
+        result_set.rows_affected += 1;
+    }
+
+    Ok(result_set)
 }
