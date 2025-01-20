@@ -1,6 +1,7 @@
 use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
-use rusqlite::{types::ToSqlOutput, ToSql};
+use rusqlite::types::Value;
 use rusqlite::Statement;
+use rusqlite::{types::ToSqlOutput, ToSql};
 
 use crate::db_model::{
     ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
@@ -177,10 +178,12 @@ fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValue
     }
 }
 
-pub fn build_result_set(stmt: &mut Statement) -> Result<ResultSet, DbError> {
+pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<ResultSet, DbError> {
+    let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
+
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
-    let mut rows_iter = stmt.query([])?;
+    let mut rows_iter = stmt.query(&param_refs[..])?;
     let mut result_set = ResultSet {
         results: Vec::new(),
         rows_affected: 0,

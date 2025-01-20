@@ -1,12 +1,8 @@
 // db_model.rs
 
 use chrono::NaiveDateTime;
-use deadpool_postgres::{
-    Object as PostgresObject, Pool as DeadpoolPostgresPool,
-};
-use deadpool_sqlite::{
-    Object as SqliteObject, Pool as DeadpoolSqlitePool,
-};
+use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
+use deadpool_sqlite::{Object as SqliteObject, Pool as DeadpoolSqlitePool};
 use serde_json::Value as JsonValue;
 // use std::sync::mpsc::Sender;
 // use tokio::sync::oneshot;
@@ -73,6 +69,7 @@ impl MiddlewarePool {
     }
 }
 
+#[derive(Debug)]
 pub enum MiddlewarePoolConnection {
     Postgres(PostgresObject),
     Sqlite(SqliteObject),

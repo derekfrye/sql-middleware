@@ -5,9 +5,7 @@ use std::fmt;
 use deadpool_postgres::Config as PgConfig;
 
 // use crate::db_model::ReadOnlyQuery;
-use crate::db_model::{
-    ConfigAndPool, DatabaseType, DbError, RowValues,
-};
+use crate::db_model::{ConfigAndPool, DatabaseType, DbError, RowValues};
 
 // use crate::sqlite::exec_write_query_sync;
 
