@@ -2,18 +2,17 @@
 
 use chrono::NaiveDateTime;
 use deadpool_postgres::Pool as DeadpoolPostgresPool;
-use r2d2::Pool as R2D2Pool;
-use r2d2_sqlite::SqliteConnectionManager;
+use deadpool_sqlite::Pool as DeadpoolSqlitePool;
 use serde_json::Value as JsonValue;
-use std::sync::mpsc::Sender;
+// use std::sync::mpsc::Sender;
 use std::sync::Arc;
-use tokio::sync::oneshot;
+// use tokio::sync::oneshot;
 
 // ==============================================
 // 1) Type aliases / fundamental definitions
 // ==============================================
 
-pub type SqliteWritePool = R2D2Pool<SqliteConnectionManager>;
+pub type SqliteWritePool = DeadpoolSqlitePool;
 
 // ==============================================
 // 2) Structs / Enums WITHOUT impl blocks
@@ -41,10 +40,22 @@ pub enum RowValues {
 #[derive(Debug, Clone)]
 pub enum MiddlewarePool {
     Postgres(DeadpoolPostgresPool),
-    Sqlite {
-        read_only_worker: Arc<ReadOnlyWorker>,
-        write_pool: Arc<SqliteWritePool>,
-    },
+    Sqlite(DeadpoolSqlitePool),
+}
+
+impl MiddlewarePool {
+    pub async fn get(&self) -> Result<MiddlewarePool, DbError> {
+        match self {
+            MiddlewarePool::Postgres(pool) => {
+                let pool = pool.clone();
+                Ok(MiddlewarePool::Postgres(pool))
+            }
+            MiddlewarePool::Sqlite(pool) => {
+                let pool = pool.clone();
+                Ok(MiddlewarePool::Sqlite(pool))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +79,8 @@ pub struct Db {
 pub enum DbError {
     PostgresError(tokio_postgres::Error),
     SqliteError(rusqlite::Error),
+    // PoolError(deadpool::managed::PoolError<deadpool::Runtime>),
+    PoolError(deadpool::managed::PoolError<rusqlite::Error>),
     Other(String),
 }
 
@@ -86,31 +99,6 @@ pub struct CustomDbRow {
     pub rows: Vec<RowValues>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ResultSet {
-    pub results: Vec<CustomDbRow>,
-    pub rows_affected: usize,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct DatabaseResult<T> {
-    pub return_result: T,
-    pub db_last_exec_state: QueryState,
-    pub error_message: Option<String>,
-    pub db_object_name: String,
-}
-
-pub struct ReadOnlyQuery {
-    pub query: String,
-    pub params: Vec<RowValues>,
-    pub response: oneshot::Sender<Result<ResultSet, DbError>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ReadOnlyWorker {
-    pub sender: Sender<ReadOnlyQuery>,
-}
-
 impl CustomDbRow {
     pub fn get_column_index(&self, column_name: &str) -> Option<usize> {
         self.column_names.iter().position(|col| col == column_name)
@@ -124,4 +112,18 @@ impl CustomDbRow {
             None
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ResultSet {
+    pub results: Vec<CustomDbRow>,
+    pub rows_affected: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DatabaseResult<T> {
+    pub return_result: T,
+    pub db_last_exec_state: QueryState,
+    pub error_message: Option<String>,
+    pub db_object_name: String,
 }

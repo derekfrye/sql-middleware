@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sqlx_middleware::convenience_items::{ create_tables3, MissingDbObjects};
+use sqlx_middleware::convenience_items::{  MissingDbObjects, create_tables3};
 
 use sqlx_middleware::db_model::{
     ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2,

@@ -1,6 +1,9 @@
 use crate::db::{Db, QueryState};
 use crate::db2::{DatabaseResult as DatabaseResult2, Db as Db2, QueryAndParams as QueryAndParams2};
-use crate::db_model::{DatabaseResult as DatabaseResult3, Db as Db3, QueryAndParams as QueryAndParams3};
+use crate::db_model::{
+    ConfigAndPool, DatabaseResult as DatabaseResult3, Db as Db3, DbError, MiddlewarePool,
+    QueryAndParams as QueryAndParams3, QueryState as QueryState3,
+};
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
 use serde::Deserialize;
@@ -243,47 +246,70 @@ pub async fn create_tables2(
 
 #[named]
 pub async fn create_tables3(
-    db: &Db3,
+    conf: &ConfigAndPool,
     tables: Vec<MissingDbObjects>,
     check_type: CheckType,
     ddl_for_validation: &[(&str, &str, &str, &str)],
-) -> Result<DatabaseResult3<String>, Box<dyn std::error::Error>> {
+) -> Result<DatabaseResult3<String>, DbError> {
     let mut return_result: DatabaseResult3<String> = DatabaseResult3::<String>::default();
     return_result.db_object_name = function_name!().to_string();
 
     let entire_create_stms = if check_type == CheckType::Table {
         ddl_for_validation
-            .iter()
-            .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
-            .map(|af| af.1)
-            // .into_iter()
-            .collect::<Vec<&str>>()
-        // .join("")
+        .iter()
+        .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
+        .map(|af| af.1.to_string())
+        // .into_iter()
+        .collect::<Vec<String>>()
+    // .join("")
+    // .flatten()
+} else {
+    ddl_for_validation
+        .iter()
+        .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
+        .map(|af| af.3.to_string())
+        // .collect::<Vec<&str>>()
         // .flatten()
-    } else {
-        ddl_for_validation
-            .iter()
-            .filter(|x| tables.iter().any(|y| y.missing_object == x.2))
-            .map(|af| af.3)
-            // .collect::<Vec<&str>>()
-            // .flatten()
-            .collect::<Vec<&str>>()
-        // .join("")
+        .collect::<Vec<String>>()
+};
+
+    // let connection = conf.pool.get().await.map_err(DbError::PoolError)?;
+    // let x = conf.pool;
+    let _result = match &conf.pool {
+        MiddlewarePool::Sqlite(zz) => {
+            let tdfda = zz.get().await.map_err(DbError::PoolError)?;
+            // let conn = connection;
+            // useful: https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
+
+            tdfda
+                .interact(move |conn| {
+                    let query_pragmas = "
+                    PRAGMA journal_mode = WAL;
+                    PRAGMA foreign_keys = ON;
+                    PRAGMA synchronous = NORMAL;
+                ";
+                    let all_queries = format!("{} {}", query_pragmas, entire_create_stms.join(";"));
+                    conn.execute_batch(&all_queries)
+                        .map_err(|e| DbError::SqliteError(e))
+                })
+                .await?;
+        }
+        MiddlewarePool::Postgres(_) => {}
     };
 
-    let result = db
-        .exec_general_query(
-            entire_create_stms
-                .iter()
-                .map(|x| QueryAndParams3 {
-                    query: x.to_string(),
-                    params: vec![],
-                    is_read_only: false,
-                })
-                .collect(),
-            false,
-        )
-        .await;
+    // let result = db
+    //     .exec_general_query(
+    //         entire_create_stms
+    //             .iter()
+    //             .map(|x| QueryAndParams3 {
+    //                 query: x.to_string(),
+    //                 params: vec![],
+    //                 is_read_only: false,
+    //             })
+    //             .collect(),
+    //         false,
+    //     )
+    //     .await;
 
     // let query_and_params = QueryAndParams {
     //     query: entire_create_stms,
@@ -291,18 +317,10 @@ pub async fn create_tables3(
     // };
     // let result = self.exec_general_query(vec![query_and_params], false).await;
 
-    let mut dbresult: DatabaseResult3<String> = DatabaseResult3::<String>::default();
-
-    match result {
-        Ok(r) => {
-            dbresult.db_last_exec_state = r.db_last_exec_state;
-            dbresult.error_message = r.error_message;
-            // r.return_result
-        }
-        Err(e) => {
-            let emessage = format!("Failed in {}, {}: {:?}", std::file!(), std::line!(), e);
-            dbresult.error_message = Some(emessage);
-        }
-    }
-    Ok(dbresult)
+    Ok(DatabaseResult3::<String> {
+        db_last_exec_state: QueryState3::QueryReturnedSuccessfully,
+        error_message: None,
+        return_result: "".to_string(),
+        db_object_name: function_name!().to_string(),
+    })
 }
