@@ -22,8 +22,8 @@ regex = "1"
 clap = { version = "4", features = ["derive"] }
 #tokio-rusqlite = "0.6.0"
 rusqlite = {version = "0.32.1", features = ["chrono", "bundled"]}
-r2d2 = "0.8"
-r2d2_sqlite = "0.25"
+#r2d2 = "0.8"
+#r2d2_sqlite = "0.25"
 deadpool-sqlite = { version =  "0.9.0", features = ["rt_tokio_1"] }
 deadpool = "0.12.1"
 

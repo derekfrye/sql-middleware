@@ -34,15 +34,6 @@ impl TryFrom<PgConfig> for ConfigAndPool {
         if pg_config.password.is_none() {
             panic!("password is required");
         }
-        // let connection_string =
-        //         format!(
-        //             "host={} port={} user={} password={} dbname={}",
-        //             pg_config.host.as_ref().unwrap(),
-        //             pg_config.port.as_ref().unwrap(),
-        //             pg_config.user.as_ref().unwrap(),
-        //             pg_config.password.as_ref().unwrap(),
-        //             pg_config.dbname.as_ref().unwrap()
-        //         );
 
         let pg_config_res = pg_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls);
         match pg_config_res {

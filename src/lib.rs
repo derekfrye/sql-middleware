@@ -8,7 +8,6 @@ pub mod convenience_items;
 pub mod db;
 pub mod model;
 pub use sqlx::FromRow;
-pub mod db2;
 pub mod db_model;
 pub mod middleware;
 mod postgres;
