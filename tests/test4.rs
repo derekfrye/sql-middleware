@@ -6,7 +6,7 @@ use sqlx_middleware::db_model::MiddlewarePoolConnection::{
 };
 
 use sqlx_middleware::db_model::{
-    ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2, MiddlewarePool,
+    ConfigAndPool as ConfigAndPool2, MiddlewarePool,
     QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2,
 };
 use sqlx_middleware::model::CheckType;
@@ -115,21 +115,22 @@ fn sqlite_mutltiple_column_test_db2() {
             })
             .collect::<Vec<_>>();
 
-            let pool = sqlite_configandpool.pool.get().await.unwrap();
+        let pool = sqlite_configandpool.pool.get().await.unwrap();
         let conn = MiddlewarePool::get_connection(pool).await.unwrap();
         let res: Result<(), rusqlite::Error> = match &conn {
             SqliteMiddlewarePoolConnection(sqlite_conn) => {
                 let sqlite_conn = sqlite_conn;
                 sqlite_conn.interact(move |xxx| {
-                let mut stmt = xxx.prepare(&query_and_params_vec[0].query)?;
-                for query_param in query_and_params_vec.iter() {
-                    let converted_params = sqlx_middleware::convert_params(&query_param.params)
-                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                    let mut stmt = xxx.prepare(&query_and_params_vec[0].query)?;
+                    for query_param in query_and_params_vec.iter() {
+                        let converted_params = sqlx_middleware::convert_params(&query_param.params)
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
-                    stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
-                }
-                Ok(())
-            })},
+                        stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
+                    }
+                    Ok(())
+                })
+            }
             _ => {
                 panic!("Should be a sqlite connection");
             }
@@ -173,8 +174,12 @@ fn sqlite_mutltiple_column_test_db2() {
                         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
                         // Prepare and execute the query
-                        let mut stmt = tx.prepare(&query_and_params.query)?;
-                        let result_set = {sqlx_middleware::build_result_set(&mut stmt, &converted_params)?};
+                        let result_set = {
+                            let mut stmt = tx.prepare(&query_and_params.query)?;
+                            let rs =
+                                sqlx_middleware::build_result_set(&mut stmt, &converted_params)?;
+                            rs
+                        };
                         tx.commit()?;
 
                         Ok::<_, DbError>(result_set)
@@ -185,7 +190,9 @@ fn sqlite_mutltiple_column_test_db2() {
             MiddlewarePoolConnection::Postgres(_) => {
                 Err("Expected SQLite connection, but got Postgres".to_string())
             }
-        }.unwrap().unwrap();
+        }
+        .unwrap()
+        .unwrap();
 
         // let res = sql_db
         //     .exec_general_query(vec![query_and_params], true)
@@ -196,7 +203,7 @@ fn sqlite_mutltiple_column_test_db2() {
         //     QueryState2::QueryReturnedSuccessfully
         // );
         // we expect 3 rows
-        assert_eq!(res.results .len(), 3);
+        assert_eq!(res.results.len(), 3);
 
         /*
         assert_eq!(res.return_result[0].results.len(), 3);
