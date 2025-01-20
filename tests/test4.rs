@@ -21,8 +21,8 @@ fn sqlite_mutltiple_column_test_db2() {
         let x = "file::memory:?cache=shared".to_string();
         // cfg.dbname = Some("xxx".to_string());
         let sqlite_configandpool = ConfigAndPool2::new_sqlite(x).await.unwrap();
-        let pool = sqlite_configandpool.pool.get().await.unwrap();
-        let conn = MiddlewarePool::get_connection(pool).await.unwrap();
+        // let pool = sqlite_configandpool.pool.get().await.unwrap();
+        // let conn = MiddlewarePool::get_connection(pool).await.unwrap();
 
         let tables = vec!["test"];
         let ddl = vec![
@@ -117,7 +117,7 @@ fn sqlite_mutltiple_column_test_db2() {
 
         let pool = sqlite_configandpool.pool.get().await.unwrap();
         let conn = MiddlewarePool::get_connection(pool).await.unwrap();
-        let res: Result<(), rusqlite::Error> = match &conn {
+        let _res: Result<(), rusqlite::Error> = match &conn {
             SqliteMiddlewarePoolConnection(sqlite_conn) => {
                 let sqlite_conn = sqlite_conn;
                 sqlite_conn.interact(move |xxx| {
@@ -205,77 +205,28 @@ fn sqlite_mutltiple_column_test_db2() {
         // we expect 3 rows
         assert_eq!(res.results.len(), 3);
 
-        /*
-        assert_eq!(res.return_result[0].results.len(), 3);
+        // assert_eq!(res.return_result[0].results.len(), 3);
 
         // dbg!(&res.return_result[0].results[0]);
 
         // row 1 should decode as: 1, 'Alpha', '2024-01-01 08:00:01', 10.5, 1, X'426C6F623132', '{"name": "Alice", "age": 30}'
+        assert_eq!(*res.results[0].get("recid").unwrap().as_int().unwrap(), 1);
+        assert_eq!(*res.results[0].get("a").unwrap().as_int().unwrap(), 1);
+        assert_eq!(res.results[0].get("b").unwrap().as_text().unwrap(), "Alpha");
         assert_eq!(
-            *res.return_result[0].results[0]
-                .get("recid")
-                .unwrap()
-                .as_int()
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            *res.return_result[0].results[0]
-                .get("a")
-                .unwrap()
-                .as_int()
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            res.return_result[0].results[0]
-                .get("b")
-                .unwrap()
-                .as_text()
-                .unwrap(),
-            "Alpha"
-        );
-        assert_eq!(
-            res.return_result[0].results[0]
-                .get("c")
-                .unwrap()
-                .as_timestamp()
-                .unwrap(),
+            res.results[0].get("c").unwrap().as_timestamp().unwrap(),
             NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
         );
+        assert_eq!(res.results[0].get("d").unwrap().as_float().unwrap(), 10.5);
+        assert_eq!(*res.results[0].get("e").unwrap().as_bool().unwrap(), true);
         assert_eq!(
-            res.return_result[0].results[0]
-                .get("d")
-                .unwrap()
-                .as_float()
-                .unwrap(),
-            10.5
-        );
-        assert_eq!(
-            *res.return_result[0].results[0]
-                .get("e")
-                .unwrap()
-                .as_bool()
-                .unwrap(),
-            true
-        );
-        assert_eq!(
-            res.return_result[0].results[0]
-                .get("f")
-                .unwrap()
-                .as_blob()
-                .unwrap(),
+            res.results[0].get("f").unwrap().as_blob().unwrap(),
             b"Blob12"
         );
         // troubleshoot this around step 3 of db.rs
         assert_eq!(
-            json!(res.return_result[0].results[0]
-                .get("g")
-                .unwrap()
-                .as_text()
-                .unwrap()),
+            json!(res.results[0].get("g").unwrap().as_text().unwrap()),
             json!(r#"{"name": "Alice", "age": 30}"#)
         );
-        */
     })
 }
