@@ -64,6 +64,7 @@ impl TryFrom<PgConfig> for ConfigAndPool {
 
 /// Convert a single column from a Postgres row into a RowValues.
 /// Note: if you need additional type mappings, add them here.
+#[allow(dead_code)]
 pub fn extract_pg_value(row: &tokio_postgres::Row, col_name: &str, type_name: &str) -> RowValues {
     match type_name {
         "INT4" | "INT8" | "BIGINT" | "INTEGER" | "INT" => {

@@ -1,10 +1,13 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sqlx_middleware::convenience_items::{  MissingDbObjects, create_tables3};
-use sqlx_middleware::db_model::MiddlewarePoolConnection::{self, Sqlite as SqliteMiddlewarePoolConnection};
+use sqlx_middleware::convenience_items::{create_tables3, MissingDbObjects};
+use sqlx_middleware::db_model::MiddlewarePoolConnection::{
+    self, Sqlite as SqliteMiddlewarePoolConnection,
+};
 
 use sqlx_middleware::db_model::{
-    ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2, MiddlewarePool, QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2
+    ConfigAndPool as ConfigAndPool2, DatabaseType as DatabaseType2, Db as Db2, MiddlewarePool,
+    QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2,
 };
 use sqlx_middleware::model::CheckType;
 use std::vec;
@@ -14,8 +17,7 @@ use tokio::runtime::Runtime;
 fn sqlite_mutltiple_column_test_db2() {
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        
-        let x= "file::memory:?cache=shared".to_string();
+        let x = "file::memory:?cache=shared".to_string();
         // cfg.dbname = Some("xxx".to_string());
         let sqlite_configandpool = ConfigAndPool2::new_sqlite(x).await.unwrap();
         let pool = sqlite_configandpool.pool.get().await.unwrap();
@@ -112,24 +114,23 @@ fn sqlite_mutltiple_column_test_db2() {
             })
             .collect::<Vec<_>>();
 
-            let res =     match conn {
-                SqliteMiddlewarePoolConnection(sqlite_conn) => {
-                     
-                    sqlite_conn.interact(|xxx|{
-                        let mut stmt = xxx.prepare(&query_and_params_vec[0].query)?;
-                        for query_param in query_and_params_vec.iter() {
-                            let  converted_params = sqlx_middleware::convert_params(&query_param.params)
-                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-        
-                            stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
-                        }
-                        Ok(())
-                })
+        let res = match conn {
+            SqliteMiddlewarePoolConnection(sqlite_conn) => sqlite_conn.interact(|xxx| {
+                let mut stmt = xxx.prepare(&query_and_params_vec[0].query)?;
+                for query_param in query_and_params_vec.iter() {
+                    let converted_params = sqlx_middleware::convert_params(&query_param.params)
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+                    stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
                 }
-                _ => {
-                    panic!("Should be a sqlite connection");
-                }
-            }.await.unwrap();
+                Ok(())
+            }),
+            _ => {
+                panic!("Should be a sqlite connection");
+            }
+        }
+        .await
+        .unwrap();
 
         // let res = sql_db
         //     .exec_general_query(query_and_params_vec, false)
@@ -157,16 +158,18 @@ fn sqlite_mutltiple_column_test_db2() {
                     .interact(|conn| {
                         // Start a transaction
                         let tx = conn.transaction()?;
-        
+
                         // Convert parameters using your helper function
-                        let converted_params = sqlx_middleware::convert_params(&query_and_params.params)
-                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-        
+                        let converted_params = sqlx_middleware::convert_params(
+                            &query_and_params.params,
+                        )
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
                         // Prepare and execute the query
                         let mut stmt = tx.prepare(&query_and_params.query)?;
                         let result_set = sqlx_middleware::build_result_set(&mut stmt)?;
                         tx.commit()?;
-        
+
                         Ok(results)
                     })
                     .await
