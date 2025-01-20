@@ -1,10 +1,6 @@
-use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Pool as DeadpoolSqlitePool, Runtime};
-use rusqlite::{types::ToSqlOutput, Connection, ToSql};
-use rusqlite::{OpenFlags, Statement, Transaction};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
-use std::thread;
-use tokio::task;
+use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
+use rusqlite::{types::ToSqlOutput, ToSql};
+use rusqlite::Statement;
 
 use crate::db_model::{
     ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
@@ -50,7 +46,7 @@ impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
     pub async fn new_sqlite(db_path: String) -> Result<Self, DbError> {
         // Configure deadpool_sqlite
-        let mut cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
+        let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
         // cfg.pool.unwrap().max_size = 15; // Adjust based on concurrency needs
         // cfg.url = Some(db_path.clone());
         // cfg.max_size = 15; // Adjust based on concurrency needs

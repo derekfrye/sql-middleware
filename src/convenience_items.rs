@@ -1,8 +1,7 @@
 use crate::db::{Db, QueryState};
 use crate::db2::{DatabaseResult as DatabaseResult2, Db as Db2, QueryAndParams as QueryAndParams2};
 use crate::db_model::{
-    ConfigAndPool, DatabaseResult as DatabaseResult3, Db as Db3, DbError, MiddlewarePool,
-    QueryAndParams as QueryAndParams3, QueryState as QueryState3,
+    ConfigAndPool, DatabaseResult as DatabaseResult3, DbError, MiddlewarePool, QueryState as QueryState3,
 };
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;

@@ -1,16 +1,14 @@
 // db_model.rs
 
 use chrono::NaiveDateTime;
-use deadpool::managed::{Manager, Object};
 use deadpool_postgres::{
-    Manager as PostgresManager, Object as PostgresObject, Pool as DeadpoolPostgresPool,
+    Object as PostgresObject, Pool as DeadpoolPostgresPool,
 };
 use deadpool_sqlite::{
-    Manager as SqliteManager, Object as SqliteObject, Pool as DeadpoolSqlitePool,
+    Object as SqliteObject, Pool as DeadpoolSqlitePool,
 };
 use serde_json::Value as JsonValue;
 // use std::sync::mpsc::Sender;
-use std::sync::Arc;
 // use tokio::sync::oneshot;
 
 // ==============================================

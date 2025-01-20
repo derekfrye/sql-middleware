@@ -1,17 +1,14 @@
 use std::error::Error;
-use std::{fmt, sync::Arc};
-use tokio::sync::oneshot;
+use std::fmt;
 // use tokio::task::spawn_blocking;
 
 use deadpool_postgres::Config as PgConfig;
 
 // use crate::db_model::ReadOnlyQuery;
 use crate::db_model::{
-    ConfigAndPool, CustomDbRow, DatabaseResult, DatabaseType, Db, DbError, MiddlewarePool,
-    QueryAndParams, QueryState, ResultSet, RowValues,
+    ConfigAndPool, DatabaseType, DbError, RowValues,
 };
 
-use crate::postgres::extract_pg_value;
 // use crate::sqlite::exec_write_query_sync;
 
 // ----------------------------------------
