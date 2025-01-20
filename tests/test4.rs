@@ -6,8 +6,8 @@ use sqlx_middleware::db_model::MiddlewarePoolConnection::{
 };
 
 use sqlx_middleware::db_model::{
-    ConfigAndPool as ConfigAndPool2, MiddlewarePool,
-    QueryAndParams as QueryAndParams2, QueryState as QueryState2, RowValues as RowValues2,
+    ConfigAndPool as ConfigAndPool2, MiddlewarePool, QueryAndParams as QueryAndParams2,
+    QueryState as QueryState2, RowValues as RowValues2,
 };
 use sqlx_middleware::model::CheckType;
 use sqlx_middleware::DbError;
