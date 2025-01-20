@@ -10,7 +10,7 @@ use sqlx_middleware::db_model::{
     QueryState as QueryState2, RowValues as RowValues2,
 };
 use sqlx_middleware::model::CheckType;
-use sqlx_middleware::DbError;
+use sqlx_middleware::SqlMiddlewareDbError as DbError;
 use std::vec;
 use tokio::runtime::Runtime;
 
@@ -124,7 +124,7 @@ fn sqlite_mutltiple_column_test_db2() {
                 sqlite_conn.interact(move |xxx| {
                     for query in query_and_params_vec.iter() {
                         let mut stmt = xxx.prepare(&query.query)?;
-                        let converted_params = sqlx_middleware::convert_params(&query.params)?;
+                        let converted_params = sqlx_middleware::sqlite_convert_params(&query.params)?;
                         stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
                     }
                     Ok(())
@@ -173,13 +173,13 @@ fn sqlite_mutltiple_column_test_db2() {
 
                         // Convert parameters using your helper function
                         let converted_params =
-                            sqlx_middleware::convert_params(&query_and_params.params)?;
+                            sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
 
                         // Prepare and execute the query
                         let result_set = {
                             let mut stmt = tx.prepare(&query_and_params.query)?;
                             let rs =
-                                sqlx_middleware::build_result_set(&mut stmt, &converted_params)?;
+                                sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
                             rs
                         };
                         tx.commit()?;
