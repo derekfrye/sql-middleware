@@ -19,6 +19,7 @@ fn sqlite_mutltiple_column_test_db2() {
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
         let x = "file::memory:?cache=shared".to_string();
+        // let x = "xxx".to_string();
         // cfg.dbname = Some("xxx".to_string());
         let sqlite_configandpool = ConfigAndPool2::new_sqlite(x).await.unwrap();
         // let pool = sqlite_configandpool.pool.get().await.unwrap();
@@ -100,7 +101,7 @@ fn sqlite_mutltiple_column_test_db2() {
             vec![RowValues2::Int(8)],
             vec![RowValues2::Int(9)],
             vec![
-                RowValues2::Int(10),
+                RowValues2::Int(100),
                 RowValues2::Text("Juliet".to_string()),
                 RowValues2::Float(100.75),
             ],
@@ -117,15 +118,13 @@ fn sqlite_mutltiple_column_test_db2() {
 
         let pool = sqlite_configandpool.pool.get().await.unwrap();
         let conn = MiddlewarePool::get_connection(pool).await.unwrap();
-        let _res: Result<(), rusqlite::Error> = match &conn {
+        let _res: Result<(), DbError> = match &conn {
             SqliteMiddlewarePoolConnection(sqlite_conn) => {
                 let sqlite_conn = sqlite_conn;
                 sqlite_conn.interact(move |xxx| {
-                    let mut stmt = xxx.prepare(&query_and_params_vec[0].query)?;
-                    for query_param in query_and_params_vec.iter() {
-                        let converted_params = sqlx_middleware::convert_params(&query_param.params)
-                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-
+                    for query in query_and_params_vec.iter() {
+                        let mut stmt = xxx.prepare(&query.query)?;
+                        let converted_params = sqlx_middleware::convert_params(&query.params)?;
                         stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
                     }
                     Ok(())
@@ -148,8 +147,13 @@ fn sqlite_mutltiple_column_test_db2() {
         //     QueryState2::QueryReturnedSuccessfully
         // );
 
-        let qry = "SELECT * from test where recid in ( ?1, ?2, ?3);";
-        let param = [RowValues2::Int(1), RowValues2::Int(2), RowValues2::Int(3)];
+        let qry = "SELECT * from test where recid in ( ?1, ?2, ?3, ?4);";
+        let param = [
+            RowValues2::Int(1),
+            RowValues2::Int(2),
+            RowValues2::Int(3),
+            RowValues2::Int(10),
+        ];
         // let param = [RowValues2::Int(1)];
         // let param = vec![RowValues::Int(1)];
         let query_and_params = QueryAndParams2 {
@@ -168,10 +172,8 @@ fn sqlite_mutltiple_column_test_db2() {
                         let tx = conn.transaction()?;
 
                         // Convert parameters using your helper function
-                        let converted_params = sqlx_middleware::convert_params(
-                            &query_and_params.params,
-                        )
-                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                        let converted_params =
+                            sqlx_middleware::convert_params(&query_and_params.params)?;
 
                         // Prepare and execute the query
                         let result_set = {
@@ -203,7 +205,7 @@ fn sqlite_mutltiple_column_test_db2() {
         //     QueryState2::QueryReturnedSuccessfully
         // );
         // we expect 3 rows
-        assert_eq!(res.results.len(), 3);
+        assert_eq!(res.results.len(), 4);
 
         // assert_eq!(res.return_result[0].results.len(), 3);
 
@@ -227,6 +229,32 @@ fn sqlite_mutltiple_column_test_db2() {
         assert_eq!(
             json!(res.results[0].get("g").unwrap().as_text().unwrap()),
             json!(r#"{"name": "Alice", "age": 30}"#)
+        );
+
+        // dbg!(&res.results[2]);
+
+        assert_eq!(*res.results[2].get("recid").unwrap().as_int().unwrap(), 3);
+        assert_eq!(*res.results[2].get("a").unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            res.results[2].get("b").unwrap().as_text().unwrap(),
+            "Charlie"
+        );
+        assert_eq!(
+            res.results[2].get("c").unwrap().as_timestamp().unwrap(),
+            NaiveDateTime::parse_from_str("2024-01-03 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
+        );
+        assert_eq!(res.results[2].get("d").unwrap().as_float().unwrap(), 30.25);
+        assert_eq!(*res.results[2].get("e").unwrap().as_bool().unwrap(), true);
+
+        // this was a param above
+        assert_eq!(*res.results[3].get("a").unwrap().as_int().unwrap(), 100);
+        // this was a param abvoe too
+        assert_eq!(res.results[3].get("d").unwrap().as_float().unwrap(), 100.75);
+        // dbg!(&res.results[3]);
+        // this was hard-coded
+        assert_eq!(
+            res.results[3].get("f").unwrap().as_blob().unwrap(),
+            b"Blob11"
         );
     })
 }
