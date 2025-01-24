@@ -3,9 +3,11 @@ use rusqlite::types::Value;
 use rusqlite::Statement;
 use rusqlite::{types::ToSqlOutput, ToSql};
 
-use crate::db_model::{
+use crate::middleware::{
     ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
 };
+
+// influenced design: https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112, https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite

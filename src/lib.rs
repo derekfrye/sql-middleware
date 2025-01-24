@@ -15,4 +15,4 @@ mod sqlite;
 
 pub use sqlite::build_result_set as sqlite_build_result_set;
 pub use sqlite::convert_params as sqlite_convert_params;
-pub use db_model::DbError as SqlMiddlewareDbError;
+pub use middleware::DbError as SqlMiddlewareDbError;

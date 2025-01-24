@@ -1,15 +1,16 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
 use sqlx_middleware::convenience_items::{create_tables3, MissingDbObjects};
-use sqlx_middleware::db_model::MiddlewarePoolConnection::{
-    self, Sqlite as SqliteMiddlewarePoolConnection,
+use sqlx_middleware::middleware::{
+    CheckType as CheckType2,
+    MiddlewarePoolConnection::{self, Sqlite as SqliteMiddlewarePoolConnection},
 };
 
-use sqlx_middleware::db_model::{
+use sqlx_middleware::middleware::{
     ConfigAndPool as ConfigAndPool2, MiddlewarePool, QueryAndParams as QueryAndParams2,
     QueryState as QueryState2, RowValues as RowValues2,
 };
-use sqlx_middleware::model::CheckType;
+// use sqlx_middleware::model::CheckType;
 use sqlx_middleware::SqlMiddlewareDbError as DbError;
 use std::vec;
 use tokio::runtime::Runtime;
@@ -56,7 +57,7 @@ fn sqlite_mutltiple_column_test_db2() {
         let create_result = create_tables3(
             &sqlite_configandpool,
             missing_objs,
-            CheckType::Table,
+            CheckType2::Table,
             &table_ddl
                 .iter()
                 .map(|(a, b, c, d)| (**a, *b, *c, *d))
@@ -124,7 +125,8 @@ fn sqlite_mutltiple_column_test_db2() {
                 sqlite_conn.interact(move |xxx| {
                     for query in query_and_params_vec.iter() {
                         let mut stmt = xxx.prepare(&query.query)?;
-                        let converted_params = sqlx_middleware::sqlite_convert_params(&query.params)?;
+                        let converted_params =
+                            sqlx_middleware::sqlite_convert_params(&query.params)?;
                         stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
                     }
                     Ok(())
@@ -178,8 +180,10 @@ fn sqlite_mutltiple_column_test_db2() {
                         // Prepare and execute the query
                         let result_set = {
                             let mut stmt = tx.prepare(&query_and_params.query)?;
-                            let rs =
-                                sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                            let rs = sqlx_middleware::sqlite_build_result_set(
+                                &mut stmt,
+                                &converted_params,
+                            )?;
                             rs
                         };
                         tx.commit()?;

@@ -1,8 +1,8 @@
 use crate::db::{Db, QueryState};
 // use crate::db2::{DatabaseResult as DatabaseResult2, Db as Db2, QueryAndParams as QueryAndParams2};
-use crate::db_model::{
+use crate::middleware::{
     ConfigAndPool, DatabaseResult as DatabaseResult3, DbError, MiddlewarePool,
-    QueryState as QueryState3,
+    QueryState as QueryState3, CheckType as CheckType2,
 };
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
@@ -182,13 +182,13 @@ pub async fn create_tables(
 pub async fn create_tables3(
     conf: &ConfigAndPool,
     tables: Vec<MissingDbObjects>,
-    check_type: CheckType,
+    check_type: CheckType2,
     ddl_for_validation: &[(&str, &str, &str, &str)],
 ) -> Result<DatabaseResult3<String>, DbError> {
     let mut return_result: DatabaseResult3<String> = DatabaseResult3::<String>::default();
     return_result.db_object_name = function_name!().to_string();
 
-    let entire_create_stms = if check_type == CheckType::Table {
+    let entire_create_stms = if check_type == CheckType2::Table {
         ddl_for_validation
             .iter()
             .filter(|x| tables.iter().any(|y| y.missing_object == x.0))
@@ -213,7 +213,6 @@ pub async fn create_tables3(
         MiddlewarePool::Sqlite(zz) => {
             let tdfda = zz.get().await.map_err(DbError::PoolErrorSqlite)?;
             // let conn = connection;
-            // useful: https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
 
             let _ = tdfda
                 .interact(move |conn| {

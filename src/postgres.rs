@@ -3,7 +3,7 @@
 use deadpool_postgres::Config as PgConfig;
 use tokio_postgres::NoTls;
 
-use crate::db_model::{ConfigAndPool, DatabaseType, DbError, MiddlewarePool, RowValues};
+use crate::middleware::{ConfigAndPool, DatabaseType, DbError, MiddlewarePool, RowValues};
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
 // you can do so. But note we’ve already declared the variant in db_model.
