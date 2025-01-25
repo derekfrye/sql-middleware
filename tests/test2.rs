@@ -4,15 +4,22 @@
 use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 use regex::Regex;
-use sqlx_middleware::middleware::{ ConfigAndPool, CustomDbRow,  MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues};
+use sqlx_middleware::middleware::{
+    ConfigAndPool, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+};
 use sqlx_middleware::SqlMiddlewareDbError;
 use std::net::TcpStream;
 use std::vec;
-use std::{ net::TcpListener, process::{ Command, Stdio }, thread, time::Duration };
+use std::{
+    net::TcpListener,
+    process::{Command, Stdio},
+    thread,
+    time::Duration,
+};
 use tokio::runtime::Runtime;
 
 #[test]
-fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
+fn postgres_cr_and_del_tables() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Find a free TCP port (starting from start_port, increment if taken)
     let start_port = 9050;
     let port = find_available_port(start_port);
@@ -28,22 +35,20 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
     //    In this example, we're running in detached mode (-d) and removing
     //    automatically when the container stops (--rm).
     let output = Command::new("podman")
-        .args(
-            &[
-                "run",
-                "--rm",
-                "-d",
-                "-p",
-                &format!("{}:5432", port),
-                "-e",
-                &format!("POSTGRES_USER={}", db_user),
-                "-e",
-                &format!("POSTGRES_PASSWORD={}", db_pass),
-                "-e",
-                &format!("POSTGRES_DB={}", db_name),
-                "postgres:latest",
-            ]
-        )
+        .args(&[
+            "run",
+            "--rm",
+            "-d",
+            "-p",
+            &format!("{}:5432", port),
+            "-e",
+            &format!("POSTGRES_USER={}", db_user),
+            "-e",
+            &format!("POSTGRES_PASSWORD={}", db_pass),
+            "-e",
+            &format!("POSTGRES_DB={}", db_name),
+            "postgres:latest",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -70,30 +75,26 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
     cfg.port = Some(port);
     cfg.user = Some(db_user.to_string());
     cfg.password = Some(db_pass.to_string());
-    
 
     let rt = Runtime::new().unwrap();
-  rt.block_on(async {
-    let config_and_pool = ConfigAndPool::new_postgres(cfg.clone()).await?;
-                    let pool = config_and_pool.pool.get().await?;
-                    let conn = MiddlewarePool::get_connection(pool).await?;
-                    
-            
-            let  pgconn = match conn {
-                MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
-                MiddlewarePoolConnection::Sqlite(_) => {
-                    panic!("Only sqlite is supported");
-                }
-            };
+    rt.block_on(async {
+        let config_and_pool = ConfigAndPool::new_postgres(cfg.clone()).await?;
+        let pool = config_and_pool.pool.get().await?;
+        let conn = MiddlewarePool::get_connection(pool).await?;
+
+        let pgconn = match conn {
+            MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
+            MiddlewarePoolConnection::Sqlite(_) => {
+                panic!("Only sqlite is supported");
+            }
+        };
         while !success && attempt < 10 {
             attempt += 1;
             // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
-            
 
             loop {
                 let podman_logs = Command::new("podman")
                     .args(&["logs", &container_id])
-
                     .output()
                     .expect("Failed to get logs from container");
                 let re = Regex::new(r"listening on IPv6 address [^,]+, port 5432").unwrap();
@@ -104,7 +105,6 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(100));
             }
 
-            
             let res = pgconn.execute("SELECT 1", &[]).await?;
             if res == 1 {
                 success = true;
@@ -119,11 +119,10 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let rt = Runtime::new().unwrap();
-  Ok(  rt.block_on(async {
+    Ok(rt.block_on(async {
         // env::var("DB_USER") = Ok("postgres".to_string());
 
-        let stmt=
-                "CREATE TABLE IF NOT EXISTS -- drop table event cascade
+        let stmt = "CREATE TABLE IF NOT EXISTS -- drop table event cascade
                     test (
                     event_id BIGSERIAL NOT NULL PRIMARY KEY,
                     espn_id BIGINT NOT NULL,
@@ -138,11 +137,9 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );";
 
-                    
-
-                    let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
-                    let pool = config_and_pool.pool.get().await?;
-                    let conn = MiddlewarePool::get_connection(pool).await?;  
+        let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
+        let pool = config_and_pool.pool.get().await?;
+        let conn = MiddlewarePool::get_connection(pool).await?;
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
@@ -151,26 +148,24 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
         };
 
         {
-                let tx = pgconn.transaction().await?;
-                let result_set = {
-                    let rs = tx.batch_execute(stmt).await?;
-                    rs
-                };
-                tx.commit().await?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-            }?;
-        
+            let tx = pgconn.transaction().await?;
+            let result_set = {
+                let rs = tx.batch_execute(stmt).await?;
+                rs
+            };
+            tx.commit().await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
+        }?;
 
         let query = "DELETE FROM test;";
         {
-                let tx = pgconn.transaction().await?;
-                let result_set = {
-                    let rs = tx.batch_execute(query).await?;
-                    rs
-                };
-                tx.commit().await?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-            
+            let tx = pgconn.transaction().await?;
+            let result_set = {
+                let rs = tx.batch_execute(query).await?;
+                rs
+            };
+            tx.commit().await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
         }?;
 
         let query_and_params = QueryAndParams {
@@ -179,64 +174,64 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
                 RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S").unwrap()
-                )
+                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
+                        .unwrap(),
+                ),
             ],
             is_read_only: false,
         };
 
-         {
-                let converted_params =
-                            sqlx_middleware::PostgresParams::convert(&query_and_params.params)?;
-                let tx = pgconn.transaction().await?;
-                tx.prepare(query_and_params.query.as_str()).await?;
-                let result_set = {
-                 let   rs = tx.execute(query_and_params.query.as_str(), &converted_params.as_refs()).await?;
+        {
+            let converted_params =
+                sqlx_middleware::PostgresParams::convert(&query_and_params.params)?;
+            let tx = pgconn.transaction().await?;
+            tx.prepare(query_and_params.query.as_str()).await?;
+            let result_set = {
+                let rs = tx
+                    .execute(query_and_params.query.as_str(), &converted_params.as_refs())
+                    .await?;
 
-                    rs
-                };
-                tx.commit().await?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-            
+                rs
+            };
+            tx.commit().await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
         }?;
 
         let query = "select * FROM test;";
-        let result={
-                let tx = pgconn.transaction().await?;
-                let  stmt=tx.prepare(query).await?;
-                let result_set = {
-                    let rs = sqlx_middleware::postgres_build_result_set(&stmt, &[], &tx).await?;
-                    rs
-                };
-                tx.commit().await?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-        
+        let result = {
+            let tx = pgconn.transaction().await?;
+            let stmt = tx.prepare(query).await?;
+            let result_set = {
+                let rs = sqlx_middleware::postgres_build_result_set(&stmt, &[], &tx).await?;
+                rs
+            };
+            tx.commit().await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
         }?;
 
-        let expected_result =  vec![CustomDbRow {
-                column_names: vec![
-                    "event_id".to_string(),
-                    "espn_id".to_string(),
-                    "name".to_string(),
-                    "ins_ts".to_string()
-                ],
-                rows: vec![
-                    RowValues::Int(1),
-                    RowValues::Int(123456),
-                    RowValues::Text("test name".to_string()),
-                    RowValues::Timestamp(
-                        NaiveDateTime::parse_from_str(
-                            "2021-08-06 16:00:00",
-                            "%Y-%m-%d %H:%M:%S"
-                        ).unwrap()
-                    )
-                ],
-            }];
-        
+        let expected_result = vec![CustomDbRow {
+            column_names: vec![
+                "event_id".to_string(),
+                "espn_id".to_string(),
+                "name".to_string(),
+                "ins_ts".to_string(),
+            ],
+            rows: vec![
+                RowValues::Int(1),
+                RowValues::Int(123456),
+                RowValues::Text("test name".to_string()),
+                RowValues::Timestamp(
+                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
+                        .unwrap(),
+                ),
+            ],
+        }];
+
         let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
 
         for (index, row) in result.results.iter().enumerate() {
-            let left: Vec<RowValues> = row.column_names
+            let left: Vec<RowValues> = row
+                .column_names
                 .iter()
                 .zip(&row.rows) // Pair column names with corresponding row values
                 .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -244,7 +239,8 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
                 .collect();
 
             // Get column names and row values from the expected result
-            let right: Vec<RowValues> = expected_result[index].column_names
+            let right: Vec<RowValues> = expected_result[index]
+                .column_names
                 .iter()
                 .zip(&expected_result[index].rows) // Pair column names with corresponding row values
                 .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -256,19 +252,15 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
 
         let query = "DROP TABLE test;
         DROP TABLE test_2;";
-       {
-            
-                let tx = pgconn.transaction().await?;
-                let result_set = {
-                    let rs = tx.batch_execute(query).await?;
-                    rs
-                };
-                tx.commit().await?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-            
+        {
+            let tx = pgconn.transaction().await?;
+            let result_set = {
+                let rs = tx.batch_execute(query).await?;
+                rs
+            };
+            tx.commit().await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
         }?;
-
-       
 
         // stop the container
         let _stop_cmd = Command::new("podman")
@@ -293,7 +285,7 @@ fn find_available_port(start_port: u16) -> u16 {
 
 fn is_port_in_use(port: u16) -> bool {
     match TcpStream::connect(("127.0.0.1", port)) {
-        Ok(_) => true, // If the connection succeeds, the port is in use
+        Ok(_) => true,   // If the connection succeeds, the port is in use
         Err(_) => false, // If connection fails, the port is available
     }
 }
