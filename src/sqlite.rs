@@ -55,7 +55,7 @@ impl From<deadpool_sqlite::InteractError> for DbError {
     }
 }
 
-/// A small helper for re-binding params specifically in the write context.
+/// Bind middleware params to SQLite types.
 // #[allow(dead_code)]
 pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value>, DbError> {
     let mut vec_values = Vec::with_capacity(params.len());
@@ -98,9 +98,9 @@ fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValue
     }
 }
 
+/// Will only run select queries. I think it ignores other queries.
 pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<ResultSet, DbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     let mut rows_iter = stmt.query(&param_refs[..])?;

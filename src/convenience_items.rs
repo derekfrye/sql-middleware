@@ -1,8 +1,8 @@
 use crate::db::{Db, QueryState};
 // use crate::db2::{DatabaseResult as DatabaseResult2, Db as Db2, QueryAndParams as QueryAndParams2};
 use crate::middleware::{
-    ConfigAndPool, DatabaseResult as DatabaseResult3, DbError, MiddlewarePool,
-    QueryState as QueryState3, CheckType as CheckType2,
+    CheckType as CheckType2, ConfigAndPool, DatabaseResult as DatabaseResult3, DbError,
+    MiddlewarePool, MiddlewarePoolConnection, QueryState as QueryState3,
 };
 use crate::model::{CheckType, DatabaseItem, DatabaseResult, QueryAndParams, RowValues};
 use function_name::named;
@@ -184,9 +184,9 @@ pub async fn create_tables3(
     tables: Vec<MissingDbObjects>,
     check_type: CheckType2,
     ddl_for_validation: &[(&str, &str, &str, &str)],
-) -> Result<DatabaseResult3<String>, DbError> {
-    let mut return_result: DatabaseResult3<String> = DatabaseResult3::<String>::default();
-    return_result.db_object_name = function_name!().to_string();
+) -> Result<(), DbError> {
+    // let mut return_result: DatabaseResult3<String> = DatabaseResult3::<String>::default();
+    // return_result.db_object_name = function_name!().to_string();
 
     let entire_create_stms = if check_type == CheckType2::Table {
         ddl_for_validation
@@ -207,53 +207,28 @@ pub async fn create_tables3(
             .collect::<Vec<String>>()
     };
 
-    // let connection = conf.pool.get().await.map_err(DbError::PoolError)?;
+    let pool = conf.pool.get().await?;
+    let conn = MiddlewarePool::get_connection(pool).await?;
     // let x = conf.pool;
-    let _result = match &conf.pool {
-        MiddlewarePool::Sqlite(zz) => {
-            let tdfda = zz.get().await.map_err(DbError::PoolErrorSqlite)?;
+    match &conn {
+        MiddlewarePoolConnection::Sqlite(zz) => {
+            // let tdfda = zz.get().await.map_err(DbError::from_interact_error)?;
             // let conn = connection;
 
-            let _ = tdfda
+            let _ = zz
                 .interact(move |conn| {
                     let query_pragmas = "
                     PRAGMA journal_mode = WAL;
                     PRAGMA foreign_keys = ON;
                     PRAGMA synchronous = NORMAL;
                 ";
-                    let all_queries = format!("{} {}", query_pragmas, entire_create_stms.join(";"));
+                    let all_queries =
+                        format!("{} {}", query_pragmas, entire_create_stms.join(";\n"));
                     conn.execute_batch(&all_queries)
-                        .map_err(|e| DbError::SqliteError(e))
                 })
                 .await?;
+            Ok(())
         }
-        MiddlewarePool::Postgres(_) => {}
-    };
-
-    // let result = db
-    //     .exec_general_query(
-    //         entire_create_stms
-    //             .iter()
-    //             .map(|x| QueryAndParams3 {
-    //                 query: x.to_string(),
-    //                 params: vec![],
-    //                 is_read_only: false,
-    //             })
-    //             .collect(),
-    //         false,
-    //     )
-    //     .await;
-
-    // let query_and_params = QueryAndParams {
-    //     query: entire_create_stms,
-    //     params: vec![],
-    // };
-    // let result = self.exec_general_query(vec![query_and_params], false).await;
-
-    Ok(DatabaseResult3::<String> {
-        db_last_exec_state: QueryState3::QueryReturnedSuccessfully,
-        error_message: None,
-        return_result: "".to_string(),
-        db_object_name: function_name!().to_string(),
-    })
+        MiddlewarePoolConnection::Postgres(_) => panic!("Only sqlite is supported "),
+    }
 }
