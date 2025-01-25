@@ -2,13 +2,13 @@ use chrono::NaiveDateTime;
 use serde_json::json;
 // use sqlx_middleware::convenience_items::{create_tables3, MissingDbObjects};
 use sqlx_middleware::middleware::{
-    MiddlewarePoolConnection::{self}, RowValues,
+    MiddlewarePoolConnection::{self},
+    RowValues,
 };
 
-use sqlx_middleware::middleware::{
-    ConfigAndPool , MiddlewarePool, QueryAndParams as QueryAndParams,     };
+use sqlx_middleware::middleware::{ConfigAndPool, MiddlewarePool, QueryAndParams};
 // use sqlx_middleware::model::CheckType;
-use sqlx_middleware::SqlMiddlewareDbError ;
+use sqlx_middleware::SqlMiddlewareDbError;
 use std::vec;
 use tokio::runtime::Runtime;
 
@@ -99,24 +99,24 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
             })
             .collect::<Vec<_>>();
 
-            {
-                sconn
-                    .interact(move |xxx| {
-                        let tx = xxx.transaction()?;
-                        for query in query_and_params_vec.iter() {
-                            let mut stmt = xxx.prepare(&query.query)?;
-                            let converted_params =
+        {
+            sconn
+                .interact(move |xxx| {
+                    let tx = xxx.transaction()?;
+                    for query in query_and_params_vec.iter() {
+                        let mut stmt = tx.prepare(&query.query)?;
+                        let converted_params =
                             sqlx_middleware::sqlite_convert_params(&query.params)?;
                         stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
-                        }
-                        
-                        tx.commit()?;
-                        Ok::<_, SqlMiddlewareDbError>(())
-                    })
-                    .await?
-            }?;
+                    }
 
-       let qry = "SELECT * from test where recid in ( ?1, ?2, ?3, ?4);";
+                    tx.commit()?;
+                    Ok::<_, SqlMiddlewareDbError>(())
+                })
+                .await?
+        }?;
+
+        let qry = "SELECT * from test where recid in ( ?1, ?2, ?3, ?4);";
         let param = [
             RowValues::Int(1),
             RowValues::Int(2),
@@ -133,28 +133,26 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
 
         let res = {
             sconn
-                    .interact(move |conn| {
-                        // Start a transaction
-                        let converted_params =
-                            sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
-                        
-                        let tx = conn.transaction()?;
-                        let result_set = {
-                            let mut stmt = tx.prepare(&query_and_params.query)?;
-                            let rs = sqlx_middleware::sqlite_build_result_set(
-                                &mut stmt,
-                                &converted_params,
-                            )?;
-                            rs
-                        };
-                        tx.commit()?;
+                .interact(move |conn| {
+                    // Start a transaction
+                    let converted_params =
+                        sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
 
-                        Ok::<_, SqlMiddlewareDbError>(result_set)
-                    })
-                    .await
-                    .map_err(|e| format!("Error executing query: {:?}", e))
-            }??;
-        
+                    let tx = conn.transaction()?;
+                    let result_set = {
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        let rs =
+                            sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                        rs
+                    };
+                    tx.commit()?;
+
+                    Ok::<_, SqlMiddlewareDbError>(result_set)
+                })
+                .await
+                .map_err(|e| format!("Error executing query: {:?}", e))
+        }??;
+
         // we expect 3 rows
         assert_eq!(res.results.len(), 4);
 
