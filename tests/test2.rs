@@ -2,7 +2,7 @@
 // use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 // use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
 use chrono::NaiveDateTime;
-use sqlx::{ Connection, Executor };
+// use sqlx::{ Connection, Executor };
 use regex::Regex;
 use sqlx_middleware::middleware::{ ConfigAndPool, CustomDbRow,  MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues};
 use sqlx_middleware::SqlMiddlewareDbError;
@@ -63,18 +63,32 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
     // 3. Wait 100ms to ensure Postgres inside the container is up; poll the DB until successful
     let mut success = false;
     let mut attempt = 0;
+
+    let mut cfg = deadpool_postgres::Config::new();
+    cfg.dbname = Some(db_name.to_string());
+    cfg.host = Some("localhost".to_string());
+    cfg.port = Some(port);
+    cfg.user = Some(db_user.to_string());
+    cfg.password = Some(db_pass.to_string());
+    
+
     let rt = Runtime::new().unwrap();
   rt.block_on(async {
+    let config_and_pool = ConfigAndPool::new_postgres(cfg.clone()).await?;
+                    let pool = config_and_pool.pool.get().await?;
+                    let conn = MiddlewarePool::get_connection(pool).await?;
+                    
+            
+            let  pgconn = match conn {
+                MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
+                MiddlewarePoolConnection::Sqlite(_) => {
+                    panic!("Only sqlite is supported");
+                }
+            };
         while !success && attempt < 10 {
             attempt += 1;
             // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
-            let conn_str = format!(
-                "postgres://{}:{}@localhost:{}/{}",
-                db_user,
-                db_pass,
-                port,
-                db_name
-            );
+            
 
             loop {
                 let podman_logs = Command::new("podman")
@@ -90,9 +104,9 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(100));
             }
 
-            let mut conn = sqlx::PgConnection::connect(&conn_str).await.unwrap();
-            let res = conn.execute("SELECT 1").await.unwrap();
-            if res.rows_affected() == 1 {
+            
+            let res = pgconn.execute("SELECT 1", &[]).await?;
+            if res == 1 {
                 success = true;
                 // println!("Successfully connected to Postgres!");
             } else {
@@ -100,7 +114,9 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(100));
             }
         }
-    });
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })?;
 
     let rt = Runtime::new().unwrap();
   Ok(  rt.block_on(async {
@@ -124,15 +140,9 @@ fn postgres_cr_and_del_tables()-> Result<(), Box<dyn std::error::Error>> {
 
                     
 
-        let mut cfg = deadpool_postgres::Config::new();
-        cfg.dbname = Some(db_name.to_string());
-        cfg.host = Some("localhost".to_string());
-        cfg.port = Some(port);
-        cfg.user = Some(db_user.to_string());
-        cfg.password = Some(db_pass.to_string());
-        let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
-        let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
+                    let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
+                    let pool = config_and_pool.pool.get().await?;
+                    let conn = MiddlewarePool::get_connection(pool).await?;  
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
