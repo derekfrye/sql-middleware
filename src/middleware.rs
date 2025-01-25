@@ -298,4 +298,3 @@ pub enum DatabaseItem {
     Table(DatabaseTable),
     Constraint(DatabaseConstraint),
 }
-

@@ -80,14 +80,6 @@ fn postgres_cr_and_del_tables() -> Result<(), Box<dyn std::error::Error>> {
     rt.block_on(async {
         let config_and_pool = ConfigAndPool::new_postgres(cfg.clone()).await?;
         let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
-
-        let pgconn = match conn {
-            MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
-            MiddlewarePoolConnection::Sqlite(_) => {
-                panic!("Only sqlite is supported");
-            }
-        };
         while !success && attempt < 10 {
             attempt += 1;
             // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
@@ -105,10 +97,20 @@ fn postgres_cr_and_del_tables() -> Result<(), Box<dyn std::error::Error>> {
                 thread::sleep(Duration::from_millis(100));
             }
 
-            let res = pgconn.execute("SELECT 1", &[]).await?;
-            if res == 1 {
-                success = true;
-                // println!("Successfully connected to Postgres!");
+            let conn = MiddlewarePool::get_connection(pool.clone()).await;
+            if conn.is_ok() {
+                let pgconn = match conn? {
+                    MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
+                    MiddlewarePoolConnection::Sqlite(_) => {
+                        panic!("Only sqlite is supported");
+                    }
+                };
+
+                let res = pgconn.execute("SELECT 1", &[]).await;
+                if res.is_ok() && res? == 1 {
+                    success = true;
+                    // println!("Successfully connected to Postgres!");
+                }
             } else {
                 // println!("Failed to connect to Postgres. Retrying...");
                 thread::sleep(Duration::from_millis(100));

@@ -3,12 +3,17 @@
 use std::error::Error;
 
 use chrono::NaiveDateTime;
-use deadpool_postgres:: Config as PgConfig;
+use deadpool_postgres::Config as PgConfig;
 use serde_json::Value;
-use tokio_postgres::{types::{to_sql_checked, IsNull, ToSql, Type}, NoTls, Statement, Transaction};
+use tokio_postgres::{
+    types::{to_sql_checked, IsNull, ToSql, Type},
+    NoTls, Statement, Transaction,
+};
 use tokio_util::bytes;
 
-use crate::middleware::{ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues};
+use crate::middleware::{
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
+};
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
 // you can do so. But note we’ve already declared the variant in db_model.
@@ -155,10 +160,8 @@ pub struct Params<'a> {
 
 impl<'a> Params<'a> {
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, DbError> {
-        let references: Vec<&(dyn ToSql + Sync)> = params
-            .iter()
-            .map(|p| p as &(dyn ToSql + Sync))
-            .collect();
+        let references: Vec<&(dyn ToSql + Sync)> =
+            params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
 
         Ok(Params { references })
     }
@@ -200,7 +203,10 @@ pub async fn build_result_set<'a>(
     transaction: &Transaction<'a>,
 ) -> Result<ResultSet, DbError> {
     // Execute the query
-    let rows =  transaction.query(stmt, params).await.map_err(DbError::PostgresError)?;
+    let rows = transaction
+        .query(stmt, params)
+        .await
+        .map_err(DbError::PostgresError)?;
 
     let column_names: Vec<String> = stmt
         .columns()
@@ -254,7 +260,10 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
     } else if type_info.name() == "bytea" {
         let val: Option<Vec<u8>> = row.try_get(idx).map_err(DbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Blob))
-    } else if type_info.name() == "text" || type_info.name() == "varchar" || type_info.name() == "char" {
+    } else if type_info.name() == "text"
+        || type_info.name() == "varchar"
+        || type_info.name() == "char"
+    {
         let val: Option<String> = row.try_get(idx).map_err(DbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     } else {

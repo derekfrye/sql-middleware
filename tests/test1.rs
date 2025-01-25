@@ -108,10 +108,8 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
                 .await
         }??;
 
-        dbg!(&res);
+        // dbg!(&res);
 
-        // we expect 1 result set
-        assert_eq!(res.results.len(), 1);
         // we expect 3 rows
         assert_eq!(res.results.len(), 3);
 
