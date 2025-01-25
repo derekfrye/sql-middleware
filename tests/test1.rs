@@ -1,6 +1,11 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sqlx_middleware::{middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues}, SqlMiddlewareDbError};
+use sqlx_middleware::{
+    middleware::{
+        ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+    },
+    SqlMiddlewareDbError,
+};
 // use sqlx_middleware::convenience_items::{create_tables, MissingDbObjects};
 // use sqlx_middleware::db::{ConfigAndPool, DatabaseType, Db, QueryState};
 
@@ -9,12 +14,18 @@ use std::vec;
 use tokio::runtime::Runtime;
 
 #[test]
-fn sqlite_mutltiple_column_test()-> Result<(), Box<dyn std::error::Error>> {
+fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
     Ok(rt.block_on(async {
         let x = "file::memory:?cache=shared".to_string();
 
         let config_and_pool = ConfigAndPool::new_sqlite(x).await?;
+        let pool = config_and_pool.pool.get().await?;
+        let sqlite_conn = MiddlewarePool::get_connection(pool).await?;
+        let sconn = match &sqlite_conn {
+            MiddlewarePoolConnection::Sqlite(sconn) => sconn,
+            _ => panic!("Only sqlite is supported "),
+        };
 
         let ddl = vec![
             "CREATE TABLE IF NOT EXISTS -- drop table test cascade
@@ -35,28 +46,19 @@ fn sqlite_mutltiple_column_test()-> Result<(), Box<dyn std::error::Error>> {
             is_read_only: false,
         };
 
-        let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
-
-        match &conn {
-            MiddlewarePoolConnection::Sqlite(sconn) => {
-                // let conn = conn.lock().unwrap();
-                sconn
-                    .interact(move |xxx| {
-                        let tx = xxx.transaction()?;    
-                        let result_set = {
-                            let rs =
-                                tx.execute_batch(&query_and_params.query)?;
-                            rs
-                        };
-                        tx.commit()?;
-                        Ok::<_, SqlMiddlewareDbError>(result_set)
-                    })
-                    .await?
-            }
-            _ => {
-                panic!("Only sqlite is supported ");
-            }
+        {
+            // let conn = conn.lock().unwrap();
+            sconn
+                .interact(move |xxx| {
+                    let tx = xxx.transaction()?;
+                    let result_set = {
+                        let rs = tx.execute_batch(&query_and_params.query)?;
+                        rs
+                    };
+                    tx.commit()?;
+                    Ok::<_, SqlMiddlewareDbError>(result_set)
+                })
+                .await?
         }?;
 
         let setup_queries = include_str!("../tests/sqlite/test2_setup.sql");
@@ -65,25 +67,18 @@ fn sqlite_mutltiple_column_test()-> Result<(), Box<dyn std::error::Error>> {
             params: vec![],
             is_read_only: false,
         };
-        match &conn {
-            MiddlewarePoolConnection::Sqlite(sconn) => {
-                // let conn = conn.lock().unwrap();
-                sconn
-                    .interact(move |xxx| {
-                        let tx = xxx.transaction()?;    
-                        let result_set = {
-                            let rs =
-                                tx.execute_batch(&query_and_params.query)?;
-                            rs
-                        };
-                        tx.commit()?;
-                        Ok::<_, SqlMiddlewareDbError>(result_set)
-                    })
-                    .await
-            }
-            _ => {
-                panic!("Only sqlite is supported ");
-            }
+        {
+            sconn
+                .interact(move |xxx| {
+                    let tx = xxx.transaction()?;
+                    let result_set = {
+                        let rs = tx.execute_batch(&query_and_params.query)?;
+                        rs
+                    };
+                    tx.commit()?;
+                    Ok::<_, SqlMiddlewareDbError>(result_set)
+                })
+                .await
         }??;
 
         let qry = "SELECT * from test where recid in (?,?, ?);";
@@ -94,28 +89,27 @@ fn sqlite_mutltiple_column_test()-> Result<(), Box<dyn std::error::Error>> {
             params: param.to_vec(),
             is_read_only: true,
         };
-        let res = match &conn {
-            MiddlewarePoolConnection::Sqlite(sconn) => {
-                sconn
-                    .interact(move |xxx| {
-                        let converted_params =
-                            sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
-                        let tx = xxx.transaction()?;
-    
-                        let result_set = {
-                            let mut stmt = tx.prepare(&query_and_params.query)?;
-                            let rs =
-                                sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
-                            rs
-                        };
-                        tx.commit()?;
-                        Ok::<_, SqlMiddlewareDbError>(result_set)
-                    })
-                    .await
-            }
-            _ => panic!("Only sqlite is supported "),
+        let res = {
+            sconn
+                .interact(move |xxx| {
+                    let converted_params =
+                        sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
+                    let tx = xxx.transaction()?;
+
+                    let result_set = {
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        let rs =
+                            sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                        rs
+                    };
+                    tx.commit()?;
+                    Ok::<_, SqlMiddlewareDbError>(result_set)
+                })
+                .await
         }??;
+
         dbg!(&res);
+
         // we expect 1 result set
         assert_eq!(res.results.len(), 1);
         // we expect 3 rows
@@ -124,30 +118,9 @@ fn sqlite_mutltiple_column_test()-> Result<(), Box<dyn std::error::Error>> {
         // dbg!(&res.return_result[0].results[0]);
 
         // row 1 should decode as: 1, 'Alpha', '2024-01-01 08:00:01', 10.5, 1, X'426C6F623132', '{"name": "Alice", "age": 30}'
-        assert_eq!(
-            *res.results[0]
-                .get("recid")
-                .unwrap()
-                .as_int()
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            *res.results[0]
-                .get("a")
-                .unwrap()
-                .as_int()
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            res.results[0]
-                .get("b")
-                .unwrap()
-                .as_text()
-                .unwrap(),
-            "Alpha"
-        );
+        assert_eq!(*res.results[0].get("recid").unwrap().as_int().unwrap(), 1);
+        assert_eq!(*res.results[0].get("a").unwrap().as_int().unwrap(), 1);
+        assert_eq!(res.results[0].get("b").unwrap().as_text().unwrap(), "Alpha");
         assert_eq!(
             res.results[0]
                 .get("c")
@@ -155,41 +128,17 @@ fn sqlite_mutltiple_column_test()-> Result<(), Box<dyn std::error::Error>> {
                 .unwrap(),
             NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
         );
+        assert_eq!(res.results[0].get("d").unwrap().as_float().unwrap(), 10.5);
+        assert_eq!(*res.results[0].get("e").unwrap().as_bool().unwrap(), true);
         assert_eq!(
-            res.results[0]
-                .get("d")
-                .unwrap()
-                .as_float()
-                .unwrap(),
-            10.5
-        );
-        assert_eq!(
-            *res.results[0]
-                .get("e")
-                .unwrap()
-                .as_bool()
-                .unwrap(),
-            true
-        );
-        assert_eq!(
-            res.results[0]
-                .get("f")
-                .unwrap()
-                .as_blob()
-                .unwrap(),
+            res.results[0].get("f").unwrap().as_blob().unwrap(),
             b"Blob12"
         );
         // troubleshoot this around step 3 of db.rs
         assert_eq!(
-            json!(res.results[0]
-                .get("g")
-                .unwrap()
-                .as_text()
-                .unwrap()),
+            json!(res.results[0].get("g").unwrap().as_text().unwrap()),
             json!(r#"{"name": "Alice", "age": 30}"#)
         );
         Ok::<(), Box<dyn std::error::Error>>(())
-    })?
-
-    )
+    })?)
 }
