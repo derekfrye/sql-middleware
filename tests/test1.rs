@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 
 #[test]
 fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new()?;
     Ok(rt.block_on(async {
         let x = "file::memory:?cache=shared".to_string();
 
@@ -47,7 +47,6 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         {
-            // let conn = conn.lock().unwrap();
             sconn
                 .interact(move |xxx| {
                     let tx = xxx.transaction()?;
@@ -67,6 +66,7 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
             params: vec![],
             is_read_only: false,
         };
+
         {
             sconn
                 .interact(move |xxx| {
@@ -78,8 +78,8 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
                     tx.commit()?;
                     Ok::<_, SqlMiddlewareDbError>(result_set)
                 })
-                .await
-        }??;
+                .await?
+        }?;
 
         let qry = "SELECT * from test where recid in (?,?, ?);";
         // let param = [RowValues::Int(1), RowValues::Int(2), RowValues::Int(3)];
