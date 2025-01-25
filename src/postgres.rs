@@ -132,27 +132,6 @@ pub fn extract_pg_value(row: &tokio_postgres::Row, col_name: &str, type_name: &s
     }
 }
 
-// pub fn convert_params_postgres(
-//     params: &[RowValues],
-// ) -> Result<Vec<Box<dyn ToSql + Sync>>, DbError> {
-//     let mut vec_values: Vec<Box<dyn ToSql + Sync>> = Vec::with_capacity(params.len());
-
-//     for p in params {
-//         let v: Box<dyn ToSql + Sync> = match p {
-//             RowValues::Int(i) => Box::new(*i),
-//             RowValues::Float(f) => Box::new(*f),
-//             RowValues::Text(s) => Box::new(s.clone()),
-//             RowValues::Bool(b) => Box::new(*b),
-//             RowValues::Timestamp(dt) => Box::new(*dt),
-//             RowValues::Null => Box::new(None::<i32>), // Use Option type for NULL
-//             RowValues::JSON(jsval) => Box::new(jsval.to_string()), // Serialize JSON to string
-//             RowValues::Blob(bytes) => Box::new(bytes.clone()),
-//         };
-//         vec_values.push(v);
-//     }
-
-//     Ok(vec_values)
-// }
 
 pub struct Params<'a> {
     references: Vec<&'a (dyn ToSql + Sync)>,
