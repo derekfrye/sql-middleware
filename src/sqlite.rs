@@ -1,7 +1,7 @@
-use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
+use deadpool_sqlite::{rusqlite, Config as DeadpoolSqliteConfig, Runtime};
 use rusqlite::types::Value;
 use rusqlite::Statement;
-use rusqlite::{types::ToSqlOutput, ToSql};
+use rusqlite::ToSql;
 
 use crate::middleware::{
     ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
@@ -66,13 +66,8 @@ pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value
             RowValues::Text(s) => rusqlite::types::Value::Text(s.clone()),
             RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
             RowValues::Timestamp(dt) => {
-                let to_sql_res = dt.to_sql();
-                match to_sql_res {
-                    Ok(ToSqlOutput::Owned(v)) => v,
-                    Ok(ToSqlOutput::Borrowed(vref)) => vref.into(),
-                    Ok(_) => rusqlite::types::Value::Null, // Handle any other Ok variants
-                    Err(e) => return Err(DbError::SqliteError(e)),
-                }
+                let formatted = dt.format("%F %T%.f").to_string(); // Adjust precision as needed
+                rusqlite::types::Value::Text(formatted)
             }
             RowValues::Null => rusqlite::types::Value::Null,
             RowValues::JSON(jsval) => rusqlite::types::Value::Text(jsval.to_string()),
