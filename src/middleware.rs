@@ -20,7 +20,7 @@ pub struct QueryAndParams {
     pub is_read_only: bool, // Indicates if the query is read-only (SELECT)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RowValues {
     Int(i64),
     Float(f64),
@@ -131,6 +131,15 @@ impl CustomDbRow {
 pub struct ResultSet {
     pub results: Vec<CustomDbRow>,
     pub rows_affected: usize,
+}
+
+impl ResultSet {
+    pub fn new() -> ResultSet {
+        ResultSet {
+            results: vec![],
+            rows_affected: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
