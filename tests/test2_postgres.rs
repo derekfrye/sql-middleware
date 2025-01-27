@@ -2,7 +2,7 @@
 // use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 // use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
 use chrono::NaiveDateTime;
-use common::postgres::xx;
+use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use sqlx::{ Connection, Executor };
 
 use sqlx_middleware::middleware::{
@@ -10,7 +10,6 @@ use sqlx_middleware::middleware::{
 };
 use sqlx_middleware::SqlMiddlewareDbError;
 
-use std::process::Command;
 use std::vec;
 use tokio::runtime::Runtime;
 mod common {
@@ -32,11 +31,11 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
     cfg.user = Some(db_user.to_string());
     cfg.password = Some(db_pass.to_string());
-    let postgres_stuff = xx(&cfg)?;
+    let postgres_stuff = setup_postgres_container(&cfg)?;
     cfg.port = Some(postgres_stuff.port);
 
     let rt = Runtime::new().unwrap();
-    Ok(rt.block_on(async {
+    rt.block_on(async {
         // env::var("DB_USER") = Ok("postgres".to_string());
 
         let stmt = "CREATE TABLE IF NOT EXISTS -- drop table event cascade
@@ -180,10 +179,11 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         }?;
 
         // stop the container
-        let _stop_cmd = Command::new("podman")
-            .args(&["stop", &postgres_stuff.container_id])
-            .output()
-            .expect("Failed to stop container");
+
         Ok::<(), Box<dyn std::error::Error>>(())
-    })?)
+    })?;
+
+    stop_postgres_container(postgres_stuff);
+
+    Ok(())
 }

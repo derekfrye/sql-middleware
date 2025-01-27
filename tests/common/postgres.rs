@@ -14,7 +14,7 @@ pub struct PostgresContainer {
     pub port: u16,
 }
 
-pub fn xx(
+pub fn setup_postgres_container(
     cfg: &deadpool_postgres::Config,
 ) -> Result<PostgresContainer, Box<dyn std::error::Error>> {
     let mut cfg = cfg.clone();
@@ -115,6 +115,20 @@ pub fn xx(
     })?;
 
     Ok(PostgresContainer { container_id, port })
+}
+
+pub fn stop_postgres_container(container: PostgresContainer) {
+    let output = Command::new("podman")
+        .args(&["stop", &container.container_id])
+        .output()
+        .expect("Failed to stop Podman Postgres container");
+
+    // Ensure Podman stopped successfully
+    assert!(
+        output.status.success(),
+        "Failed to stop podman container: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 // A small helper function to find an available port by trying to bind
