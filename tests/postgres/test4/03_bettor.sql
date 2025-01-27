@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS bettor (
-    user_id integer NOT NULL PRIMARY KEY,
+    user_id SERIAL NOT NULL PRIMARY KEY,
     name TEXT NOT NULL,
     ins_ts TIMESTAMP NOT NULL DEFAULT now()
     );
