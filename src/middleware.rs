@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 // use tokio::task::spawn_blocking;
 use chrono::NaiveDateTime;
+use clap::ValueEnum;
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
 use serde_json::Value as JsonValue;
@@ -71,7 +72,7 @@ pub enum MiddlewarePoolConnection {
     Sqlite(SqliteObject),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, ValueEnum)]
 pub enum DatabaseType {
     Postgres,
     Sqlite,
