@@ -1,6 +1,5 @@
 use regex::Regex;
 use sqlx_middleware::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
-use tokio::runtime::Runtime;
 use std::net::TcpStream;
 use std::{
     net::TcpListener,
@@ -8,18 +7,22 @@ use std::{
     thread,
     time::Duration,
 };
+use tokio::runtime::Runtime;
 
+pub struct PostgresContainer {
+    pub container_id: String,
+    pub port: u16,
+}
 
-pub fn xx(cfg: &deadpool_postgres::Config) 
--> Result<String, Box<dyn std::error::Error>> 
-{
-    let cfg = cfg.clone();
+pub fn xx(
+    cfg: &deadpool_postgres::Config,
+) -> Result<PostgresContainer, Box<dyn std::error::Error>> {
+    let mut cfg = cfg.clone();
     // 1. Find a free TCP port (starting from start_port, increment if taken)
     let start_port = 9050;
     let port = find_available_port(start_port);
+    cfg.port = Some(port);
     // println!("Using port: {}", port);
-
-    
 
     // 2. Start the Podman container
     //    In this example, we're running in detached mode (-d) and removing
@@ -32,7 +35,7 @@ pub fn xx(cfg: &deadpool_postgres::Config)
             "-p",
             &format!("{}:5432", port),
             "-e",
-            &format!("POSTGRES_USER={}",&cfg.user.as_ref().unwrap()),
+            &format!("POSTGRES_USER={}", &cfg.user.as_ref().unwrap()),
             "-e",
             &format!("POSTGRES_PASSWORD={}", cfg.password.as_ref().unwrap()),
             "-e",
@@ -111,7 +114,7 @@ pub fn xx(cfg: &deadpool_postgres::Config)
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
 
-    Ok(container_id)
+    Ok(PostgresContainer { container_id, port })
 }
 
 // A small helper function to find an available port by trying to bind

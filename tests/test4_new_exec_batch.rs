@@ -1,20 +1,17 @@
-use serde_json::Value;
-use sqlx_middleware::SqlMiddlewareDbError;
-// use sqlx::sqlite::SqlitePoolOptions;
-use std::sync::Arc;
-use std::{collections::HashMap, vec};
-use tokio::sync::RwLock;
-
 // use rusty_golf::controller::score;
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
-use sqlx_middleware::middleware::{ConfigAndPool as ConfigAndPool2, DatabaseExecutor, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams};
+use sqlx_middleware::middleware::{
+    ConfigAndPool as ConfigAndPool2, DatabaseExecutor, MiddlewarePool, QueryAndParams,
+};
 
 #[tokio::test]
-async fn test_new_batch_trait() -> Result<(), Box<dyn std::error::Error>> {
+async fn test4_new_batch_trait() -> Result<(), Box<dyn std::error::Error>> {
     let sqlite_uri = "file::memory:?cache=shared".to_string();
-    
-    let config_and_pool = ConfigAndPool2::new_sqlite(sqlite_uri.clone()).await.unwrap();
+
+    let config_and_pool = ConfigAndPool2::new_sqlite(sqlite_uri.clone())
+        .await
+        .unwrap();
 
     // Define the DDL statements
     let ddl = vec![

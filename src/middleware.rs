@@ -1,12 +1,12 @@
 // use std::error::Error;
 use std::fmt;
 // use tokio::task::spawn_blocking;
+use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use clap::ValueEnum;
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
 use serde_json::Value as JsonValue;
-use async_trait::async_trait;
 use thiserror::Error;
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
@@ -95,7 +95,7 @@ pub enum DbError {
     PoolErrorPostgres(deadpool::managed::PoolError<tokio_postgres::Error>),
     #[error(transparent)]
     PoolErrorSqlite(deadpool::managed::PoolError<rusqlite::Error>),
-    
+
     Other(String),
 }
 
@@ -286,35 +286,35 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 // Begin a transaction
                 let tx = pg_client.transaction().await?;
-                
+
                 // Execute the batch of queries
                 tx.batch_execute(query).await?;
-                
+
                 // Commit the transaction
                 tx.commit().await?;
-                
+
                 Ok(())
             }
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 // Convert &str to String to own the data
                 let query_owned = query.to_owned();
-                
+
                 // Interact with the Sqlite connection
                 sqlite_client
                     .interact(move |conn| -> Result<(), rusqlite::Error> {
                         // Begin a transaction
                         let tx = conn.transaction()?;
-                        
+
                         // Execute the batch of queries
                         tx.execute_batch(&query_owned)?;
-                        
+
                         // Commit the transaction
                         tx.commit()?;
-                        
+
                         Ok(())
                     })
                     .await?
-                     .map_err(DbError::SqliteError) // Map the inner rusqlite::Error
+                    .map_err(DbError::SqliteError) // Map the inner rusqlite::Error
             }
         }
     }

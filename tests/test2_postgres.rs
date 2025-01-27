@@ -10,35 +10,30 @@ use sqlx_middleware::middleware::{
 };
 use sqlx_middleware::SqlMiddlewareDbError;
 
+use std::process::Command;
 use std::vec;
-use std::{
-    net::TcpListener,
-    process::{Command, Stdio},
-    thread,
-    time::Duration,
-};
 use tokio::runtime::Runtime;
-mod common{
+mod common {
     pub mod postgres;
 }
 
-
 #[test]
-fn postgres_cr_and_del_tables() -> Result<(), Box<dyn std::error::Error>> {
-    
+fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
     let db_user = "test_user";
     // don't use @ or # in here, it fails
     // https://github.com/launchbadge/sqlx/issues/1624
     let db_pass = "test_passwordx(!323341";
     let db_name = "test_db";
 
-let mut cfg = deadpool_postgres::Config::new();
+    let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());
     // cfg.port = Some(port);
+
     cfg.user = Some(db_user.to_string());
     cfg.password = Some(db_pass.to_string());
-    let container_id = xx(&cfg)?;
+    let postgres_stuff = xx(&cfg)?;
+    cfg.port = Some(postgres_stuff.port);
 
     let rt = Runtime::new().unwrap();
     Ok(rt.block_on(async {
@@ -186,10 +181,9 @@ let mut cfg = deadpool_postgres::Config::new();
 
         // stop the container
         let _stop_cmd = Command::new("podman")
-            .args(&["stop", &container_id])
+            .args(&["stop", &postgres_stuff.container_id])
             .output()
             .expect("Failed to stop container");
         Ok::<(), Box<dyn std::error::Error>>(())
     })?)
 }
-
