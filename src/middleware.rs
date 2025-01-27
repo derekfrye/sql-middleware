@@ -1,4 +1,4 @@
-use std::error::Error;
+// use std::error::Error;
 use std::fmt;
 // use tokio::task::spawn_blocking;
 use chrono::NaiveDateTime;
@@ -6,12 +6,8 @@ use clap::ValueEnum;
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
 use serde_json::Value as JsonValue;
-// use deadpool_postgres::Config as PgConfig;
-
-// use crate::db_model::ReadOnlyQuery;
-// use crate::db_model::{ConfigAndPool, DatabaseType, DbError, RowValues};
-
-// use crate::sqlite::exec_write_query_sync;
+use async_trait::async_trait;
+use thiserror::Error;
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
 #[derive(Debug, Clone)]
@@ -89,12 +85,17 @@ pub struct Db {
     pub config_and_pool: ConfigAndPool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DbError {
+    #[error(transparent)]
     PostgresError(tokio_postgres::Error),
+    #[error(transparent)]
     SqliteError(rusqlite::Error),
+    #[error(transparent)]
     PoolErrorPostgres(deadpool::managed::PoolError<tokio_postgres::Error>),
+    #[error(transparent)]
     PoolErrorSqlite(deadpool::managed::PoolError<rusqlite::Error>),
+    
     Other(String),
 }
 
@@ -151,6 +152,12 @@ pub struct DatabaseResult<T> {
     pub db_object_name: String,
 }
 
+#[async_trait]
+pub trait DatabaseExecutor {
+    /// Executes a batch of SQL queries within a transaction.
+    async fn execute_batch(&mut self, query: &str) -> Result<(), DbError>;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckType {
     Table,
@@ -173,8 +180,6 @@ impl fmt::Display for DbError {
         }
     }
 }
-
-impl Error for DbError {}
 
 // ----------------------------------------
 // Impl for RowValues that is DB-agnostic
@@ -254,32 +259,6 @@ impl RowValues {
     }
 }
 
-// ----------------------------------------
-// Impl for ConfigAndPool
-// ----------------------------------------
-// impl ConfigAndPool {
-//     /// One entry point. Decides at runtime if this is Postgres or SQLite.
-//     pub async fn new_auto(config: &PgConfig, db_type: DatabaseType) -> Result<Self, DbError> {
-//         match db_type {
-//             DatabaseType::Postgres => {
-//                 // We need to clone, because `TryFrom<PgConfig>` consumes the input
-//                 let config_clone = config.clone();
-//                 config_clone.try_into()
-//             }
-//             DatabaseType::Sqlite => {
-//                 // For SQLite, interpret `config.dbname` as the file path
-//                 let path = config
-//                     .dbname
-//                     .clone()
-//                     .ok_or_else(|| DbError::Other("No dbname provided for SQLite".into()))?;
-
-//                 // Initialize the ConfigAndPool using deadpool_sqlite
-//                 ConfigAndPool::new_sqlite(path).await
-//             }
-//         }
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub struct DatabaseTable {
     pub table_name: String,
@@ -298,4 +277,45 @@ pub struct DatabaseConstraint {
 pub enum DatabaseItem {
     Table(DatabaseTable),
     Constraint(DatabaseConstraint),
+}
+
+#[async_trait]
+impl DatabaseExecutor for MiddlewarePoolConnection {
+    async fn execute_batch(&mut self, query: &str) -> Result<(), DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                // Begin a transaction
+                let tx = pg_client.transaction().await?;
+                
+                // Execute the batch of queries
+                tx.batch_execute(query).await?;
+                
+                // Commit the transaction
+                tx.commit().await?;
+                
+                Ok(())
+            }
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
+                // Convert &str to String to own the data
+                let query_owned = query.to_owned();
+                
+                // Interact with the Sqlite connection
+                sqlite_client
+                    .interact(move |conn| -> Result<(), rusqlite::Error> {
+                        // Begin a transaction
+                        let tx = conn.transaction()?;
+                        
+                        // Execute the batch of queries
+                        tx.execute_batch(&query_owned)?;
+                        
+                        // Commit the transaction
+                        tx.commit()?;
+                        
+                        Ok(())
+                    })
+                    .await?
+                     .map_err(DbError::SqliteError) // Map the inner rusqlite::Error
+            }
+        }
+    }
 }

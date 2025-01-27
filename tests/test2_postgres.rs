@@ -2,13 +2,14 @@
 // use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 // use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
 use chrono::NaiveDateTime;
+use common::postgres::xx;
 // use sqlx::{ Connection, Executor };
-use regex::Regex;
+
 use sqlx_middleware::middleware::{
     ConfigAndPool, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
 };
 use sqlx_middleware::SqlMiddlewareDbError;
-use std::net::TcpStream;
+
 use std::vec;
 use std::{
     net::TcpListener,
@@ -17,108 +18,27 @@ use std::{
     time::Duration,
 };
 use tokio::runtime::Runtime;
+mod common{
+    pub mod postgres;
+}
+
 
 #[test]
 fn postgres_cr_and_del_tables() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Find a free TCP port (starting from start_port, increment if taken)
-    let start_port = 9050;
-    let port = find_available_port(start_port);
-    // println!("Using port: {}", port);
-
+    
     let db_user = "test_user";
     // don't use @ or # in here, it fails
     // https://github.com/launchbadge/sqlx/issues/1624
     let db_pass = "test_passwordx(!323341";
     let db_name = "test_db";
 
-    // 2. Start the Podman container
-    //    In this example, we're running in detached mode (-d) and removing
-    //    automatically when the container stops (--rm).
-    let output = Command::new("podman")
-        .args(&[
-            "run",
-            "--rm",
-            "-d",
-            "-p",
-            &format!("{}:5432", port),
-            "-e",
-            &format!("POSTGRES_USER={}", db_user),
-            "-e",
-            &format!("POSTGRES_PASSWORD={}", db_pass),
-            "-e",
-            &format!("POSTGRES_DB={}", db_name),
-            "postgres:latest",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("Failed to start Podman Postgres container");
-
-    // Ensure Podman started successfully
-    assert!(
-        output.status.success(),
-        "Failed to run podman command: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Grab the container ID from stdout
-    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    // println!("Started container ID: {}", container_id);
-
-    // 3. Wait 100ms to ensure Postgres inside the container is up; poll the DB until successful
-    let mut success = false;
-    let mut attempt = 0;
-
-    let mut cfg = deadpool_postgres::Config::new();
+let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());
-    cfg.port = Some(port);
+    // cfg.port = Some(port);
     cfg.user = Some(db_user.to_string());
     cfg.password = Some(db_pass.to_string());
-
-    let rt = Runtime::new().unwrap();
-    rt.block_on(async {
-        let config_and_pool = ConfigAndPool::new_postgres(cfg.clone()).await?;
-        let pool = config_and_pool.pool.get().await?;
-        while !success && attempt < 10 {
-            attempt += 1;
-            // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
-
-            loop {
-                let podman_logs = Command::new("podman")
-                    .args(&["logs", &container_id])
-                    .output()
-                    .expect("Failed to get logs from container");
-                let re = Regex::new(r"listening on IPv6 address [^,]+, port 5432").unwrap();
-                let podman_logs_str = String::from_utf8_lossy(&podman_logs.stderr);
-                if re.is_match(&podman_logs_str) {
-                    break;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-
-            let conn = MiddlewarePool::get_connection(pool.clone()).await;
-            if conn.is_ok() {
-                let pgconn = match conn? {
-                    MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
-                    MiddlewarePoolConnection::Sqlite(_) => {
-                        panic!("Only sqlite is supported");
-                    }
-                };
-
-                let res = pgconn.execute("SELECT 1", &[]).await;
-                if res.is_ok() && res? == 1 {
-                    success = true;
-                    // println!("Successfully connected to Postgres!");
-                }
-            } else {
-                // println!("Failed to connect to Postgres. Retrying...");
-                thread::sleep(Duration::from_millis(100));
-            }
-        }
-
-        Ok::<(), Box<dyn std::error::Error>>(())
-    })?;
+    let container_id = xx(&cfg)?;
 
     let rt = Runtime::new().unwrap();
     Ok(rt.block_on(async {
@@ -273,21 +193,3 @@ fn postgres_cr_and_del_tables() -> Result<(), Box<dyn std::error::Error>> {
     })?)
 }
 
-// A small helper function to find an available port by trying to bind
-// starting from `start_port`, then incrementing until a bind succeeds.
-fn find_available_port(start_port: u16) -> u16 {
-    let mut port = start_port;
-    loop {
-        if TcpListener::bind(("127.0.0.1", port)).is_ok() && !is_port_in_use(port) {
-            return port;
-        }
-        port += 1;
-    }
-}
-
-fn is_port_in_use(port: u16) -> bool {
-    match TcpStream::connect(("127.0.0.1", port)) {
-        Ok(_) => true,   // If the connection succeeds, the port is in use
-        Err(_) => false, // If connection fails, the port is available
-    }
-}
