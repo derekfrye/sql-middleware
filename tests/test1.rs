@@ -1,10 +1,9 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sqlx_middleware::{
+use sql_middleware::{
     middleware::{
         ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
-    },
-    SqlMiddlewareDbError,
+    }, sqlite_build_result_set, sqlite_convert_params, SqlMiddlewareDbError
 };
 // use sqlx_middleware::convenience_items::{create_tables, MissingDbObjects};
 // use sqlx_middleware::db::{ConfigAndPool, DatabaseType, Db, QueryState};
@@ -93,13 +92,13 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
             sconn
                 .interact(move |xxx| {
                     let converted_params =
-                        sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
+                        sqlite_convert_params(&query_and_params.params)?;
                     let tx = xxx.transaction()?;
 
                     let result_set = {
                         let mut stmt = tx.prepare(&query_and_params.query)?;
                         let rs =
-                            sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                            sqlite_build_result_set(&mut stmt, &converted_params)?;
                         rs
                     };
                     tx.commit()?;

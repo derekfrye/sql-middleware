@@ -2,14 +2,14 @@ use chrono::NaiveDateTime;
 use deadpool_sqlite::rusqlite;
 use serde_json::json;
 // use sqlx_middleware::convenience_items::{create_tables3, MissingDbObjects};
-use sqlx_middleware::middleware::{
+use sql_middleware::{middleware::{
     MiddlewarePoolConnection::{self},
     RowValues,
-};
+}, sqlite_build_result_set, sqlite_convert_params};
 
-use sqlx_middleware::middleware::{ConfigAndPool, MiddlewarePool, QueryAndParams};
+use sql_middleware::middleware::{ConfigAndPool, MiddlewarePool, QueryAndParams};
 // use sqlx_middleware::model::CheckType;
-use sqlx_middleware::SqlMiddlewareDbError;
+use sql_middleware::SqlMiddlewareDbError;
 use std::vec;
 use tokio::runtime::Runtime;
 
@@ -107,7 +107,7 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
                     for query in query_and_params_vec.iter() {
                         let mut stmt = tx.prepare(&query.query)?;
                         let converted_params =
-                            sqlx_middleware::sqlite_convert_params(&query.params)?;
+                            sqlite_convert_params(&query.params)?;
                         stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
                     }
 
@@ -137,13 +137,13 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
                 .interact(move |conn| {
                     // Start a transaction
                     let converted_params =
-                        sqlx_middleware::sqlite_convert_params(&query_and_params.params)?;
+                        sqlite_convert_params(&query_and_params.params)?;
 
                     let tx = conn.transaction()?;
                     let result_set = {
                         let mut stmt = tx.prepare(&query_and_params.query)?;
                         let rs =
-                            sqlx_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                            sqlite_build_result_set(&mut stmt, &converted_params)?;
                         rs
                     };
                     tx.commit()?;

@@ -1,5 +1,5 @@
 use regex::Regex;
-use sqlx_middleware::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
+use sql_middleware::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 use std::net::TcpStream;
 use std::{
     net::TcpListener,

@@ -5,10 +5,10 @@ use chrono::NaiveDateTime;
 use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use sqlx::{ Connection, Executor };
 
-use sqlx_middleware::middleware::{
+use sql_middleware::middleware::{
     ConfigAndPool, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
 };
-use sqlx_middleware::SqlMiddlewareDbError;
+use sql_middleware::{postgres_build_result_set, PostgresParams, SqlMiddlewareDbError};
 
 use std::vec;
 use tokio::runtime::Runtime;
@@ -99,7 +99,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         {
             let converted_params =
-                sqlx_middleware::PostgresParams::convert(&query_and_params.params)?;
+                PostgresParams::convert(&query_and_params.params)?;
             let tx = pgconn.transaction().await?;
             tx.prepare(query_and_params.query.as_str()).await?;
             let result_set = {
@@ -118,7 +118,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             let tx = pgconn.transaction().await?;
             let stmt = tx.prepare(query).await?;
             let result_set = {
-                let rs = sqlx_middleware::postgres_build_result_set(&stmt, &[], &tx).await?;
+                let rs = postgres_build_result_set(&stmt, &[], &tx).await?;
                 rs
             };
             tx.commit().await?;

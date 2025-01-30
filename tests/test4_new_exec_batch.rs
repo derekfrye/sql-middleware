@@ -2,7 +2,7 @@
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
 use common::postgres::{setup_postgres_container, stop_postgres_container};
-use sqlx_middleware::{
+use sql_middleware::{
     middleware::{ConfigAndPool as ConfigAndPool2, DatabaseExecutor, DatabaseType, MiddlewarePool},
     SqlMiddlewareDbError,
 };
