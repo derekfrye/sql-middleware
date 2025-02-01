@@ -45,7 +45,6 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
         let query_and_params = QueryAndParams {
             query: ddl[0].to_string(),
             params: vec![],
-            is_read_only: false,
         };
 
         {
@@ -96,7 +95,6 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
             .map(|(a, b)| QueryAndParams {
                 query: a.to_string(),
                 params: b.to_vec(),
-                is_read_only: false,
             })
             .collect::<Vec<_>>();
 
@@ -129,7 +127,6 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
         let query_and_params = QueryAndParams {
             query: qry.to_string(),
             params: param.to_vec(),
-            is_read_only: true,
         };
 
         let res = {

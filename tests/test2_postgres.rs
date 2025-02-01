@@ -94,7 +94,6 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap(),
                 ),
             ],
-            is_read_only: false,
         };
 
         {
