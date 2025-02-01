@@ -4,7 +4,11 @@
 use common::postgres::{setup_postgres_container, stop_postgres_container};
 use deadpool_sqlite::rusqlite;
 use sql_middleware::{
-    middleware::{AnyConnWrapper, ConfigAndPool as ConfigAndPool2, DatabaseExecutor, DatabaseType, MiddlewarePool, QueryAndParams, RowValues}, sqlite_convert_params, PostgresParams, SqlMiddlewareDbError
+    middleware::{
+        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, DatabaseType,
+        MiddlewarePool, MiddlewarePoolConnection, RowValues, SyncDatabaseExecutor,
+    },
+    sqlite_convert_params, PostgresParams, SqlMiddlewareDbError,
 };
 use tokio::runtime::Runtime;
 mod common {
@@ -74,8 +78,8 @@ enum TestCase<'a> {
     Postgres(&'a deadpool_postgres::Config),
 }
 
-async fn run_test_logic<C: DatabaseExecutor>(
-    conn: &mut C,
+async fn run_test_logic(
+    conn: &mut MiddlewarePoolConnection,
     db_type: DatabaseType,
 ) -> Result<(), SqlMiddlewareDbError> {
     // Define the DDL statements
@@ -118,65 +122,66 @@ async fn run_test_logic<C: DatabaseExecutor>(
         .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
         .collect();
 
-// conn.execute_dml(paramaterized_query, &params[0]).await?;
+    // conn.execute_dml(paramaterized_query, &params[0]).await?;
 
     // lets first run this through 100 transactions, yikes
     for param in params {
         conn.execute_dml(&paramaterized_query, &param).await?;
     }
 
-     // generate 100 params
-     let params: Vec<Vec<RowValues>> = (100..200)
-     .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
-     .collect();
+    // generate 100 more params
+    let params: Vec<Vec<RowValues>> = (100..200)
+        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
+        .collect();
 
     // now let's be a little smarter and write our own loop to exec a 100 inserts
-        
-                let rows_affected = conn
-                .interact_async(|wrapper| async move {
-                    match wrapper {
-                        AnyConnWrapper::Sqlite(sql_conn) => {
-                            // SQLite is synchronous. Even though *this* is an async closure, 
-                            // the actual calls block inside `block_on()`.
-                            let tx = sql_conn.transaction()?;
-                            for param in params {
-                                let converted_params = sqlite_convert_params(&param)?;
-                                let rows = tx.execute(paramaterized_query, &converted_params.iter().map(|v| v as &dyn rusqlite::ToSql).collect::<Vec<_>>()[..])?;
-                            }
-                            tx.commit()?;
-                            Ok(())
+
+    match db_type {
+        DatabaseType::Postgres => {
+            conn.interact_async(|wrapper| async move {
+                match wrapper {
+                    AnyConnWrapper::Postgres(pg_handle) => {
+                        let client = pg_handle.as_ref();
+                        let mut tx = client.transaction().await?;
+                        for param in params {
+                            let postgres_params = PostgresParams::convert(&param)?;
+                            tx.execute(paramaterized_query, &postgres_params.as_refs())
+                                .await?;
                         }
-                        AnyConnWrapper::Postgres(pg_handle) => {
-                            // Postgres is async. We can await transaction calls normally:
-                            let client = pg_handle.as_ref(); // &tokio_postgres::Client
-                            let mut tx = client.transaction().await?;
-                            for param in params {
-                                let postgres_params = PostgresParams::convert(&param)?;
-                                let rows = tx.execute(paramaterized_query, &postgres_params.as_refs()).await?;
-                            }
-                            tx.commit().await?;
-                            Ok(())
-                        }
+                        tx.commit().await?;
+                        Ok(())
                     }
-                })
-                .await?;
-
-    //             let tx = conn.transaction().await?;
-    //             for param in params{
-    //             let params = PostgresParams::convert(&param)?;
-    
-    // let stmt = tx.prepare(query).await?;
-    // let result_set = build_result_set(&stmt, params.as_refs(), &tx).await?;
-    // tx.commit().await?;
-                       
-    
-
-    // let parameterized_select = match db_type {
-    //     DatabaseType::Postgres => "SELECT * FROM test WHERE id = $1;",
-    //     DatabaseType::Sqlite => "SELECT * FROM test WHERE id = ?1;",
-    // };
-
-    // let result_set = conn.execute_select(parameterized_select, &[RowValues::Int(1)]).await?;
+                    _ => Err(SqlMiddlewareDbError::Other(
+                        "Unexpected database type".into(),
+                    )),
+                }
+            })
+            .await?;
+        }
+        DatabaseType::Sqlite => {
+            conn.interact_sync(|wrapper| match wrapper {
+                AnyConnWrapper::Sqlite(sql_conn) => {
+                    let tx = sql_conn.transaction()?;
+                    for param in params {
+                        let converted_params = sqlite_convert_params(&param)?;
+                        tx.execute(
+                            paramaterized_query,
+                            &converted_params
+                                .iter()
+                                .map(|v| v as &dyn rusqlite::ToSql)
+                                .collect::<Vec<_>>()[..],
+                        )?;
+                    }
+                    tx.commit()?;
+                    Ok(())
+                }
+                _ => Err(SqlMiddlewareDbError::Other(
+                    "Unexpected database type".into(),
+                )),
+            })
+            .await?;
+        }
+    }
 
     Ok(())
 }

@@ -276,7 +276,7 @@ pub enum DatabaseItem {
 }
 
 #[async_trait]
-pub trait DatabaseExecutor {
+pub trait AsyncDatabaseExecutor {
     /// Executes a batch of SQL queries (can be a mix of reads/writes) within a transaction. No parameters are supported.
     async fn execute_batch(&mut self, query: &str) -> Result<(), DbError>;
 
@@ -292,17 +292,24 @@ pub trait DatabaseExecutor {
 
     async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, DbError>
     where
-        // For example: 
+        // For example:
         // f: |AnyConnWrapper| async move { ...some DB calls...; Ok(...) }
         F: FnOnce(AnyConnWrapper) -> FR + Send + 'static,
         FR: Future<Output = Result<R, DbError>> + Send + 'static,
-        R: Send + 'static,;
+        R: Send + 'static;
+}
+
+#[async_trait]
+pub trait SyncDatabaseExecutor {
+    async fn interact_sync<F, R>(&self, f: F) -> Result<R, DbError>
+    where
+        F: FnOnce(AnyConnWrapper) -> R + Send + 'static,
+        R: Send + 'static;
 }
 
 /// A trait representing a database transaction.
 #[async_trait]
 pub trait TransactionExecutor {
-
     /// Executes a single query within the transaction.
     async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
 
@@ -313,13 +320,12 @@ pub trait TransactionExecutor {
 /// A trait representing a prepared statement.
 #[async_trait]
 pub trait StatementExecutor {
-
     /// Executes the prepared statement and returns the result set.
     async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError>;
 }
 
 #[async_trait]
-impl DatabaseExecutor for MiddlewarePoolConnection {
+impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     /// Executes a batch of SQL queries within a transaction by delegating to the specific database module.
     async fn execute_batch(&mut self, query: &str) -> Result<(), DbError> {
         match self {
@@ -351,41 +357,56 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
                 postgres::execute_dml(pg_client, query, &params).await
             }
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
-                sqlite::execute_dml(sqlite_client, query, &params).await
+                sqlite::execute_dml(sqlite_client, query, params).await
             }
         }
     }
     async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, DbError>
     where
-        // For example: 
+        // For example:
         // f: |AnyConnWrapper| async move { ...some DB calls...; Ok(...) }
         F: FnOnce(AnyConnWrapper) -> FR + Send + 'static,
         FR: Future<Output = Result<R, DbError>> + Send + 'static,
         R: Send + 'static,
     {
         match self {
-            MiddlewarePoolConnection::Sqlite(sqlite_obj) => {
-                // For SQLite, we must call `rusqlite` operations in a blocking manner.
-                // `deadpool_sqlite` has `.interact(...)` which gives us a synchronous closure.
-                // Inside that closure, we "block_on" your async code.
-                sqlite_obj
-                    .interact(move |conn| {
-                        let wrapper = AnyConnWrapper::Sqlite(conn);
-                        // We have to block_on the async closure because rusqlite is sync.
-                        tokio::runtime::Handle::current().block_on(f(wrapper))
-                    })
-                    .await?
-            }
             MiddlewarePoolConnection::Postgres(pg_obj) => {
-                // For Postgres, we can do fully async. 
+                // For Postgres, we can do fully async.
                 // `pg_obj` is a `deadpool_postgres::Object` which derefs to `&tokio_postgres::Client`.
-                // We'll clone it (Arc clone) to pass into the closure as an owned Client, 
+                // We'll clone it (Arc clone) to pass into the closure as an owned Client,
                 // so the closure can hold onto it while it's async.
                 // let pg_obj_clone = pg_obj.clone();
                 let wrapper = AnyConnWrapper::Postgres(pg_obj);
                 // Now just await the user closure directly
                 f(wrapper).await
             }
+            _ => Err(DbError::Other(
+                "interact_async only supported for Postgres".into(),
+            )),
+        }
+    }
+}
+
+#[async_trait]
+impl SyncDatabaseExecutor for MiddlewarePoolConnection {
+    async fn interact_sync<F, R>(&self, f: F) -> Result<R, DbError>
+    where
+        F: FnOnce(AnyConnWrapper) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        match self {
+            MiddlewarePoolConnection::Sqlite(sqlite_obj) => {
+                // Use `deadpool_sqlite`'s `interact` method
+                sqlite_obj
+                    .interact(move |conn| {
+                        let wrapper = AnyConnWrapper::Sqlite(conn);
+                        Ok(f(wrapper))
+                    })
+                    .await?
+            }
+            _ => Err(DbError::Other(
+                "interact_sync only supported for SQLite".into(),
+            )),
         }
     }
 }
@@ -396,7 +417,7 @@ impl MiddlewarePoolConnection {
     /// and returns a `Future<Output=Result<R>>`.  
     pub async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, DbError>
     where
-        // For example: 
+        // For example:
         // f: |AnyConnWrapper| async move { ...some DB calls...; Ok(...) }
         F: FnOnce(AnyConnWrapper) -> FR + Send + 'static,
         FR: Future<Output = Result<R, DbError>> + Send + 'static,
@@ -416,9 +437,9 @@ impl MiddlewarePoolConnection {
                     .await?
             }
             MiddlewarePoolConnection::Postgres(pg_obj) => {
-                // For Postgres, we can do fully async. 
+                // For Postgres, we can do fully async.
                 // `pg_obj` is a `deadpool_postgres::Object` which derefs to `&tokio_postgres::Client`.
-                // We'll clone it (Arc clone) to pass into the closure as an owned Client, 
+                // We'll clone it (Arc clone) to pass into the closure as an owned Client,
                 // so the closure can hold onto it while it's async.
                 // let pg_obj_clone = pg_obj.clone();
                 let wrapper = AnyConnWrapper::Postgres(pg_obj);
@@ -430,7 +451,7 @@ impl MiddlewarePoolConnection {
 }
 
 //
-// 5. AnyConnWrapper: an enum with access to the actual underlying rusqlite::Connection 
+// 5. AnyConnWrapper: an enum with access to the actual underlying rusqlite::Connection
 //    or a (cloned) tokio_postgres::Client.
 //
 //    Because a `deadpool_postgres::Object` is basically an `Arc<tokio_postgres::Client>` plus
@@ -439,7 +460,7 @@ impl MiddlewarePoolConnection {
 pub enum AnyConnWrapper<'c> {
     /// SQLite is sync. We hold a reference to the `rusqlite::Connection`.
     Sqlite(&'c rusqlite::Connection),
-    /// Postgres: store the entire `deadpool_postgres::Object`, which can be treated as a 
+    /// Postgres: store the entire `deadpool_postgres::Object`, which can be treated as a
     /// clonable handle to the underlying tokio_postgres::Client.
     Postgres(&'c deadpool_postgres::Object),
 }

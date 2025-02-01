@@ -1,19 +1,18 @@
 // postgres.rs
-use async_trait::async_trait;
 use std::error::Error;
 
+use crate::middleware::{
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
+};
 use chrono::NaiveDateTime;
+use deadpool_postgres::Transaction;
 use deadpool_postgres::{Config as PgConfig, Object};
 use serde_json::Value;
 use tokio_postgres::{
     types::{to_sql_checked, IsNull, ToSql, Type},
-    NoTls, Statement, 
+    NoTls, Statement,
 };
 use tokio_util::bytes;
-use deadpool_postgres::Transaction;
-use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues, StatementExecutor, 
-};
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
 // you can do so. But note we’ve already declared the variant in db_model.
@@ -211,9 +210,6 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
     }
 }
 
-pub struct PgStatementExecutor {
-    stmt: Statement,
-}
 
 // #[async_trait]
 // impl StatementExecutor for PgStatementExecutor {
@@ -266,4 +262,3 @@ pub async fn execute_dml(
 
     Ok(rows as usize)
 }
-
