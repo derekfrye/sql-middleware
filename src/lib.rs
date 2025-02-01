@@ -18,6 +18,7 @@ pub use middleware::SqlMiddlewareDbError;
 pub use postgres::build_result_set as postgres_build_result_set;
 pub use postgres::Params as PostgresParams;
 pub use rusqlite::params_from_iter as sqlite_params_from_iter;
+pub use deadpool_sqlite::rusqlite::params as sqlite_params;
 pub use sqlite::build_result_set as sqlite_build_result_set;
 pub use sqlite::convert_params as sqlite_convert_params;
 pub use sqlite::convert_params_for_execute as sqlite_convert_params_for_execute;

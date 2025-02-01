@@ -206,7 +206,8 @@ async fn run_test_logic(
         .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
         .collect();
 
-    // now let's be a little smarter and write our own loop to exec a 100 inserts
+    // now let's be a little smarter and write our own loop to exec inserts
+    // yes, this isn't as quick as bulk loading, which isn't implemented yet
 
     match db_type {
         DatabaseType::Postgres => {
