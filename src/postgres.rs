@@ -96,11 +96,22 @@ pub struct Params<'a> {
 }
 
 impl<'a> Params<'a> {
+    // Single parameter conversion remains mostly the same
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         let references: Vec<&(dyn ToSql + Sync)> =
             params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
 
         Ok(Params { references })
+    }
+
+    // Adjusted convert_for_batch method
+    pub fn convert_for_batch(params: &'a Vec<RowValues>) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
+        let mut references = Vec::new();
+        for p in params {
+            references.push(p as &(dyn ToSql + Sync));
+        }
+
+        Ok(references)
     }
 
     pub fn as_refs(&self) -> &[&(dyn ToSql + Sync)] {

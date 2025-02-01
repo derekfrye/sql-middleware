@@ -93,7 +93,8 @@ fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValue
     }
 }
 
-/// Will only run select queries. I think it ignores other queries.
+/// Only SELECT queries return rows affected. If a DML is sent, it does run it. 
+/// If there's more than one query in the statment, idk which statement will be run.
 pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();

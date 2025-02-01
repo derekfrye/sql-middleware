@@ -11,9 +11,11 @@ use sql_middleware::{
         DatabaseType,
         MiddlewarePool,
         MiddlewarePoolConnection,
+        QueryAndParams,
         RowValues,
-        
     },
+    postgres_build_result_set,
+    sqlite_build_result_set,
     sqlite_convert_params,
     PostgresParams,
     SqlMiddlewareDbError,
@@ -137,13 +139,13 @@ async fn run_test_logic(
 
     // lets first run this through 100 transactions, yikes
     for param in params {
-        // println!("param: {:?}", param); 
+        // println!("param: {:?}", param);
         conn.execute_dml(&paramaterized_query, &param).await?;
     }
 
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 100);
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 100);
 
     // generate 100 more params
     let params: Vec<Vec<RowValues>> = (100..200)
@@ -197,7 +199,7 @@ async fn run_test_logic(
 
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 200);
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 200);
 
     // generate 200 more params
     let params: Vec<Vec<RowValues>> = (0..200)
@@ -251,7 +253,54 @@ async fn run_test_logic(
 
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 400);
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 400);
+
+    // let's test a common pattern in rusty-golf
+    // generate 1 more param
+    let params: Vec<RowValues> = vec![RowValues::Int(990), RowValues::Text(format!("name_{}", 990))];
+
+    let query_and_params = QueryAndParams {
+        query: paramaterized_query.to_string(),
+        params,
+    };
+
+    let res = (match &mut *conn {
+        MiddlewarePoolConnection::Postgres(xx) => {
+            let tx = xx.transaction().await?;
+            let converted_params = PostgresParams::convert_for_batch(&query_and_params.params)?;
+            let result_set = {
+                let stmt = tx.prepare(&query_and_params.query).await?;
+                let rs = postgres_build_result_set(&stmt, &converted_params, &tx).await?;
+                rs
+            };
+            tx.commit().await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
+        }
+        MiddlewarePoolConnection::Sqlite(ref mut xx) => {
+            xx.interact(move |xxx| {
+                let tx = xxx.transaction()?;
+                let converted_params = sqlite_convert_params(&query_and_params.params)?;
+                let result_set = {
+                    let mut stmt = tx.prepare(&query_and_params.query)?;
+                    let rs = sqlite_build_result_set(&mut stmt, &converted_params)?;
+                    rs
+                };
+                tx.commit()?;
+                Ok::<_, SqlMiddlewareDbError>(result_set)
+            }).await?
+        }
+    })?;
+
+    println!("dbdrive: {:?}, res: {:?}", db_type, res);
+    
+    // make sure to match the val frmo above
+    let query = "select count(*) as cnt,name from test where id = 990;";
+    let result_set = conn.execute_select(query, &[]).await?;
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 1);
+    assert_eq!(*result_set.results[0].get("name").unwrap().as_text().unwrap(), *"name_990");
+
+    
+    assert_eq!(res.rows_affected, 1);
 
     Ok(())
 }
