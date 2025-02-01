@@ -1,3 +1,4 @@
+use deadpool_sqlite::rusqlite::ParamsFromIter;
 use deadpool_sqlite::Object;
 use deadpool_sqlite::{rusqlite, Config as DeadpoolSqliteConfig, Runtime};
 use rusqlite::types::Value;
@@ -77,6 +78,16 @@ pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value
     }
     Ok(vec_values)
 }
+
+pub fn convert_params_for_execute<I>(iter: I) -> Result<ParamsFromIter<std::vec::IntoIter<Value>>, SqlMiddlewareDbError>
+where
+    I: IntoIterator<Item = RowValues>,
+{
+    let params_vec: Vec<RowValues> = iter.into_iter().collect();
+    let x = convert_params(&params_vec)?;
+    Ok(rusqlite::params_from_iter(x.into_iter()))
+}
+
 
 fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, SqlMiddlewareDbError> {
     let val_ref_res = row.get_ref(idx);
