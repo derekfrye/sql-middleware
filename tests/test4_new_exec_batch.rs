@@ -163,7 +163,7 @@ async fn run_test_logic(
                 tx.commit().await?;
             } else {
                 // or return an error if we expect only Postgres here
-                return Err(SqlMiddlewareDbError::Other("Expected Postgres".into()));
+                unimplemented!();
             }
         }
         DatabaseType::Sqlite => {
@@ -198,6 +198,60 @@ async fn run_test_logic(
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
     assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 200);
+
+    // generate 200 more params
+    let params: Vec<Vec<RowValues>> = (0..200)
+        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
+        .collect();
+
+    // now let's be a little smarter and write our own loop to exec a 100 inserts
+
+    match db_type {
+        DatabaseType::Postgres => {
+            if let MiddlewarePoolConnection::Postgres(pg_handle) = conn {
+                let tx = pg_handle.transaction().await?;
+                for param in params {
+                    let postgres_params = PostgresParams::convert(&param)?;
+                    tx.execute(paramaterized_query, &postgres_params.as_refs()).await?;
+                }
+                tx.commit().await?;
+            } else {
+                // or return an error if we expect only Postgres here
+                unimplemented!();
+            }
+        }
+        DatabaseType::Sqlite => {
+            let res = conn.interact_sync({
+                let paramaterized_query = paramaterized_query.to_string();
+                let params = params.clone();
+                move |wrapper| {
+                    match wrapper {
+                        AnyConnWrapper::Sqlite(sql_conn) => {
+                            let tx = sql_conn.transaction()?;
+                            for param in params {
+                                let converted_params = sqlite_convert_params(&param)?;
+                                tx.execute(
+                                    &paramaterized_query,
+                                    &converted_params
+                                        .iter()
+                                        .map(|v| v as &dyn rusqlite::ToSql)
+                                        .collect::<Vec<_>>()[..]
+                                )?;
+                            }
+                            tx.commit()?;
+                            Ok(())
+                        }
+                        _ => Err(SqlMiddlewareDbError::Other("Unexpected database type".into())),
+                    }
+                }
+            }).await?;
+            res?;
+        }
+    }
+
+    let query = "select count(*) as cnt from test;";
+    let result_set = conn.execute_select(query, &[]).await?;
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 400);
 
     Ok(())
 }
