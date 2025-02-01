@@ -203,8 +203,8 @@ pub async fn execute_dml(
 }
 
 #[async_trait]
-impl TransactionExecutor for Transaction<'_> {
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+impl<'a> TransactionExecutor<'a> for Transaction<'a> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError> {
         let stmt = self.prepare(query)?;
         Ok(Box::new(SqliteStatementExecutor { stmt }))
     }
@@ -299,9 +299,9 @@ impl<'a> StatementExecutor for SqliteStatementExecutor<'a> {
     }
 }
 
-pub async fn begin_transaction(
-    sqlite_client: &Object,
-) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
+pub async fn begin_transaction<'a>(
+    sqlite_client: &'a mut Object,
+) -> Result<Box<dyn TransactionExecutor<'a> + Send + Sync>, DbError> {
     let tx = sqlite_client
         .interact(|conn| conn.transaction())
         .await?
@@ -311,9 +311,9 @@ pub async fn begin_transaction(
 
 /// Prepares a statement for SQLite.
 pub async fn prepare(
-    sqlite_conn: &MiddlewarePoolConnection,
+    sqlite_conn: &deadpool_sqlite::Object,
     query: &str,
-) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+) -> Result<Box<dyn StatementExecutor<'a> + Send + Sync>, DbError> {
     match sqlite_conn {
         MiddlewarePoolConnection::Sqlite { conn: _, pool } => {
             Ok(Box::new(SqliteStatementExecutor::new(query, pool.clone())))

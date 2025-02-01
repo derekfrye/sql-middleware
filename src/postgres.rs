@@ -212,8 +212,8 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
 }
 
 #[async_trait]
-impl TransactionExecutor for Transaction<'_> {
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+impl<'a> TransactionExecutor<'a> for deadpool_postgres::Transaction<'a> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError> {
         let stmt = self.prepare(query).await?;
         Ok(Box::new(PgStatementExecutor { stmt }))
     }
@@ -301,7 +301,7 @@ pub async fn execute_dml(
 /// Begins a transaction for PostgreSQL.
 pub async fn begin_transaction<'a>(
     pg_client: &'a mut Object,
-) -> Result<Box<dyn TransactionExecutor + Send + Sync + 'a>, DbError> {
+) -> Result<Box<dyn TransactionExecutor<'a> + Send + Sync>, DbError> {
     let tx: deadpool_postgres::Transaction<'a> = pg_client.transaction().await?;
     Ok(Box::new(tx))
 }
@@ -310,7 +310,7 @@ pub async fn begin_transaction<'a>(
 pub async fn prepare(
     pg_client: &Object,
     query: &str,
-) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError> {
     let stmt = pg_client.prepare(query).await?;
     Ok(Box::new(PgStatementExecutor { stmt }))
 }

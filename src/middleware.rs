@@ -300,7 +300,7 @@ pub trait DatabaseExecutor {
     async fn begin_transaction(&mut self) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError>;
 
     /// Prepares a statement for execution.
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError>;
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor<'a> + Send + Sync>, DbError>;
 
     /// Executes a single query without returning any rows.
     async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
@@ -311,20 +311,11 @@ pub trait DatabaseExecutor {
 
 /// A trait representing a database transaction.
 #[async_trait]
-pub trait TransactionExecutor {
-    /// Prepares a statement within the transaction.
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError>;
-
-    /// Executes a single query within the transaction.
+pub trait TransactionExecutor<'a> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError>;
     async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
-
-    /// Executes a batch of queries within the transaction.
     async fn batch_execute(&mut self, query: &str) -> Result<(), DbError>;
-
-    /// Commits the transaction.
     async fn commit(&mut self) -> Result<(), DbError>;
-
-    /// Rolls back the transaction.
     async fn rollback(&mut self) -> Result<(), DbError>;
 }
 
@@ -375,18 +366,18 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             }
         }
     }
-    async fn begin_transaction(&mut self) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
+    async fn begin_transaction<'a>(&'a mut self) -> Result<Box<dyn TransactionExecutor<'a> + Send + Sync>, DbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::begin_transaction(pg_client).await
             }
-            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
                 sqlite::begin_transaction(sqlite_client).await
             }
         }
     }
 
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+    async fn prepare<'a>(&'a mut self, query: &str) -> Result<Box<dyn StatementExecutor<'a> + Send + Sync>, DbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::prepare(pg_client, query).await
