@@ -1,15 +1,18 @@
 use deadpool_sqlite::rusqlite::Transaction;
-use deadpool_sqlite::Object;
+use deadpool_sqlite::{Object, Pool};
 use deadpool_sqlite::{rusqlite, Config as DeadpoolSqliteConfig, Runtime};
 use rusqlite::types::Value;
 use rusqlite::Statement;
 use rusqlite::ToSql;
 use async_trait::async_trait;
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues, StatementExecutor, TransactionExecutor,
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, MiddlewarePoolConnection, ResultSet, RowValues, StatementExecutor, TransactionExecutor
 };
+use std::sync::Arc;
 
 // influenced design: https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112, https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
+
+
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
@@ -228,29 +231,76 @@ impl TransactionExecutor for Transaction<'_> {
     }
 }
 
-pub struct SqliteStatementExecutor<'a> {
-    stmt: Statement<'a>,
+pub struct SqliteStatementExecutor {
+    query: String,
+    pool: Arc<Pool>,
+}
+
+impl SqliteStatementExecutor {
+    pub fn new(query: &str, pool: Arc<Pool>) -> Self {
+        Self {
+            query: query.to_owned(),
+            pool,
+        }
+    }
 }
 
 #[async_trait]
 impl<'a> StatementExecutor for SqliteStatementExecutor<'a> {
     async fn execute(&mut self, params: &[RowValues]) -> Result<usize, DbError> {
+        let query = self.query.clone();
         let params_converted = convert_params(params)?;
         let param_refs: Vec<&dyn ToSql> = params_converted.iter().map(|v| v as &dyn ToSql).collect();
-        let rows = self.stmt.execute(&param_refs[..])?;
+        let pool = self.pool.clone();
+
+        // Use `interact` to execute the blocking operation in a separate thread.
+        let rows = pool.interact(move |conn| {
+            // Begin a transaction
+            let tx = conn.transaction()?;
+
+            // Prepare the statement
+            let mut stmt = tx.prepare(&query)?;
+
+            // Execute the statement
+            let rows = stmt.execute(&param_refs[..])?;
+
+            // Commit the transaction
+            tx.commit()?;
+
+            Ok(rows)
+        }).await??;
+
         Ok(rows)
     }
 
     async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError> {
+        let query = self.query.clone();
         let params_converted = convert_params(params)?;
-        let mut rows_iter = self.stmt.query(&params_converted)?;
-        let result_set = build_result_set(&mut self.stmt, &params_converted, &rows_iter)?;
+        let pool = self.pool.clone();
+
+        // Use `interact` to execute the blocking operation in a separate thread.
+        let result_set = pool.interact(move |conn| {
+            // Begin a transaction
+            let tx = conn.transaction()?;
+
+            // Prepare the statement
+            let mut stmt = tx.prepare(&query)?;
+
+            // Execute the query and build the result set
+            let result_set = build_result_set(&mut stmt, &params_converted,)?;
+
+            // Commit the transaction
+            tx.commit()?;
+
+            Ok(result_set)
+        }).await??;
+
         Ok(result_set)
     }
 }
 
 pub async fn begin_transaction(
-    sqlite_client: &SqliteObject,
+    sqlite_client: &Object,
 ) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
     let tx = sqlite_client
         .interact(|conn| conn.transaction())
@@ -261,19 +311,20 @@ pub async fn begin_transaction(
 
 /// Prepares a statement for SQLite.
 pub async fn prepare(
-    sqlite_client: &SqliteObject,
+    sqlite_conn: &MiddlewarePoolConnection,
     query: &str,
 ) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
-    let query_owned = query.to_owned();
-    let stmt = sqlite_client
-        .interact(move |conn| conn.prepare(&query_owned))
-        .await??;
-    Ok(Box::new(SqliteStatementExecutor { stmt }))
+    match sqlite_conn {
+        MiddlewarePoolConnection::Sqlite { conn: _, pool } => {
+            Ok(Box::new(SqliteStatementExecutor::new(query, pool.clone())))
+        }
+        _ => Err(DbError::Other("Not a Sqlite connection".to_string())),
+    }
 }
 
 /// Executes a single query for SQLite.
 pub async fn execute(
-    sqlite_client: &SqliteObject,
+    sqlite_client: &Object,
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, DbError> {

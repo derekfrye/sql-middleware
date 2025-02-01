@@ -8,6 +8,8 @@ use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
+use std::sync::Arc;
+use crate::{postgres, sqlite};
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
 #[derive(Debug, Clone)]
@@ -48,15 +50,18 @@ impl MiddlewarePool {
             }
         }
     }
-    pub async fn get_connection(pool: MiddlewarePool) -> Result<MiddlewarePoolConnection, DbError> {
-        match pool {
+    pub async fn get_connection(&self) -> Result<MiddlewarePoolConnection, DbError> {
+        match self {
             MiddlewarePool::Postgres(pool) => {
                 let conn: PostgresObject = pool.get().await.map_err(DbError::PoolErrorPostgres)?;
                 Ok(MiddlewarePoolConnection::Postgres(conn))
             }
             MiddlewarePool::Sqlite(pool) => {
                 let conn: SqliteObject = pool.get().await.map_err(DbError::PoolErrorSqlite)?;
-                Ok(MiddlewarePoolConnection::Sqlite(conn))
+                Ok(MiddlewarePoolConnection::Sqlite {
+                    conn,
+                    pool: Arc::new(pool.clone()),
+                })
             }
         }
     }
@@ -65,7 +70,10 @@ impl MiddlewarePool {
 #[derive(Debug)]
 pub enum MiddlewarePoolConnection {
     Postgres(PostgresObject),
-    Sqlite(SqliteObject),
+    Sqlite {
+        conn: SqliteObject,
+        pool: Arc<DeadpoolSqlitePool>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, ValueEnum)]
@@ -150,12 +158,6 @@ pub struct DatabaseResult<T> {
     pub db_last_exec_state: QueryState,
     pub error_message: Option<String>,
     pub db_object_name: String,
-}
-
-#[async_trait]
-pub trait DatabaseExecutor {
-    /// Executes a batch of SQL queries within a transaction.
-    async fn execute_batch(&mut self, query: &str) -> Result<(), DbError>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -280,41 +282,139 @@ pub enum DatabaseItem {
 }
 
 #[async_trait]
+pub trait DatabaseExecutor {
+    /// Executes a batch of SQL queries (can be a mix of reads/writes) within a transaction. No parameters are supported.
+    async fn execute_batch(&mut self, query: &str) -> Result<(), DbError>;
+
+    /// Executes a single SELECT statement and returns the result set.
+    async fn execute_select(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> Result<ResultSet, DbError>;
+
+    /// Executes a single DML statement (INSERT, UPDATE, DELETE, etc.) and returns the number of rows affected.
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
+
+    /// Begins a new transaction.
+    async fn begin_transaction(&mut self) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError>;
+
+    /// Prepares a statement for execution.
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError>;
+
+    /// Executes a single query without returning any rows.
+    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
+
+    /// Executes a batch of queries within a transaction.
+    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError>;
+}
+
+/// A trait representing a database transaction.
+#[async_trait]
+pub trait TransactionExecutor {
+    /// Prepares a statement within the transaction.
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError>;
+
+    /// Executes a single query within the transaction.
+    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
+
+    /// Executes a batch of queries within the transaction.
+    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError>;
+
+    /// Commits the transaction.
+    async fn commit(&mut self) -> Result<(), DbError>;
+
+    /// Rolls back the transaction.
+    async fn rollback(&mut self) -> Result<(), DbError>;
+}
+
+/// A trait representing a prepared statement.
+#[async_trait]
+pub trait StatementExecutor {
+    /// Executes the prepared statement with the given parameters.
+    async fn execute(&mut self, params: &[RowValues]) -> Result<usize, DbError>;
+
+    /// Executes the prepared statement and returns the result set.
+    async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError>;
+}
+
+#[async_trait]
 impl DatabaseExecutor for MiddlewarePoolConnection {
+    /// Executes a batch of SQL queries within a transaction by delegating to the specific database module.
     async fn execute_batch(&mut self, query: &str) -> Result<(), DbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
-                // Begin a transaction
-                let tx = pg_client.transaction().await?;
-
-                // Execute the batch of queries
-                tx.batch_execute(query).await?;
-
-                // Commit the transaction
-                tx.commit().await?;
-
-                Ok(())
+                postgres::execute_batch(pg_client, query).await
             }
-            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
-                // Convert &str to String to own the data
-                let query_owned = query.to_owned();
+            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+                sqlite::execute_batch(sqlite_client, query).await
+            }
+        }
+    }
+    async fn execute_select(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> Result<ResultSet, DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                postgres::execute_select(pg_client, query, params).await
+            }
+            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+                sqlite::execute_select(sqlite_client, query, params).await
+            }
+        }
+    }
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                postgres::execute_dml(pg_client, query, &params).await
+            }
+            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+                sqlite::execute_dml(sqlite_client, query, &params).await
+            }
+        }
+    }
+    async fn begin_transaction(&mut self) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                postgres::begin_transaction(pg_client).await
+            }
+            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+                sqlite::begin_transaction(sqlite_client).await
+            }
+        }
+    }
 
-                // Interact with the Sqlite connection
-                sqlite_client
-                    .interact(move |conn| -> Result<(), rusqlite::Error> {
-                        // Begin a transaction
-                        let tx = conn.transaction()?;
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                postgres::prepare(pg_client, query).await
+            }
+            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+                sqlite::prepare(sqlite_client, query).await
+            }
+        }
+    }
 
-                        // Execute the batch of queries
-                        tx.execute_batch(&query_owned)?;
+    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                postgres::execute(pg_client, query, params).await
+            }
+            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+                sqlite::execute(sqlite_client, query, params).await
+            }
+        }
+    }
 
-                        // Commit the transaction
-                        tx.commit()?;
-
-                        Ok(())
-                    })
-                    .await?
-                    .map_err(DbError::SqliteError) // Map the inner rusqlite::Error
+    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError> {
+        match self {
+            MiddlewarePoolConnection::Postgres(pg_client) => {
+                postgres::batch_execute(pg_client, query).await
+            }
+            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+                sqlite::batch_execute(sqlite_client, query).await
             }
         }
     }

@@ -1,18 +1,18 @@
 // postgres.rs
-
+use async_trait::async_trait;
 use std::error::Error;
 
 use chrono::NaiveDateTime;
-use deadpool_postgres::Config as PgConfig;
+use deadpool_postgres::{Config as PgConfig, Object};
 use serde_json::Value;
 use tokio_postgres::{
     types::{to_sql_checked, IsNull, ToSql, Type},
-    NoTls, Statement, Transaction,
+    NoTls, Statement, 
 };
 use tokio_util::bytes;
-
+use deadpool_postgres::Transaction;
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues, StatementExecutor, TransactionExecutor
 };
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
@@ -22,46 +22,6 @@ impl From<tokio_postgres::Error> for DbError {
         DbError::PostgresError(err)
     }
 }
-
-// impl TryFrom<PgConfig> for ConfigAndPool {
-//     type Error = DbError;
-//     fn try_from(pg_config: PgConfig) -> Result<Self, Self::Error> {
-//         // You might do the same logic, but panic on errors, or return a default, etc.
-//         // For demonstration, let's do a simpler version:
-//         if pg_config.dbname.is_none() {
-//             panic!("dbname is required");
-//         }
-
-//         if pg_config.host.is_none() {
-//             panic!("host is required");
-//         }
-//         if pg_config.port.is_none() {
-//             panic!("port is required");
-//         }
-//         if pg_config.user.is_none() {
-//             panic!("user is required");
-//         }
-//         if pg_config.password.is_none() {
-//             panic!("password is required");
-//         }
-
-//         let pg_config_res = pg_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls);
-//         match pg_config_res {
-//             Ok(pg_pool) => Ok(ConfigAndPool {
-//                 pool: MiddlewarePool::Postgres(pg_pool),
-//                 db_type: DatabaseType::Postgres,
-//             }),
-//             Err(e) => {
-//                 panic!("Failed to create deadpool_postgres pool: {}", e);
-//             }
-//         }
-
-//         // Ok(ConfigAndPool {
-//         //     db_type: DatabaseType::Postgres,
-//         //     pool: MiddlewarePool::Postgres(pg_pool),
-//         // })
-//     }
-// }
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
@@ -131,7 +91,6 @@ pub fn extract_pg_value(row: &tokio_postgres::Row, col_name: &str, type_name: &s
         }
     }
 }
-
 
 pub struct Params<'a> {
     references: Vec<&'a (dyn ToSql + Sync)>,
@@ -250,4 +209,132 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
         let val: Option<String> = row.try_get(idx).map_err(DbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
+}
+
+#[async_trait]
+impl TransactionExecutor for Transaction<'_> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+        let stmt = self.prepare(query).await?;
+        Ok(Box::new(PgStatementExecutor { stmt }))
+    }
+
+    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError> {
+        // let params_converted = Params::convert(params)?;
+        let rows = self.execute(query, params).await?;
+        Ok(rows as usize)
+    }
+
+    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError> {
+        self.batch_execute(query).await
+    }
+
+    async fn commit(&mut self) -> Result<(), DbError> {
+        self.commit().await
+    }
+
+    async fn rollback(&mut self) -> Result<(), DbError> {
+        self.rollback().await
+    }
+}
+
+pub struct PgStatementExecutor<'a> {
+    stmt: Statement<'a>,
+}
+
+#[async_trait]
+impl<'a> StatementExecutor for PgStatementExecutor<'a> {
+    async fn execute(&mut self, params: &[RowValues]) -> Result<usize, DbError> {
+        let params_converted = Params::convert(params)?;
+        let rows = self.stmt.execute(&params_converted).await?;
+        Ok(rows as usize)
+    }
+
+    async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError> {
+        let params_converted = Params::convert(params)?;
+        let rows = self.stmt.query(&params_converted).await?;
+        let result_set = build_result_set(&self.stmt, params_converted.as_refs(), &rows).await?;
+        Ok(result_set)
+    }
+}
+
+pub async fn execute_batch(pg_client: &mut Object, query: &str) -> Result<(), DbError> {
+    // Begin a transaction
+    let mut tx = pg_client.transaction().await?;
+
+    // Execute the batch of queries
+    tx.batch_execute(query).await?;
+
+    // Commit the transaction
+    tx.commit().await?;
+
+    Ok(())
+}
+
+pub async fn execute_select(
+    pg_client: &mut Object,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, DbError> {
+    let params = Params::convert(params)?;
+    let tx = pg_client.transaction().await?;
+    let stmt = tx.prepare(query).await?;
+    let result_set = build_result_set(&stmt, params.as_refs(), &tx).await?;
+    tx.commit().await?;
+    Ok(result_set)
+}
+
+pub async fn execute_dml(
+    pg_client: &mut Object,
+    query: &str,
+    params: &[RowValues],
+) -> Result<usize, DbError> {
+    // let params = Params::convert(params)?;
+    let mut tx = pg_client.transaction().await?;
+
+    // let stmt = tx.prepare(query).await?;
+    let rows = tx.execute(query, params).await?;
+    tx.commit().await?;
+
+    Ok(rows as usize)
+}
+
+/// Begins a transaction for PostgreSQL.
+pub async fn begin_transaction<'a>(
+    pg_client: &'a mut Object,
+) -> Result<Box<dyn TransactionExecutor + Send + Sync + 'a>, DbError> {
+    let tx: deadpool_postgres::Transaction<'a> = pg_client.transaction().await?;
+    Ok(Box::new(tx))
+}
+
+/// Prepares a statement for PostgreSQL.
+pub async fn prepare(
+    pg_client: &Object,
+    query: &str,
+) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+    let stmt = pg_client.prepare(query).await?;
+    Ok(Box::new(PgStatementExecutor { stmt }))
+}
+
+/// Executes a single query for PostgreSQL.
+pub async fn execute(
+    pg_client: &mut Object,
+    query: &str,
+    params: &[RowValues],
+) -> Result<usize, DbError> {
+    // let params_converted = crate::sqlite::convert_params(params)?;
+    let mut tx = pg_client.transaction().await?;
+    let rows = tx.execute(query, &params).await?;
+    tx.commit().await?;
+    Ok(rows as usize)
+}
+
+/// Executes a batch of queries for PostgreSQL.
+pub async fn batch_execute(
+    pg_client: &mut Object,
+    query: &str,
+) -> Result<(), DbError> {
+    let mut tx = pg_client.transaction().await?;
+    tx.batch_execute(query).await?;
+    tx.commit().await?;
+    Ok(())
 }
