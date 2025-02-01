@@ -119,7 +119,7 @@ async fn run_test_logic(
     let setup_queries = include_str!("test4.sql");
     conn.execute_batch(setup_queries).await?;
 
-    let test_tbl_query = "CREATE TABLE test (id int, name text);";
+    let test_tbl_query = "CREATE TABLE test (id bigint, name text);";
     conn.execute_batch(test_tbl_query).await?;
 
     let paramaterized_query = match db_type {
@@ -131,13 +131,13 @@ async fn run_test_logic(
     let params: Vec<Vec<RowValues>> = (0..100)
         .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
         .collect();
-    dbg!(&params);
+    // dbg!(&params);
 
     // conn.execute_dml(paramaterized_query, &params[0]).await?;
 
     // lets first run this through 100 transactions, yikes
     for param in params {
-        println!("param: {:?}", param); 
+        // println!("param: {:?}", param); 
         conn.execute_dml(&paramaterized_query, &param).await?;
     }
 
