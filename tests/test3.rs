@@ -151,7 +151,7 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
                 .map_err(|e| format!("Error executing query: {:?}", e))
         }??;
 
-        // we expect 3 rows
+        // we expect 4 rows
         assert_eq!(res.results.len(), 4);
 
         // assert_eq!(res.return_result[0].results.len(), 3);
