@@ -295,40 +295,70 @@ async fn run_test_logic(
         params,
     };
 
-    let res = (match &mut *conn {
+    (match &mut *conn {
         MiddlewarePoolConnection::Postgres(xx) => {
             let tx = xx.transaction().await?;
             let converted_params = PostgresParams::convert_for_batch(&query_and_params.params)?;
-            let result_set = {
-                let stmt = tx.prepare(&query_and_params.query).await?;
-                let rs = postgres_build_result_set(&stmt, &converted_params, &tx).await?;
-                rs
-            };
+
+            let stmt = tx.prepare(&query_and_params.query).await?;
+            postgres_build_result_set(&stmt, &converted_params, &tx).await?;
+
+            let stmt = tx.prepare(&query_and_params.query).await?;
+            postgres_build_result_set(&stmt, &converted_params, &tx).await?;
+
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
         MiddlewarePoolConnection::Sqlite(ref mut xx) => {
             xx.interact(move |xxx| {
                 let tx = xxx.transaction()?;
-                let converted_params = sqlite_convert_params(&query_and_params.params)?;
-                let result_set = {
+                {
+                    let converted_params = sqlite_convert_params(&query_and_params.params)?;
                     let mut stmt = tx.prepare(&query_and_params.query)?;
-                    let rs = sqlite_build_result_set(&mut stmt, &converted_params)?;
-                    rs
-                };
+                    sqlite_build_result_set(&mut stmt, &converted_params)?;
+                }
+                // should be able to read that val even tho we're not done w tx
+                {
+                    let query_and_params_vec = QueryAndParams {
+                        query: "select count(*) as cnt from test;".to_string(),
+                        params: vec![
+                        ],
+                    };
+                    let converted_params = sql_middleware::sqlite_convert_params(
+                        &query_and_params_vec.params
+                    )?;
+                    let mut stmt = tx.prepare(&query_and_params_vec.query)?;
+                    let result_set = {
+                        let rs = sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                        rs
+                    };
+                    assert_eq!(result_set.results.len(), 1);
+                    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 401);
+                }
+                {
+                    let converted_params = sqlite_convert_params(&query_and_params.params)?;
+                    let mut stmt = tx.prepare(&query_and_params.query)?;
+                    sqlite_build_result_set(&mut stmt, &converted_params)?;
+                }
                 tx.commit()?;
                 Ok::<_, SqlMiddlewareDbError>(result_set)
             }).await?
         }
     })?;
 
-    println!("dbdrive: {:?}, res: {:?}", db_type, res);
+    // println!("dbdrive: {:?}, res: {:?}", db_type, res);
 
     // make sure to match the val frmo above
     let query = "select count(*) as cnt,name from test where id = 990 group by name;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 1);
+    // theres two in here now, we inserted same val 2x above
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 2);
     assert_eq!(*result_set.results[0].get("name").unwrap().as_text().unwrap(), *"name_990");
+
+    let query = "select count(*) as cnt from test ;";
+    let result_set = conn.execute_select(query, &[]).await?;
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 402);
+    // assert_eq!(*result_set.results[0].get("name").unwrap().as_text().unwrap(), *"name_990");
 
     // assert_eq!(res.rows_affected, 1);
 
