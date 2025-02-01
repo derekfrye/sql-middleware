@@ -8,7 +8,7 @@ use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
-use std::sync::Arc;
+
 use crate::{postgres, sqlite};
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
@@ -50,18 +50,15 @@ impl MiddlewarePool {
             }
         }
     }
-    pub async fn get_connection(&self) -> Result<MiddlewarePoolConnection, DbError> {
-        match self {
+    pub async fn get_connection(pool: MiddlewarePool) -> Result<MiddlewarePoolConnection, DbError> {
+        match pool {
             MiddlewarePool::Postgres(pool) => {
                 let conn: PostgresObject = pool.get().await.map_err(DbError::PoolErrorPostgres)?;
                 Ok(MiddlewarePoolConnection::Postgres(conn))
             }
             MiddlewarePool::Sqlite(pool) => {
                 let conn: SqliteObject = pool.get().await.map_err(DbError::PoolErrorSqlite)?;
-                Ok(MiddlewarePoolConnection::Sqlite {
-                    conn,
-                    pool: Arc::new(pool.clone()),
-                })
+                Ok(MiddlewarePoolConnection::Sqlite(conn))
             }
         }
     }
@@ -70,10 +67,7 @@ impl MiddlewarePool {
 #[derive(Debug)]
 pub enum MiddlewarePoolConnection {
     Postgres(PostgresObject),
-    Sqlite {
-        conn: SqliteObject,
-        pool: Arc<DeadpoolSqlitePool>,
-    },
+    Sqlite(SqliteObject),
 }
 
 #[derive(Debug, Clone, PartialEq, ValueEnum)]
@@ -300,7 +294,7 @@ pub trait DatabaseExecutor {
     async fn begin_transaction(&mut self) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError>;
 
     /// Prepares a statement for execution.
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor<'a> + Send + Sync>, DbError>;
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError>;
 
     /// Executes a single query without returning any rows.
     async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
@@ -311,11 +305,20 @@ pub trait DatabaseExecutor {
 
 /// A trait representing a database transaction.
 #[async_trait]
-pub trait TransactionExecutor<'a> {
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError>;
+pub trait TransactionExecutor {
+    /// Prepares a statement within the transaction.
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError>;
+
+    /// Executes a single query within the transaction.
     async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
+
+    /// Executes a batch of queries within the transaction.
     async fn batch_execute(&mut self, query: &str) -> Result<(), DbError>;
+
+    /// Commits the transaction.
     async fn commit(&mut self) -> Result<(), DbError>;
+
+    /// Rolls back the transaction.
     async fn rollback(&mut self) -> Result<(), DbError>;
 }
 
@@ -337,7 +340,7 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_batch(pg_client, query).await
             }
-            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_batch(sqlite_client, query).await
             }
         }
@@ -351,7 +354,7 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_select(pg_client, query, params).await
             }
-            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_select(sqlite_client, query, params).await
             }
         }
@@ -361,28 +364,28 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_dml(pg_client, query, &params).await
             }
-            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_dml(sqlite_client, query, &params).await
             }
         }
     }
-    async fn begin_transaction<'a>(&'a mut self) -> Result<Box<dyn TransactionExecutor<'a> + Send + Sync>, DbError> {
+    async fn begin_transaction(&mut self) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::begin_transaction(pg_client).await
             }
-            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::begin_transaction(sqlite_client).await
             }
         }
     }
 
-    async fn prepare<'a>(&'a mut self, query: &str) -> Result<Box<dyn StatementExecutor<'a> + Send + Sync>, DbError> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::prepare(pg_client, query).await
             }
-            MiddlewarePoolConnection::Sqlite { conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::prepare(sqlite_client, query).await
             }
         }
@@ -393,7 +396,7 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute(pg_client, query, params).await
             }
-            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute(sqlite_client, query, params).await
             }
         }
@@ -404,7 +407,7 @@ impl DatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::batch_execute(pg_client, query).await
             }
-            MiddlewarePoolConnection::Sqlite{ conn: sqlite_client, .. } => {
+            MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::batch_execute(sqlite_client, query).await
             }
         }

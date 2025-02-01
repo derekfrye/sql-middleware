@@ -212,8 +212,8 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
 }
 
 #[async_trait]
-impl<'a> TransactionExecutor<'a> for deadpool_postgres::Transaction<'a> {
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError> {
+impl TransactionExecutor for Transaction<'_> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
         let stmt = self.prepare(query).await?;
         Ok(Box::new(PgStatementExecutor { stmt }))
     }
@@ -288,21 +288,21 @@ pub async fn execute_dml(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, DbError> {
-    // let params = Params::convert(params)?;
-    let mut tx = pg_client.transaction().await?;
+    let params = Params::convert(params)?;
+    let tx = pg_client.transaction().await?;
 
-    // let stmt = tx.prepare(query).await?;
-    let rows = tx.execute(query, params).await?;
+    let stmt = tx.prepare(query).await?;
+    let rows = tx.execute(&stmt, params.as_refs()).await?;
     tx.commit().await?;
 
     Ok(rows as usize)
 }
 
 /// Begins a transaction for PostgreSQL.
-pub async fn begin_transaction<'a>(
-    pg_client: &'a mut Object,
-) -> Result<Box<dyn TransactionExecutor<'a> + Send + Sync>, DbError> {
-    let tx: deadpool_postgres::Transaction<'a> = pg_client.transaction().await?;
+pub async fn begin_transaction(
+    pg_client: &Object,
+) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
+    let tx: deadpool_postgres::Transaction<'_> = pg_client.transaction().await?;
     Ok(Box::new(tx))
 }
 
@@ -310,30 +310,30 @@ pub async fn begin_transaction<'a>(
 pub async fn prepare(
     pg_client: &Object,
     query: &str,
-) -> Result<Box<dyn StatementExecutor + Send + Sync + 'a>, DbError> {
+) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
     let stmt = pg_client.prepare(query).await?;
     Ok(Box::new(PgStatementExecutor { stmt }))
 }
 
 /// Executes a single query for PostgreSQL.
 pub async fn execute(
-    pg_client: &mut Object,
+    pg_client: &Object,
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, DbError> {
-    // let params_converted = crate::sqlite::convert_params(params)?;
-    let mut tx = pg_client.transaction().await?;
-    let rows = tx.execute(query, &params).await?;
+    let params_converted = crate::sqlite::convert_params(params)?;
+    let tx = pg_client.transaction().await?;
+    let rows = tx.execute(query, &params_converted).await?;
     tx.commit().await?;
     Ok(rows as usize)
 }
 
 /// Executes a batch of queries for PostgreSQL.
 pub async fn batch_execute(
-    pg_client: &mut Object,
+    pg_client: &Object,
     query: &str,
 ) -> Result<(), DbError> {
-    let mut tx = pg_client.transaction().await?;
+    let tx = pg_client.transaction().await?;
     tx.batch_execute(query).await?;
     tx.commit().await?;
     Ok(())
