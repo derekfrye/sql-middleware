@@ -12,7 +12,7 @@ use tokio_postgres::{
 use tokio_util::bytes;
 use deadpool_postgres::Transaction;
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues, StatementExecutor, TransactionExecutor
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues, StatementExecutor, 
 };
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
@@ -211,55 +211,24 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
     }
 }
 
-#[async_trait]
-impl TransactionExecutor for Transaction<'_> {
-    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
-        let stmt = self.prepare(query).await?;
-        Ok(Box::new(PgStatementExecutor { stmt }))
-    }
-
-    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError> {
-        // let params_converted = Params::convert(params)?;
-        let rows = self.execute(query, params).await?;
-        Ok(rows as usize)
-    }
-
-    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError> {
-        self.batch_execute(query).await
-    }
-
-    async fn commit(&mut self) -> Result<(), DbError> {
-        self.commit().await
-    }
-
-    async fn rollback(&mut self) -> Result<(), DbError> {
-        self.rollback().await
-    }
+pub struct PgStatementExecutor {
+    stmt: Statement,
 }
 
-pub struct PgStatementExecutor<'a> {
-    stmt: Statement<'a>,
-}
+// #[async_trait]
+// impl StatementExecutor for PgStatementExecutor {
 
-#[async_trait]
-impl<'a> StatementExecutor for PgStatementExecutor<'a> {
-    async fn execute(&mut self, params: &[RowValues]) -> Result<usize, DbError> {
-        let params_converted = Params::convert(params)?;
-        let rows = self.stmt.execute(&params_converted).await?;
-        Ok(rows as usize)
-    }
-
-    async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError> {
-        let params_converted = Params::convert(params)?;
-        let rows = self.stmt.query(&params_converted).await?;
-        let result_set = build_result_set(&self.stmt, params_converted.as_refs(), &rows).await?;
-        Ok(result_set)
-    }
-}
+//     async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError> {
+//         let params_converted = Params::convert(params)?;
+//         let rows = self.stmt.query(&params_converted).await?;
+//         let result_set = build_result_set(&self.stmt, params_converted.as_refs(), &rows).await?;
+//         Ok(result_set)
+//     }
+// }
 
 pub async fn execute_batch(pg_client: &mut Object, query: &str) -> Result<(), DbError> {
     // Begin a transaction
-    let mut tx = pg_client.transaction().await?;
+    let tx = pg_client.transaction().await?;
 
     // Execute the batch of queries
     tx.batch_execute(query).await?;
@@ -298,43 +267,3 @@ pub async fn execute_dml(
     Ok(rows as usize)
 }
 
-/// Begins a transaction for PostgreSQL.
-pub async fn begin_transaction(
-    pg_client: &Object,
-) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
-    let tx: deadpool_postgres::Transaction<'_> = pg_client.transaction().await?;
-    Ok(Box::new(tx))
-}
-
-/// Prepares a statement for PostgreSQL.
-pub async fn prepare(
-    pg_client: &Object,
-    query: &str,
-) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
-    let stmt = pg_client.prepare(query).await?;
-    Ok(Box::new(PgStatementExecutor { stmt }))
-}
-
-/// Executes a single query for PostgreSQL.
-pub async fn execute(
-    pg_client: &Object,
-    query: &str,
-    params: &[RowValues],
-) -> Result<usize, DbError> {
-    let params_converted = crate::sqlite::convert_params(params)?;
-    let tx = pg_client.transaction().await?;
-    let rows = tx.execute(query, &params_converted).await?;
-    tx.commit().await?;
-    Ok(rows as usize)
-}
-
-/// Executes a batch of queries for PostgreSQL.
-pub async fn batch_execute(
-    pg_client: &Object,
-    query: &str,
-) -> Result<(), DbError> {
-    let tx = pg_client.transaction().await?;
-    tx.batch_execute(query).await?;
-    tx.commit().await?;
-    Ok(())
-}
