@@ -2,7 +2,7 @@
 use std::error::Error;
 
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
+    ConfigAndPool, CustomDbRow, DatabaseType, SqlMiddlewareDbError, MiddlewarePool, ResultSet, RowValues,
 };
 use chrono::NaiveDateTime;
 use deadpool_postgres::Transaction;
@@ -16,15 +16,15 @@ use tokio_util::bytes;
 
 // If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
 // you can do so. But note we’ve already declared the variant in db_model.
-impl From<tokio_postgres::Error> for DbError {
+impl From<tokio_postgres::Error> for SqlMiddlewareDbError {
     fn from(err: tokio_postgres::Error) -> Self {
-        DbError::PostgresError(err)
+        SqlMiddlewareDbError::PostgresError(err)
     }
 }
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
-    pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, DbError> {
+    pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
         if pg_config.dbname.is_none() {
             panic!("dbname is required");
         }
@@ -96,7 +96,7 @@ pub struct Params<'a> {
 }
 
 impl<'a> Params<'a> {
-    pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, DbError> {
+    pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         let references: Vec<&(dyn ToSql + Sync)> =
             params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
 
@@ -138,12 +138,12 @@ pub async fn build_result_set<'a>(
     stmt: &Statement,
     params: &[&(dyn ToSql + Sync)],
     transaction: &Transaction<'a>,
-) -> Result<ResultSet, DbError> {
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Execute the query
     let rows = transaction
         .query(stmt, params)
         .await
-        .map_err(DbError::PostgresError)?;
+        .map_err(SqlMiddlewareDbError::PostgresError)?;
 
     let column_names: Vec<String> = stmt
         .columns()
@@ -173,39 +173,39 @@ pub async fn build_result_set<'a>(
 }
 
 /// Extracts a RowValues from a tokio_postgres Row at the given index
-fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowValues, DbError> {
+fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowValues, SqlMiddlewareDbError> {
     // Determine the type of the column and extract accordingly
     let type_info = row.columns()[idx].type_();
 
     // Match on the type based on PostgreSQL type OIDs or names
     // For simplicity, we'll handle common types. You may need to expand this.
     if type_info.name() == "int4" || type_info.name() == "int8" {
-        let val: Option<i64> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<i64> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))
     } else if type_info.name() == "float4" || type_info.name() == "float8" {
-        let val: Option<f64> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<f64> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Float))
     } else if type_info.name() == "bool" {
-        let val: Option<bool> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<bool> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Bool))
     } else if type_info.name() == "timestamp" || type_info.name() == "timestamptz" {
-        let val: Option<NaiveDateTime> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<NaiveDateTime> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Timestamp))
     } else if type_info.name() == "json" || type_info.name() == "jsonb" {
-        let val: Option<Value> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<Value> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::JSON))
     } else if type_info.name() == "bytea" {
-        let val: Option<Vec<u8>> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<Vec<u8>> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Blob))
     } else if type_info.name() == "text"
         || type_info.name() == "varchar"
         || type_info.name() == "char"
     {
-        let val: Option<String> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<String> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     } else {
         // For other types, attempt to get as string
-        let val: Option<String> = row.try_get(idx).map_err(DbError::PostgresError)?;
+        let val: Option<String> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
 }
@@ -222,7 +222,7 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
 //     }
 // }
 
-pub async fn execute_batch(pg_client: &mut Object, query: &str) -> Result<(), DbError> {
+pub async fn execute_batch(pg_client: &mut Object, query: &str) -> Result<(), SqlMiddlewareDbError> {
     // Begin a transaction
     let tx = pg_client.transaction().await?;
 
@@ -239,7 +239,7 @@ pub async fn execute_select(
     pg_client: &mut Object,
     query: &str,
     params: &[RowValues],
-) -> Result<ResultSet, DbError> {
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let params = Params::convert(params)?;
     let tx = pg_client.transaction().await?;
     let stmt = tx.prepare(query).await?;
@@ -252,7 +252,7 @@ pub async fn execute_dml(
     pg_client: &mut Object,
     query: &str,
     params: &[RowValues],
-) -> Result<usize, DbError> {
+) -> Result<usize, SqlMiddlewareDbError> {
     let params = Params::convert(params)?;
     let tx = pg_client.transaction().await?;
 

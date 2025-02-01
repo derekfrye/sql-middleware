@@ -37,8 +37,27 @@ pub enum MiddlewarePool {
     Sqlite(DeadpoolSqlitePool),
 }
 
+/// Wrapper for Postgres connections.
+pub struct PostgresConnection(MiddlewarePoolConnection);
+/// Wrapper for Sqlite connections.
+pub struct SqliteConnection(MiddlewarePoolConnection);
+
+/// Initializes a new Postgres connection pool and returns a `PostgresConnection`.
+pub async fn new_postgres_pool(cfg: deadpool_postgres::Config) -> Result<PostgresConnection, SqlMiddlewareDbError> {
+    let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
+    let pool = config_and_pool.pool.get().await?;
+    Ok(PostgresConnection(MiddlewarePoolConnection::get_connection(pool).await?))
+}
+
+/// Initializes a new Sqlite connection pool and returns a `SqliteConnection`.
+pub async fn new_sqlite_pool(connection_string: String) -> Result<SqliteConnection, SqlMiddlewareDbError> {
+    let config_and_pool = ConfigAndPool::new_sqlite(connection_string).await?;
+    let pool = config_and_pool.pool.get().await?;
+    Ok(SqliteConnection(MiddlewarePoolConnection::get_connection(pool).await?))
+}
+
 impl MiddlewarePool {
-    pub async fn get(&self) -> Result<MiddlewarePool, DbError> {
+    pub async fn get(&self) -> Result<MiddlewarePool, SqlMiddlewareDbError> {
         match self {
             MiddlewarePool::Postgres(pool) => {
                 let pool = pool.clone();
@@ -50,14 +69,14 @@ impl MiddlewarePool {
             }
         }
     }
-    pub async fn get_connection(pool: MiddlewarePool) -> Result<MiddlewarePoolConnection, DbError> {
+    pub async fn get_connection(pool: MiddlewarePool) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         match pool {
             MiddlewarePool::Postgres(pool) => {
-                let conn: PostgresObject = pool.get().await.map_err(DbError::PoolErrorPostgres)?;
+                let conn: PostgresObject = pool.get().await.map_err(SqlMiddlewareDbError::PoolErrorPostgres)?;
                 Ok(MiddlewarePoolConnection::Postgres(conn))
             }
             MiddlewarePool::Sqlite(pool) => {
-                let conn: SqliteObject = pool.get().await.map_err(DbError::PoolErrorSqlite)?;
+                let conn: SqliteObject = pool.get().await.map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
                 Ok(MiddlewarePoolConnection::Sqlite(conn))
             }
         }
@@ -68,6 +87,21 @@ impl MiddlewarePool {
 pub enum MiddlewarePoolConnection {
     Postgres(PostgresObject),
     Sqlite(SqliteObject),
+}
+
+impl MiddlewarePoolConnection {
+    pub async fn get_connection(pool: MiddlewarePool) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
+        match pool {
+            MiddlewarePool::Postgres(pool) => {
+                let conn: PostgresObject = pool.get().await.map_err(SqlMiddlewareDbError::PoolErrorPostgres)?;
+                Ok(MiddlewarePoolConnection::Postgres(conn))
+            }
+            MiddlewarePool::Sqlite(pool) => {
+                let conn: SqliteObject = pool.get().await.map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
+                Ok(MiddlewarePoolConnection::Sqlite(conn))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, ValueEnum)]
@@ -88,7 +122,7 @@ pub struct Db {
 }
 
 #[derive(Debug, Error)]
-pub enum DbError {
+pub enum SqlMiddlewareDbError {
     #[error(transparent)]
     PostgresError(tokio_postgres::Error),
     #[error(transparent)]
@@ -163,14 +197,14 @@ pub enum CheckType {
 // ----------------------------------------
 // Common impl blocks for DbError
 // ----------------------------------------
-impl fmt::Display for DbError {
+impl fmt::Display for SqlMiddlewareDbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
-            DbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
-            DbError::Other(msg) => write!(f, "Other: {}", msg),
-            DbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
-            DbError::PoolErrorPostgres(pool_error) => {
+            SqlMiddlewareDbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
+            SqlMiddlewareDbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
+            SqlMiddlewareDbError::Other(msg) => write!(f, "Other: {}", msg),
+            SqlMiddlewareDbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
+            SqlMiddlewareDbError::PoolErrorPostgres(pool_error) => {
                 write!(f, "PoolErrorPostgres: {:?}", pool_error)
             }
         }
@@ -275,33 +309,131 @@ pub enum DatabaseItem {
     Constraint(DatabaseConstraint),
 }
 
+/// Trait that abstracts database operations.
+#[async_trait]
+pub trait ConnectionExecutor {
+    /// The specific connection type (Postgres or Sqlite).
+    type ConnType;
+
+    /// Execute a batch of SQL statements.
+    async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError>;
+
+    /// Execute a DML statement with parameters.
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError>;
+
+    /// Execute a transactional operation with a user-defined closure.
+    ///
+    /// The closure receives a mutable reference to the specific connection type.
+    async fn execute_transaction<F, Fut>(
+        &mut self,
+        query: &str,
+        params: Vec<Vec<RowValues>>,
+        func: F,
+    ) -> Result<(), SqlMiddlewareDbError>
+    where
+        F: FnOnce(&mut Self::ConnType, Vec<Vec<RowValues>>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), SqlMiddlewareDbError>> + Send + 'static;
+}
+
+
+// middleware.rs continued
+
+#[async_trait]
+impl ConnectionExecutor for PostgresConnection {
+    type ConnType = PostgresObject;
+
+    async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
+        self.0.execute_batch(query).await
+    }
+
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
+        self.0.execute_dml(query, params).await
+    }
+
+    async fn execute_transaction<F, Fut>(
+        &mut self,
+        query: &str,
+        params: Vec<Vec<RowValues>>,
+        func: F,
+    ) -> Result<(), SqlMiddlewareDbError>
+    where
+        F: FnOnce(&mut Self::ConnType, Vec<Vec<RowValues>>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), SqlMiddlewareDbError>> + Send + 'static,
+    {
+        self.0.interact_async(move |wrapper| async move {
+            if let AnyConnWrapper::Postgres(ref mut pg_handle) = wrapper {
+                let client = pg_handle.as_mut();
+                let mut tx = client.transaction().await?;
+                func(client, params).await?;
+                tx.commit().await?;
+                Ok(())
+            } else {
+                Err(SqlMiddlewareDbError::Other(
+                    "Expected Postgres connection".into(),
+                ))
+            }
+        })
+        .await
+    }
+}
+
+// middleware.rs continued
+
+#[async_trait]
+impl ConnectionExecutor for SqliteConnection {
+    type ConnType = rusqlite::Connection;
+
+    async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
+        self.0.execute_batch(query).await
+    }
+
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
+        self.0.execute_dml(query, params).await
+    }
+
+    async fn execute_transaction<F, Fut>(
+        &mut self,
+        query: &str,
+        params: Vec<Vec<RowValues>>,
+        func: F,
+    ) -> Result<(), SqlMiddlewareDbError>
+    where
+        F: FnOnce(&mut Self::ConnType, Vec<Vec<RowValues>>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), SqlMiddlewareDbError>> + Send + 'static,
+    {
+        self.0.interact_sync(move |wrapper| {
+            if let AnyConnWrapper::Sqlite(ref mut sql_conn) = wrapper {
+                func(sql_conn, params)
+            } else {
+                Err(SqlMiddlewareDbError::Other(
+                    "Expected Sqlite connection".into(),
+                ))
+            }
+        })
+        .await
+    }
+}
+
+
 #[async_trait]
 pub trait AsyncDatabaseExecutor {
     /// Executes a batch of SQL queries (can be a mix of reads/writes) within a transaction. No parameters are supported.
-    async fn execute_batch(&mut self, query: &str) -> Result<(), DbError>;
+    async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError>;
 
     /// Executes a single SELECT statement and returns the result set.
     async fn execute_select(
         &mut self,
         query: &str,
         params: &[RowValues],
-    ) -> Result<ResultSet, DbError>;
+    ) -> Result<ResultSet, SqlMiddlewareDbError>;
 
     /// Executes a single DML statement (INSERT, UPDATE, DELETE, etc.) and returns the number of rows affected.
-    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
-
-    async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, DbError>
-    where
-        // For example:
-        // f: |AnyConnWrapper| async move { ...some DB calls...; Ok(...) }
-        F: FnOnce(AnyConnWrapper) -> FR + Send + 'static,
-        FR: Future<Output = Result<R, DbError>> + Send + 'static,
-        R: Send + 'static;
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError>;
 }
 
 #[async_trait]
 pub trait SyncDatabaseExecutor {
-    async fn interact_sync<F, R>(&self, f: F) -> Result<R, DbError>
+    async fn interact_sync<F, R>(&self, f: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(AnyConnWrapper) -> R + Send + 'static,
         R: Send + 'static;
@@ -311,23 +443,23 @@ pub trait SyncDatabaseExecutor {
 #[async_trait]
 pub trait TransactionExecutor {
     /// Executes a single query within the transaction.
-    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError>;
+    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError>;
 
     /// Executes a batch of queries within the transaction.
-    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError>;
+    async fn batch_execute(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError>;
 }
 
 /// A trait representing a prepared statement.
 #[async_trait]
 pub trait StatementExecutor {
     /// Executes the prepared statement and returns the result set.
-    async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError>;
+    async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError>;
 }
 
 #[async_trait]
 impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     /// Executes a batch of SQL queries within a transaction by delegating to the specific database module.
-    async fn execute_batch(&mut self, query: &str) -> Result<(), DbError> {
+    async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_batch(pg_client, query).await
@@ -341,7 +473,7 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
         &mut self,
         query: &str,
         params: &[RowValues],
-    ) -> Result<ResultSet, DbError> {
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_select(pg_client, query, params).await
@@ -351,7 +483,7 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             }
         }
     }
-    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError> {
+    async fn execute_dml(&mut self, query: &str, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_dml(pg_client, query, &params).await
@@ -361,35 +493,11 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             }
         }
     }
-    async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, DbError>
-    where
-        // For example:
-        // f: |AnyConnWrapper| async move { ...some DB calls...; Ok(...) }
-        F: FnOnce(AnyConnWrapper) -> FR + Send + 'static,
-        FR: Future<Output = Result<R, DbError>> + Send + 'static,
-        R: Send + 'static,
-    {
-        match self {
-            MiddlewarePoolConnection::Postgres(pg_obj) => {
-                // For Postgres, we can do fully async.
-                // `pg_obj` is a `deadpool_postgres::Object` which derefs to `&tokio_postgres::Client`.
-                // We'll clone it (Arc clone) to pass into the closure as an owned Client,
-                // so the closure can hold onto it while it's async.
-                // let pg_obj_clone = pg_obj.clone();
-                let wrapper = AnyConnWrapper::Postgres(pg_obj);
-                // Now just await the user closure directly
-                f(wrapper).await
-            }
-            _ => Err(DbError::Other(
-                "interact_async only supported for Postgres".into(),
-            )),
-        }
-    }
 }
 
 #[async_trait]
 impl SyncDatabaseExecutor for MiddlewarePoolConnection {
-    async fn interact_sync<F, R>(&self, f: F) -> Result<R, DbError>
+    async fn interact_sync<F, R>(&self, f: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(AnyConnWrapper) -> R + Send + 'static,
         R: Send + 'static,
@@ -404,7 +512,7 @@ impl SyncDatabaseExecutor for MiddlewarePoolConnection {
                     })
                     .await?
             }
-            _ => Err(DbError::Other(
+            _ => Err(SqlMiddlewareDbError::Other(
                 "interact_sync only supported for SQLite".into(),
             )),
         }
@@ -415,12 +523,12 @@ impl MiddlewarePoolConnection {
     /// Async transaction closure.  
     /// `f` is an async closure that will receive an `AnyConnWrapper`,  
     /// and returns a `Future<Output=Result<R>>`.  
-    pub async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, DbError>
+    pub async fn interact_async<F, FR, R>(&self, f: F) -> Result<R, SqlMiddlewareDbError>
     where
         // For example:
         // f: |AnyConnWrapper| async move { ...some DB calls...; Ok(...) }
         F: FnOnce(AnyConnWrapper) -> FR + Send + 'static,
-        FR: Future<Output = Result<R, DbError>> + Send + 'static,
+        FR: Future<Output = Result<R, SqlMiddlewareDbError>> + Send + 'static,
         R: Send + 'static,
     {
         match self {
@@ -457,10 +565,7 @@ impl MiddlewarePoolConnection {
 //    Because a `deadpool_postgres::Object` is basically an `Arc<tokio_postgres::Client>` plus
 //    some manager info, we can store that in Postgres variant.
 //
-pub enum AnyConnWrapper<'c> {
-    /// SQLite is sync. We hold a reference to the `rusqlite::Connection`.
-    Sqlite(&'c rusqlite::Connection),
-    /// Postgres: store the entire `deadpool_postgres::Object`, which can be treated as a
-    /// clonable handle to the underlying tokio_postgres::Client.
-    Postgres(&'c deadpool_postgres::Object),
+pub enum AnyConnWrapper<'a> {
+    Postgres(&'a mut deadpool_postgres::Client),
+    Sqlite(&'a mut rusqlite::Connection),
 }

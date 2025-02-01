@@ -14,7 +14,7 @@ mod postgres;
 mod sqlite;
 
 use deadpool_sqlite::rusqlite;
-pub use middleware::DbError as SqlMiddlewareDbError;
+pub use middleware::SqlMiddlewareDbError as SqlMiddlewareDbError;
 pub use postgres::build_result_set as postgres_build_result_set;
 pub use postgres::Params as PostgresParams;
 pub use rusqlite::params_from_iter as sqlite_params_from_iter;

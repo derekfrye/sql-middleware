@@ -5,25 +5,25 @@ use rusqlite::Statement;
 use rusqlite::ToSql;
 
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
+    ConfigAndPool, CustomDbRow, DatabaseType, SqlMiddlewareDbError, MiddlewarePool, ResultSet, RowValues,
 };
 
 // influenced design: https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112, https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
-    pub async fn new_sqlite(db_path: String) -> Result<Self, DbError> {
+    pub async fn new_sqlite(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
         // Configure deadpool_sqlite
         let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
 
         // Create the pool
         let pool = cfg
             .create_pool(Runtime::Tokio1)
-            .map_err(|e| DbError::Other(format!("Failed to create Deadpool SQLite pool: {}", e)))?;
+            .map_err(|e| SqlMiddlewareDbError::Other(format!("Failed to create Deadpool SQLite pool: {}", e)))?;
 
         // Initialize the database (e.g., create tables)
         {
-            let conn = pool.get().await.map_err(DbError::PoolErrorSqlite)?;
+            let conn = pool.get().await.map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
             let _res = conn
                 .interact(|conn| {
                     conn.execute_batch(
@@ -31,7 +31,7 @@ impl ConfigAndPool {
                     PRAGMA journal_mode = WAL;
                 ",
                     )
-                    .map_err(|e| DbError::SqliteError(e))
+                    .map_err(|e| SqlMiddlewareDbError::SqliteError(e))
                 })
                 .await?;
         }
@@ -44,21 +44,20 @@ impl ConfigAndPool {
 }
 
 // Convert rusqlite::Error into DbError.
-impl From<rusqlite::Error> for DbError {
+impl From<rusqlite::Error> for SqlMiddlewareDbError {
     fn from(err: rusqlite::Error) -> Self {
-        DbError::SqliteError(err)
+        SqlMiddlewareDbError::SqliteError(err)
     }
 }
 
-impl From<deadpool_sqlite::InteractError> for DbError {
+impl From<deadpool_sqlite::InteractError> for SqlMiddlewareDbError {
     fn from(err: deadpool_sqlite::InteractError) -> Self {
-        DbError::Other(format!("Deadpool SQLite Interact Error: {}", err))
+        SqlMiddlewareDbError::Other(format!("Deadpool SQLite Interact Error: {}", err))
     }
 }
 
 /// Bind middleware params to SQLite types.
-// #[allow(dead_code)]
-pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value>, DbError> {
+pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value>, SqlMiddlewareDbError> {
     let mut vec_values = Vec::with_capacity(params.len());
     for p in params {
         let v = match p {
@@ -79,10 +78,10 @@ pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value
     Ok(vec_values)
 }
 
-fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, DbError> {
+fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, SqlMiddlewareDbError> {
     let val_ref_res = row.get_ref(idx);
     match val_ref_res {
-        Err(e) => Err(DbError::SqliteError(e)),
+        Err(e) => Err(SqlMiddlewareDbError::SqliteError(e)),
         Ok(rusqlite::types::ValueRef::Null) => Ok(RowValues::Null),
         Ok(rusqlite::types::ValueRef::Integer(i)) => Ok(RowValues::Int(i)),
         Ok(rusqlite::types::ValueRef::Real(f)) => Ok(RowValues::Float(f)),
@@ -95,7 +94,7 @@ fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValue
 }
 
 /// Will only run select queries. I think it ignores other queries.
-pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<ResultSet, DbError> {
+pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
@@ -124,7 +123,7 @@ pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<Result
     Ok(result_set)
 }
 
-pub async fn execute_batch(sqlite_client: &Object, query: &str) -> Result<(), DbError> {
+pub async fn execute_batch(sqlite_client: &Object, query: &str) -> Result<(), SqlMiddlewareDbError> {
     let query_owned = query.to_owned();
 
     // Use interact to run the blocking code in a separate thread.
@@ -142,14 +141,14 @@ pub async fn execute_batch(sqlite_client: &Object, query: &str) -> Result<(), Db
             Ok(())
         })
         .await?
-        .map_err(DbError::SqliteError) // Map the inner rusqlite::Error to DbError
+        .map_err(SqlMiddlewareDbError::SqliteError) // Map the inner rusqlite::Error to DbError
 }
 
 pub async fn execute_select(
     sqlite_client: &Object,
     query: &str,
     params: &[RowValues],
-) -> Result<ResultSet, DbError> {
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let query_owned = query.to_owned();
     let params_owned = convert_params(params)?;
 
@@ -162,7 +161,7 @@ pub async fn execute_select(
             // Execute the query
             let result_set = build_result_set(&mut stmt, &params_owned)?;
 
-            Ok::<_, DbError>(result_set)
+            Ok::<_, SqlMiddlewareDbError>(result_set)
         })
         .await??;
 
@@ -173,7 +172,7 @@ pub async fn execute_dml(
     sqlite_client: &Object,
     query: &str,
     params: &[RowValues],
-) -> Result<usize, DbError> {
+) -> Result<usize, SqlMiddlewareDbError> {
     let query_owned = query.to_owned();
     let params_owned = convert_params(params)?;
 
@@ -191,7 +190,7 @@ pub async fn execute_dml(
             };
             tx.commit()?;
 
-            Ok::<_, DbError>(rows)
+            Ok::<_, SqlMiddlewareDbError>(rows)
         })
         .await??;
 
