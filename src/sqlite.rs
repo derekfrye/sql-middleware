@@ -1,10 +1,12 @@
+use deadpool_sqlite::rusqlite::Transaction;
+use deadpool_sqlite::Object;
 use deadpool_sqlite::{rusqlite, Config as DeadpoolSqliteConfig, Runtime};
 use rusqlite::types::Value;
 use rusqlite::Statement;
 use rusqlite::ToSql;
-
+use async_trait::async_trait;
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues,
+    ConfigAndPool, CustomDbRow, DatabaseType, DbError, MiddlewarePool, ResultSet, RowValues, StatementExecutor, TransactionExecutor,
 };
 
 // influenced design: https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112, https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
@@ -121,4 +123,202 @@ pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<Result
     }
 
     Ok(result_set)
+}
+
+pub async fn execute_batch(sqlite_client: &Object, query: &str) -> Result<(), DbError> {
+    let query_owned = query.to_owned();
+
+    // Use interact to run the blocking code in a separate thread.
+    sqlite_client
+        .interact(move |conn| {
+            // Begin a transaction
+            let tx = conn.transaction()?;
+
+            // Execute the batch of queries
+            tx.execute_batch(&query_owned)?;
+
+            // Commit the transaction
+            tx.commit()?;
+
+            Ok(())
+        })
+        .await?
+        .map_err(DbError::SqliteError) // Map the inner rusqlite::Error to DbError
+}
+
+pub async fn execute_select(
+    sqlite_client: &Object,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, DbError> {
+    let query_owned = query.to_owned();
+    let params_owned = convert_params(params)?;
+
+    // Use interact to run the blocking code in a separate thread.
+    let result_set = sqlite_client
+        .interact(move |conn| {
+            // Prepare the query
+            let mut stmt = conn.prepare(&query_owned)?;
+
+            // Execute the query
+            let result_set = build_result_set(&mut stmt, &params_owned)?;
+
+            Ok::<_, DbError>(result_set)
+        })
+        .await??;
+
+    Ok(result_set)
+}
+
+pub async fn execute_dml(
+    sqlite_client: &Object,
+    query: &str,
+    params: &[RowValues],
+) -> Result<usize, DbError> {
+    let query_owned = query.to_owned();
+    let params_owned = convert_params(params)?;
+
+    // Use interact to run the blocking code in a separate thread.
+    let result_set = sqlite_client
+        .interact(move |conn| {
+            // Prepare the query
+            let tx = conn.transaction()?;
+            // Execute the query
+            let param_refs: Vec<&dyn ToSql> =
+                params_owned.iter().map(|v| v as &dyn ToSql).collect();
+            let rows = {
+                let mut stmt = tx.prepare(&query_owned)?;
+                stmt.execute(&param_refs[..])?
+            };
+            tx.commit()?;
+
+            Ok::<_, DbError>(rows)
+        })
+        .await??;
+
+    Ok(result_set)
+}
+
+#[async_trait]
+impl TransactionExecutor for Transaction<'_> {
+    async fn prepare(&mut self, query: &str) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+        let stmt = self.prepare(query)?;
+        Ok(Box::new(SqliteStatementExecutor { stmt }))
+    }
+
+    async fn execute(&mut self, query: &str, params: &[RowValues]) -> Result<usize, DbError> {
+        // let params_converted = convert_params(params)?;
+        let rows = self.execute(query, &params).await?;
+        Ok(rows)
+    }
+
+    async fn batch_execute(&mut self, query: &str) -> Result<(), DbError> {
+        self.execute_batch(query)?;
+        Ok(())
+    }
+
+    async fn commit(&mut self) -> Result<(), DbError> {
+        self.commit()?;
+        Ok(())
+    }
+
+    async fn rollback(&mut self) -> Result<(), DbError> {
+        self.rollback()?;
+        Ok(())
+    }
+}
+
+pub struct SqliteStatementExecutor<'a> {
+    stmt: Statement<'a>,
+}
+
+#[async_trait]
+impl<'a> StatementExecutor for SqliteStatementExecutor<'a> {
+    async fn execute(&mut self, params: &[RowValues]) -> Result<usize, DbError> {
+        let params_converted = convert_params(params)?;
+        let param_refs: Vec<&dyn ToSql> = params_converted.iter().map(|v| v as &dyn ToSql).collect();
+        let rows = self.stmt.execute(&param_refs[..])?;
+        Ok(rows)
+    }
+
+    async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError> {
+        let params_converted = convert_params(params)?;
+        let mut rows_iter = self.stmt.query(&params_converted)?;
+        let result_set = build_result_set(&mut self.stmt, &params_converted, &rows_iter)?;
+        Ok(result_set)
+    }
+}
+
+pub async fn begin_transaction(
+    sqlite_client: &SqliteObject,
+) -> Result<Box<dyn TransactionExecutor + Send + Sync>, DbError> {
+    let tx = sqlite_client
+        .interact(|conn| conn.transaction())
+        .await?
+        .map_err(DbError::SqliteError)?;
+    Ok(Box::new(tx))
+}
+
+/// Prepares a statement for SQLite.
+pub async fn prepare(
+    sqlite_client: &SqliteObject,
+    query: &str,
+) -> Result<Box<dyn StatementExecutor + Send + Sync>, DbError> {
+    let query_owned = query.to_owned();
+    let stmt = sqlite_client
+        .interact(move |conn| conn.prepare(&query_owned))
+        .await??;
+    Ok(Box::new(SqliteStatementExecutor { stmt }))
+}
+
+/// Executes a single query for SQLite.
+pub async fn execute(
+    sqlite_client: &SqliteObject,
+    query: &str,
+    params: &[RowValues],
+) -> Result<usize, DbError> {
+    let query_owned = query.to_owned();
+    let params_owned = convert_params(params)?;
+
+    let rows = sqlite_client
+        .interact(move |conn| {
+            // Begin a transaction
+            let tx = conn.transaction()?;
+
+            // Execute the query
+            let rows = tx.execute(&query_owned, &params_owned)?;
+
+            // Commit the transaction
+            tx.commit()?;
+
+            Ok::<_, DbError>(rows)
+        })
+        .await??;
+
+    Ok(rows)
+}
+
+/// Executes a batch of queries for SQLite.
+pub async fn batch_execute(
+    sqlite_client: &SqliteObject,
+    query: &str,
+) -> Result<(), DbError> {
+    let query_owned = query.to_owned();
+
+    // Use interact to run the blocking code in a separate thread.
+    sqlite_client
+        .interact(move |conn| {
+            // Begin a transaction
+            let tx = conn.transaction()?;
+
+            // Execute the batch of queries
+            tx.execute_batch(&query_owned)?;
+
+            // Commit the transaction
+            tx.commit()?;
+
+            Ok(())
+        })
+        .await?
+        .map_err(DbError::SqliteError) // Map the inner rusqlite::Error to DbError
 }
