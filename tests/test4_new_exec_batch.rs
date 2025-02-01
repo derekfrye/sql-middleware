@@ -1,14 +1,22 @@
 // use rusty_golf::controller::score;
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
-use common::postgres::{setup_postgres_container, stop_postgres_container};
+use common::postgres::{ setup_postgres_container, stop_postgres_container };
 use deadpool_sqlite::rusqlite;
 use sql_middleware::{
     middleware::{
-        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, DatabaseType,
-        MiddlewarePool, MiddlewarePoolConnection, RowValues, SyncDatabaseExecutor,
+        AnyConnWrapper,
+        AsyncDatabaseExecutor,
+        ConfigAndPool as ConfigAndPool2,
+        DatabaseType,
+        MiddlewarePool,
+        MiddlewarePoolConnection,
+        RowValues,
+        
     },
-    sqlite_convert_params, PostgresParams, SqlMiddlewareDbError,
+    sqlite_convert_params,
+    PostgresParams,
+    SqlMiddlewareDbError,
 };
 use tokio::runtime::Runtime;
 mod common {
@@ -35,7 +43,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
     let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
-        TestCase::Postgres(&cfg), // Adjust connection string
+        TestCase::Postgres(&cfg) // Adjust connection string
     ];
 
     let rt = Runtime::new().unwrap();
@@ -80,26 +88,28 @@ enum TestCase<'a> {
 
 async fn run_test_logic(
     conn: &mut MiddlewarePoolConnection,
-    db_type: DatabaseType,
+    db_type: DatabaseType
 ) -> Result<(), SqlMiddlewareDbError> {
     // Define the DDL statements
     let ddl = match db_type {
-        DatabaseType::Postgres => vec![
-            include_str!("../tests/postgres/test4/00_event.sql"),
-            // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
-            include_str!("../tests/postgres/test4/02_golfer.sql"),
-            include_str!("../tests/postgres/test4/03_bettor.sql"),
-            include_str!("../tests/postgres/test4/04_event_user_player.sql"),
-            include_str!("../tests/postgres/test4/05_eup_statistic.sql"),
-        ],
-        DatabaseType::Sqlite => vec![
-            include_str!("../tests/sqlite/test4/00_event.sql"),
-            // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
-            include_str!("../tests/sqlite/test4/02_golfer.sql"),
-            include_str!("../tests/sqlite/test4/03_bettor.sql"),
-            include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
-            include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
-        ],
+        DatabaseType::Postgres =>
+            vec![
+                include_str!("../tests/postgres/test4/00_event.sql"),
+                // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
+                include_str!("../tests/postgres/test4/02_golfer.sql"),
+                include_str!("../tests/postgres/test4/03_bettor.sql"),
+                include_str!("../tests/postgres/test4/04_event_user_player.sql"),
+                include_str!("../tests/postgres/test4/05_eup_statistic.sql")
+            ],
+        DatabaseType::Sqlite =>
+            vec![
+                include_str!("../tests/sqlite/test4/00_event.sql"),
+                // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
+                include_str!("../tests/sqlite/test4/02_golfer.sql"),
+                include_str!("../tests/sqlite/test4/03_bettor.sql"),
+                include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
+                include_str!("../tests/sqlite/test4/05_eup_statistic.sql")
+            ],
     };
 
     let ddl_query = ddl.join("\n");
@@ -121,13 +131,19 @@ async fn run_test_logic(
     let params: Vec<Vec<RowValues>> = (0..100)
         .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
         .collect();
+    dbg!(&params);
 
     // conn.execute_dml(paramaterized_query, &params[0]).await?;
 
     // lets first run this through 100 transactions, yikes
     for param in params {
+        println!("param: {:?}", param); 
         conn.execute_dml(&paramaterized_query, &param).await?;
     }
+
+    let query = "select count(*) as cnt from test;";
+    let result_set = conn.execute_select(query, &[]).await?;
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 100);
 
     // generate 100 more params
     let params: Vec<Vec<RowValues>> = (100..200)
@@ -138,50 +154,50 @@ async fn run_test_logic(
 
     match db_type {
         DatabaseType::Postgres => {
-            conn.interact_async(|wrapper| async move {
-                match wrapper {
-                    AnyConnWrapper::Postgres(pg_handle) => {
-                        let client = pg_handle.as_ref();
-                        let mut tx = client.transaction().await?;
-                        for param in params {
-                            let postgres_params = PostgresParams::convert(&param)?;
-                            tx.execute(paramaterized_query, &postgres_params.as_refs())
-                                .await?;
-                        }
-                        tx.commit().await?;
-                        Ok(())
-                    }
-                    _ => Err(SqlMiddlewareDbError::Other(
-                        "Unexpected database type".into(),
-                    )),
+            if let MiddlewarePoolConnection::Postgres(pg_handle) = conn {
+                let tx = pg_handle.transaction().await?;
+                for param in params {
+                    let postgres_params = PostgresParams::convert(&param)?;
+                    tx.execute(paramaterized_query, &postgres_params.as_refs()).await?;
                 }
-            })
-            .await?;
+                tx.commit().await?;
+            } else {
+                // or return an error if we expect only Postgres here
+                return Err(SqlMiddlewareDbError::Other("Expected Postgres".into()));
+            }
         }
         DatabaseType::Sqlite => {
-            conn.interact_sync(|wrapper| match wrapper {
-                AnyConnWrapper::Sqlite(sql_conn) => {
-                    let tx = sql_conn.transaction()?;
-                    for param in params {
-                        let converted_params = sqlite_convert_params(&param)?;
-                        tx.execute(
-                            paramaterized_query,
-                            &converted_params
-                                .iter()
-                                .map(|v| v as &dyn rusqlite::ToSql)
-                                .collect::<Vec<_>>()[..],
-                        )?;
+            let res = conn.interact_sync({
+                let paramaterized_query = paramaterized_query.to_string();
+                let params = params.clone();
+                move |wrapper| {
+                    match wrapper {
+                        AnyConnWrapper::Sqlite(sql_conn) => {
+                            let tx = sql_conn.transaction()?;
+                            for param in params {
+                                let converted_params = sqlite_convert_params(&param)?;
+                                tx.execute(
+                                    &paramaterized_query,
+                                    &converted_params
+                                        .iter()
+                                        .map(|v| v as &dyn rusqlite::ToSql)
+                                        .collect::<Vec<_>>()[..]
+                                )?;
+                            }
+                            tx.commit()?;
+                            Ok(())
+                        }
+                        _ => Err(SqlMiddlewareDbError::Other("Unexpected database type".into())),
                     }
-                    tx.commit()?;
-                    Ok(())
                 }
-                _ => Err(SqlMiddlewareDbError::Other(
-                    "Unexpected database type".into(),
-                )),
-            })
-            .await?;
+            }).await?;
+            res?;
         }
     }
+
+    let query = "select count(*) as cnt from test;";
+    let result_set = conn.execute_select(query, &[]).await?;
+    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap() , 200);
 
     Ok(())
 }
