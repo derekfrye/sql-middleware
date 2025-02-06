@@ -6,9 +6,12 @@ use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
-    ConfigAndPool, ConversionMode, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues
+    ConfigAndPool, ConversionMode, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection,
+    QueryAndParams, RowValues,
 };
-use sql_middleware::{convert_sql_params, postgres_build_result_set, PostgresParams, SqlMiddlewareDbError};
+use sql_middleware::{
+    convert_sql_params, postgres_build_result_set, PostgresParams, SqlMiddlewareDbError,
+};
 
 use std::vec;
 use tokio::runtime::Runtime;
@@ -89,15 +92,18 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             params: vec![
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
-                RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?,
-                ),
+                RowValues::Timestamp(NaiveDateTime::parse_from_str(
+                    "2021-08-06 16:00:00",
+                    "%Y-%m-%d %H:%M:%S",
+                )?),
             ],
         };
 
         {
-            let converted_params =
-            convert_sql_params::<PostgresParams>(&query_and_params.params, ConversionMode::Query)?;
+            let converted_params = convert_sql_params::<PostgresParams>(
+                &query_and_params.params,
+                ConversionMode::Query,
+            )?;
             let tx = pgconn.transaction().await?;
             tx.prepare(query_and_params.query.as_str()).await?;
             let result_set = {

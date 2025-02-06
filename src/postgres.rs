@@ -2,7 +2,8 @@
 use std::error::Error;
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError
+    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter,
+    ResultSet, RowValues, SqlMiddlewareDbError,
 };
 use chrono::NaiveDateTime;
 use deadpool_postgres::Transaction;
@@ -69,7 +70,9 @@ impl<'a> Params<'a> {
     }
 
     // Adjusted convert_for_batch method
-    pub fn convert_for_batch(params: &'a Vec<RowValues>) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
+    pub fn convert_for_batch(
+        params: &'a Vec<RowValues>,
+    ) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
         let mut references = Vec::new();
         for p in params {
             references.push(p as &(dyn ToSql + Sync));
@@ -86,13 +89,14 @@ impl<'a> Params<'a> {
 impl<'a> ParamConverter<'a> for Params<'a> {
     type Converted = Params<'a>;
 
-    fn convert_sql_params(params: &'a [RowValues], _mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError> {
+    fn convert_sql_params(
+        params: &'a [RowValues],
+        _mode: ConversionMode,
+    ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         // Simply delegate to your existing conversion:
         Self::convert(params)
     }
-
 }
-
 
 impl ToSql for RowValues {
     fn to_sql(
@@ -159,44 +163,66 @@ pub async fn build_result_set<'a>(
 }
 
 /// Extracts a RowValues from a tokio_postgres Row at the given index
-fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowValues, SqlMiddlewareDbError> {
+fn postgres_extract_value(
+    row: &tokio_postgres::Row,
+    idx: usize,
+) -> Result<RowValues, SqlMiddlewareDbError> {
     // Determine the type of the column and extract accordingly
     let type_info = row.columns()[idx].type_();
 
     // Match on the type based on PostgreSQL type OIDs or names
     // For simplicity, we'll handle common types. You may need to expand this.
     if type_info.name() == "int4" || type_info.name() == "int8" {
-        let val: Option<i64> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<i64> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))
     } else if type_info.name() == "float4" || type_info.name() == "float8" {
-        let val: Option<f64> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<f64> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Float))
     } else if type_info.name() == "bool" {
-        let val: Option<bool> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<bool> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Bool))
     } else if type_info.name() == "timestamp" || type_info.name() == "timestamptz" {
-        let val: Option<NaiveDateTime> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<NaiveDateTime> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Timestamp))
     } else if type_info.name() == "json" || type_info.name() == "jsonb" {
-        let val: Option<Value> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<Value> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::JSON))
     } else if type_info.name() == "bytea" {
-        let val: Option<Vec<u8>> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<Vec<u8>> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Blob))
     } else if type_info.name() == "text"
         || type_info.name() == "varchar"
         || type_info.name() == "char"
     {
-        let val: Option<String> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<String> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     } else {
         // For other types, attempt to get as string
-        let val: Option<String> = row.try_get(idx).map_err(SqlMiddlewareDbError::PostgresError)?;
+        let val: Option<String> = row
+            .try_get(idx)
+            .map_err(SqlMiddlewareDbError::PostgresError)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
 }
 
-pub async fn execute_batch(pg_client: &mut Object, query: &str) -> Result<(), SqlMiddlewareDbError> {
+pub async fn execute_batch(
+    pg_client: &mut Object,
+    query: &str,
+) -> Result<(), SqlMiddlewareDbError> {
     // Begin a transaction
     let tx = pg_client.transaction().await?;
 

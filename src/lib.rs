@@ -16,6 +16,9 @@ pub use postgres::Params as PostgresParams;
 pub use sqlite::SqliteParamsExecute;
 pub use sqlite::SqliteParamsQuery;
 
-pub fn convert_sql_params<'a, T: ParamConverter<'a>>(params: &'a [RowValues], mode: ConversionMode) -> Result<T::Converted, SqlMiddlewareDbError> {
+pub fn convert_sql_params<'a, T: ParamConverter<'a>>(
+    params: &'a [RowValues],
+    mode: ConversionMode,
+) -> Result<T::Converted, SqlMiddlewareDbError> {
     T::convert_sql_params(params, mode)
 }

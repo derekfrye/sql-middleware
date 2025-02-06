@@ -1,12 +1,16 @@
 // use rusty_golf::controller::score;
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
-use common::postgres::{ setup_postgres_container, stop_postgres_container };
+use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use deadpool_sqlite::rusqlite::{ self, params };
 use sql_middleware::{
-    convert_sql_params, middleware::{
-        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues
-    }, postgres_build_result_set, sqlite_build_result_set, PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery
+    convert_sql_params,
+    middleware::{
+        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, ConversionMode,
+        DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+    },
+    postgres_build_result_set, sqlite_build_result_set, PostgresParams, SqlMiddlewareDbError,
+    SqliteParamsExecute, SqliteParamsQuery,
 };
 use tokio::runtime::Runtime;
 mod common {
@@ -33,7 +37,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
     let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
-        TestCase::Postgres(&cfg) // Adjust connection string
+        TestCase::Postgres(&cfg), // Adjust connection string
     ];
 
     let rt = Runtime::new().unwrap();
@@ -78,28 +82,26 @@ enum TestCase<'a> {
 
 async fn run_test_logic(
     conn: &mut MiddlewarePoolConnection,
-    db_type: DatabaseType
+    db_type: DatabaseType,
 ) -> Result<(), SqlMiddlewareDbError> {
     // Define the DDL statements
     let ddl = match db_type {
-        DatabaseType::Postgres =>
-            vec![
-                include_str!("../tests/postgres/test4/00_event.sql"),
-                // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
-                include_str!("../tests/postgres/test4/02_golfer.sql"),
-                include_str!("../tests/postgres/test4/03_bettor.sql"),
-                include_str!("../tests/postgres/test4/04_event_user_player.sql"),
-                include_str!("../tests/postgres/test4/05_eup_statistic.sql")
-            ],
-        DatabaseType::Sqlite =>
-            vec![
-                include_str!("../tests/sqlite/test4/00_event.sql"),
-                // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
-                include_str!("../tests/sqlite/test4/02_golfer.sql"),
-                include_str!("../tests/sqlite/test4/03_bettor.sql"),
-                include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
-                include_str!("../tests/sqlite/test4/05_eup_statistic.sql")
-            ],
+        DatabaseType::Postgres => vec![
+            include_str!("../tests/postgres/test4/00_event.sql"),
+            // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
+            include_str!("../tests/postgres/test4/02_golfer.sql"),
+            include_str!("../tests/postgres/test4/03_bettor.sql"),
+            include_str!("../tests/postgres/test4/04_event_user_player.sql"),
+            include_str!("../tests/postgres/test4/05_eup_statistic.sql"),
+        ],
+        DatabaseType::Sqlite => vec![
+            include_str!("../tests/sqlite/test4/00_event.sql"),
+            // include_str!("../src/admin/model/sql/schema/sqlite/01_golfstatistic.sql"),
+            include_str!("../tests/sqlite/test4/02_golfer.sql"),
+            include_str!("../tests/sqlite/test4/03_bettor.sql"),
+            include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
+            include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
+        ],
     };
 
     let ddl_query = ddl.join("\n");
@@ -133,7 +135,10 @@ async fn run_test_logic(
 
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 100);
+    assert_eq!(
+        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+        100
+    );
 
     // generate 100 more params
     let params: Vec<Vec<RowValues>> = (100..200)
@@ -148,7 +153,8 @@ async fn run_test_logic(
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
-                    tx.execute(paramaterized_query, &postgres_params.as_refs()).await?;
+                    tx.execute(paramaterized_query, &postgres_params.as_refs())
+                        .await?;
                 }
                 tx.commit().await?;
             } else {
@@ -157,33 +163,39 @@ async fn run_test_logic(
             }
         }
         DatabaseType::Sqlite => {
-            let res = conn.interact_sync({
-                let paramaterized_query = paramaterized_query.to_string();
-                let params = params.clone();
-                move |wrapper| {
-                    match wrapper {
+            let res = conn
+                .interact_sync({
+                    let paramaterized_query = paramaterized_query.to_string();
+                    let params = params.clone();
+                    move |wrapper| match wrapper {
                         AnyConnWrapper::Sqlite(sql_conn) => {
                             let tx = sql_conn.transaction()?;
                             for param in params {
-                                let converted_params = convert_sql_params::<SqliteParamsExecute> (&param, ConversionMode::Execute )?;
-                                tx.execute(
-                                    &paramaterized_query,
-                                    converted_params.0)?;
+                                let converted_params = convert_sql_params::<SqliteParamsExecute>(
+                                    &param,
+                                    ConversionMode::Execute,
+                                )?;
+                                tx.execute(&paramaterized_query, converted_params.0)?;
                             }
                             tx.commit()?;
                             Ok(())
                         }
-                        _ => Err(SqlMiddlewareDbError::Other("Unexpected database type".into())),
+                        _ => Err(SqlMiddlewareDbError::Other(
+                            "Unexpected database type".into(),
+                        )),
                     }
-                }
-            }).await?;
+                })
+                .await?;
             res?;
         }
     }
 
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 200);
+    assert_eq!(
+        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+        200
+    );
 
     // generate 200 more params
     let params: Vec<Vec<RowValues>> = (0..200)
@@ -199,7 +211,8 @@ async fn run_test_logic(
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
-                    tx.execute(paramaterized_query, &postgres_params.as_refs()).await?;
+                    tx.execute(paramaterized_query, &postgres_params.as_refs())
+                        .await?;
                 }
                 tx.commit().await?;
             } else {
@@ -208,68 +221,76 @@ async fn run_test_logic(
             }
         }
         DatabaseType::Sqlite => {
-            let res = conn.interact_sync({
-                let paramaterized_query = paramaterized_query.to_string();
-                let params = params.clone();
-                move |wrapper| {
-                    match wrapper {
-                        AnyConnWrapper::Sqlite(sql_conn) => {
-                            let tx = sql_conn.transaction()?;
-                            {
-                                let query = "select count(*) as cnt from test;";
+            let res = conn
+                .interact_sync({
+                    let paramaterized_query = paramaterized_query.to_string();
+                    let params = params.clone();
+                    move |wrapper| {
+                        match wrapper {
+                            AnyConnWrapper::Sqlite(sql_conn) => {
+                                let tx = sql_conn.transaction()?;
+                                {
+                                    let query = "select count(*) as cnt from test;";
 
-                                let mut stmt = tx.prepare(query)?;
-                                let mut res = stmt.query([])?;
-                                // let cnt: i64 = res.next().unwrap().get(0)?;
-                                let x: i32 = if let Some(row) = res.next()? {
-                                    row.get(0)?
-                                } else {
-                                    0
-                                };
-                                assert_eq!(x, 200);
-                            }
-                            {
-                                for param in params {
-                                    let converted_params = convert_sql_params::<SqliteParamsExecute>(&param, ConversionMode::Execute)?;
-                                    tx.execute(
-                                        &paramaterized_query,
-                                        converted_params.0
-                                    )?;
+                                    let mut stmt = tx.prepare(query)?;
+                                    let mut res = stmt.query([])?;
+                                    // let cnt: i64 = res.next().unwrap().get(0)?;
+                                    let x: i32 = if let Some(row) = res.next()? {
+                                        row.get(0)?
+                                    } else {
+                                        0
+                                    };
+                                    assert_eq!(x, 200);
                                 }
-                            }
-                            {
-                                let query = "select count(*) as cnt from test;";
+                                {
+                                    for param in params {
+                                        let converted_params = convert_sql_params::<
+                                            SqliteParamsExecute,
+                                        >(
+                                            &param, ConversionMode::Execute
+                                        )?;
+                                        tx.execute(&paramaterized_query, converted_params.0)?;
+                                    }
+                                }
+                                {
+                                    let query = "select count(*) as cnt from test;";
 
-                                let mut stmt = tx.prepare(query)?;
-                                let mut res = stmt.query([])?;
-                                // let cnt: i64 = res.next().unwrap().get(0)?;
-                                let x: i32 = if let Some(row) = res.next()? {
-                                    row.get(0)?
-                                } else {
-                                    0
-                                };
-                                assert_eq!(x, 400);
+                                    let mut stmt = tx.prepare(query)?;
+                                    let mut res = stmt.query([])?;
+                                    // let cnt: i64 = res.next().unwrap().get(0)?;
+                                    let x: i32 = if let Some(row) = res.next()? {
+                                        row.get(0)?
+                                    } else {
+                                        0
+                                    };
+                                    assert_eq!(x, 400);
+                                }
+                                tx.commit()?;
+                                Ok(())
                             }
-                            tx.commit()?;
-                            Ok(())
+                            _ => Err(SqlMiddlewareDbError::Other(
+                                "Unexpected database type".into(),
+                            )),
                         }
-                        _ => Err(SqlMiddlewareDbError::Other("Unexpected database type".into())),
                     }
-                }
-            }).await?;
+                })
+                .await?;
             res?;
         }
     }
 
     let query = "select count(*) as cnt from test;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 400);
+    assert_eq!(
+        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+        400
+    );
 
     // let's test a common pattern in rusty-golf
     // generate 1 more param
     let params: Vec<RowValues> = vec![
         RowValues::Int(990),
-        RowValues::Text(format!("name_{}", 990))
+        RowValues::Text(format!("name_{}", 990)),
     ];
 
     let query_and_params = QueryAndParams {
@@ -295,7 +316,10 @@ async fn run_test_logic(
             xx.interact(move |xxx| {
                 let tx = xxx.transaction()?;
                 {
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(&query_and_params.params, ConversionMode::Query )?;
+                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                        &query_and_params.params,
+                        ConversionMode::Query,
+                    )?;
                     let mut stmt = tx.prepare(&query_and_params.query)?;
                     sqlite_build_result_set(&mut stmt, &converted_params.0)?;
                 }
@@ -303,28 +327,38 @@ async fn run_test_logic(
                 {
                     let query_and_params_vec = QueryAndParams {
                         query: "select count(*) as cnt from test;".to_string(),
-                        params: vec![
-                        ],
+                        params: vec![],
                     };
                     let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params_vec.params, ConversionMode::Query
+                        &query_and_params_vec.params,
+                        ConversionMode::Query,
                     )?;
                     let mut stmt = tx.prepare(&query_and_params_vec.query)?;
                     let result_set = {
-                        let rs = sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                        let rs = sql_middleware::sqlite_build_result_set(
+                            &mut stmt,
+                            &converted_params.0,
+                        )?;
                         rs
                     };
                     assert_eq!(result_set.results.len(), 1);
-                    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 401);
+                    assert_eq!(
+                        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+                        401
+                    );
                 }
                 {
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(&query_and_params.params, ConversionMode::Query )?;
+                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                        &query_and_params.params,
+                        ConversionMode::Query,
+                    )?;
                     let mut stmt = tx.prepare(&query_and_params.query)?;
                     sqlite_build_result_set(&mut stmt, &converted_params.0)?;
                 }
                 tx.commit()?;
                 Ok::<_, SqlMiddlewareDbError>(result_set)
-            }).await?
+            })
+            .await?
         }
     })?;
 
@@ -334,12 +368,25 @@ async fn run_test_logic(
     let query = "select count(*) as cnt,name from test where id = 990 group by name;";
     let result_set = conn.execute_select(query, &[]).await?;
     // theres two in here now, we inserted same val 2x above
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 2);
-    assert_eq!(*result_set.results[0].get("name").unwrap().as_text().unwrap(), *"name_990");
+    assert_eq!(
+        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+        2
+    );
+    assert_eq!(
+        *result_set.results[0]
+            .get("name")
+            .unwrap()
+            .as_text()
+            .unwrap(),
+        *"name_990"
+    );
 
     let query = "select count(*) as cnt from test ;";
     let result_set = conn.execute_select(query, &[]).await?;
-    assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 402);
+    assert_eq!(
+        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+        402
+    );
     // assert_eq!(*result_set.results[0].get("name").unwrap().as_text().unwrap(), *"name_990");
 
     // assert_eq!(res.rows_affected, 1);

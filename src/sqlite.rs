@@ -6,7 +6,8 @@ use rusqlite::Statement;
 use rusqlite::ToSql;
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError
+    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter,
+    ResultSet, RowValues, SqlMiddlewareDbError,
 };
 
 // influenced design: https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112, https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
@@ -18,13 +19,16 @@ impl ConfigAndPool {
         let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
 
         // Create the pool
-        let pool = cfg
-            .create_pool(Runtime::Tokio1)
-            .map_err(|e| SqlMiddlewareDbError::Other(format!("Failed to create Deadpool SQLite pool: {}", e)))?;
+        let pool = cfg.create_pool(Runtime::Tokio1).map_err(|e| {
+            SqlMiddlewareDbError::Other(format!("Failed to create Deadpool SQLite pool: {}", e))
+        })?;
 
         // Initialize the database (e.g., create tables)
         {
-            let conn = pool.get().await.map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
+            let conn = pool
+                .get()
+                .await
+                .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
             let _res = conn
                 .interact(|conn| {
                     conn.execute_batch(
@@ -58,7 +62,9 @@ impl From<deadpool_sqlite::InteractError> for SqlMiddlewareDbError {
 }
 
 /// Bind middleware params to SQLite types.
-pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value>, SqlMiddlewareDbError> {
+pub fn convert_params(
+    params: &[RowValues],
+) -> Result<Vec<rusqlite::types::Value>, SqlMiddlewareDbError> {
     let mut vec_values = Vec::with_capacity(params.len());
     for p in params {
         let v = match p {
@@ -79,7 +85,9 @@ pub fn convert_params(params: &[RowValues]) -> Result<Vec<rusqlite::types::Value
     Ok(vec_values)
 }
 
-pub fn convert_params_for_execute<I>(iter: I) -> Result<ParamsFromIter<std::vec::IntoIter<Value>>, SqlMiddlewareDbError>
+pub fn convert_params_for_execute<I>(
+    iter: I,
+) -> Result<ParamsFromIter<std::vec::IntoIter<Value>>, SqlMiddlewareDbError>
 where
     I: IntoIterator<Item = RowValues>,
 {
@@ -92,12 +100,17 @@ where
 pub struct SqliteParamsQuery(pub Vec<rusqlite::types::Value>);
 
 /// Wrapper for SQLite parameters for execution.
-pub struct SqliteParamsExecute(pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>);
+pub struct SqliteParamsExecute(
+    pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>,
+);
 
-impl<'a> ParamConverter<'a>  for SqliteParamsQuery {
+impl<'a> ParamConverter<'a> for SqliteParamsQuery {
     type Converted = Self;
 
-    fn convert_sql_params(params: &[RowValues], mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError> {
+    fn convert_sql_params(
+        params: &[RowValues],
+        mode: ConversionMode,
+    ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         match mode {
             // For a query, use the conversion that returns a Vec<Value>
             ConversionMode::Query => convert_params(params).map(SqliteParamsQuery),
@@ -110,21 +123,29 @@ impl<'a> ParamConverter<'a>  for SqliteParamsQuery {
     }
 }
 
-impl<'a> ParamConverter<'a>  for SqliteParamsExecute {
+impl<'a> ParamConverter<'a> for SqliteParamsExecute {
     type Converted = Self;
 
-    fn convert_sql_params(params: &[RowValues], mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError> {
+    fn convert_sql_params(
+        params: &[RowValues],
+        mode: ConversionMode,
+    ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         match mode {
-            ConversionMode::Execute => convert_params_for_execute(params.to_vec()).map(SqliteParamsExecute),
+            ConversionMode::Execute => {
+                convert_params_for_execute(params.to_vec()).map(SqliteParamsExecute)
+            }
             // For queries you might not support the “execute” wrapper:
-            ConversionMode::Query => Err(SqlMiddlewareDbError::Other("Execute conversion required for this operation".into())),
+            ConversionMode::Query => Err(SqlMiddlewareDbError::Other(
+                "Execute conversion required for this operation".into(),
+            )),
         }
     }
 }
 
-
-
-fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, SqlMiddlewareDbError> {
+fn sqlite_extract_value_sync(
+    row: &rusqlite::Row,
+    idx: usize,
+) -> Result<RowValues, SqlMiddlewareDbError> {
     let val_ref_res = row.get_ref(idx);
     match val_ref_res {
         Err(e) => Err(SqlMiddlewareDbError::SqliteError(e)),
@@ -139,9 +160,12 @@ fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValue
     }
 }
 
-/// Only SELECT queries return rows affected. If a DML is sent, it does run it. 
+/// Only SELECT queries return rows affected. If a DML is sent, it does run it.
 /// If there's more than one query in the statment, idk which statement will be run.
-pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<ResultSet, SqlMiddlewareDbError> {
+pub fn build_result_set(
+    stmt: &mut Statement,
+    params: &[Value],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
@@ -170,7 +194,10 @@ pub fn build_result_set(stmt: &mut Statement, params: &[Value]) -> Result<Result
     Ok(result_set)
 }
 
-pub async fn execute_batch(sqlite_client: &Object, query: &str) -> Result<(), SqlMiddlewareDbError> {
+pub async fn execute_batch(
+    sqlite_client: &Object,
+    query: &str,
+) -> Result<(), SqlMiddlewareDbError> {
     let query_owned = query.to_owned();
 
     // Use interact to run the blocking code in a separate thread.
