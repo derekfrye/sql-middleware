@@ -1,11 +1,9 @@
 use chrono::NaiveDateTime;
-use deadpool_sqlite::rusqlite;
 use serde_json::json;
 // use sqlx_middleware::convenience_items::{create_tables3, MissingDbObjects};
-use sql_middleware::{middleware::{
-    MiddlewarePoolConnection::{self},
-    RowValues,
-}, sqlite_build_result_set, sqlite_convert_params};
+use sql_middleware::{convert_sql_params, middleware::{
+    ConversionMode, MiddlewarePoolConnection::{self}, RowValues
+}, sqlite_build_result_set,  SqliteParamsExecute, SqliteParamsQuery};
 
 use sql_middleware::middleware::{ConfigAndPool, MiddlewarePool, QueryAndParams};
 // use sqlx_middleware::model::CheckType;
@@ -105,8 +103,8 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
                     for query in query_and_params_vec.iter() {
                         let mut stmt = tx.prepare(&query.query)?;
                         let converted_params =
-                            sqlite_convert_params(&query.params)?;
-                        stmt.execute(rusqlite::params_from_iter(converted_params.iter()))?;
+                        convert_sql_params::<SqliteParamsExecute>(&query.params, ConversionMode::Execute )?;
+                        stmt.execute(converted_params.0)?;
                     }
 
                     tx.commit()?;
@@ -133,14 +131,13 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
             sconn
                 .interact(move |conn| {
                     // Start a transaction
-                    let converted_params =
-                        sqlite_convert_params(&query_and_params.params)?;
+                    let converted_params =convert_sql_params::<SqliteParamsQuery>(&query_and_params.params, ConversionMode::Query )?;
 
                     let tx = conn.transaction()?;
                     let result_set = {
                         let mut stmt = tx.prepare(&query_and_params.query)?;
                         let rs =
-                            sqlite_build_result_set(&mut stmt, &converted_params)?;
+                            sqlite_build_result_set(&mut stmt, &converted_params.0)?;
                         rs
                     };
                     tx.commit()?;

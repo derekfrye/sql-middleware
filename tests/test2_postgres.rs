@@ -6,9 +6,9 @@ use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
-    ConfigAndPool, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+    ConfigAndPool, ConversionMode, CustomDbRow, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues
 };
-use sql_middleware::{postgres_build_result_set, PostgresParams, SqlMiddlewareDbError};
+use sql_middleware::{convert_sql_params, postgres_build_result_set, PostgresParams, SqlMiddlewareDbError};
 
 use std::vec;
 use tokio::runtime::Runtime;
@@ -97,7 +97,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         {
             let converted_params =
-                PostgresParams::convert(&query_and_params.params)?;
+            convert_sql_params::<PostgresParams>(&query_and_params.params, ConversionMode::Query)?;
             let tx = pgconn.transaction().await?;
             tx.prepare(query_and_params.query.as_str()).await?;
             let result_set = {

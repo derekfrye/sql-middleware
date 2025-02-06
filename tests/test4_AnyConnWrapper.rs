@@ -2,23 +2,11 @@
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
 use common::postgres::{ setup_postgres_container, stop_postgres_container };
-use deadpool_sqlite::rusqlite::{ self, params };
+// use deadpool_sqlite::rusqlite::{ self, params };
 use sql_middleware::{
-    middleware::{
-        AnyConnWrapper,
-        AsyncDatabaseExecutor,
-        ConfigAndPool as ConfigAndPool2,
-        DatabaseType,
-        MiddlewarePool,
-        MiddlewarePoolConnection,
-        QueryAndParams,
-        RowValues,
-    },
-    postgres_build_result_set,
-    sqlite_build_result_set,
-    sqlite_convert_params,
-    PostgresParams,
-    SqlMiddlewareDbError,
+    convert_sql_params, middleware::{
+        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues
+    }, postgres_build_result_set, sqlite_build_result_set, PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery
 };
 use tokio::runtime::Runtime;
 mod common {
@@ -177,14 +165,10 @@ async fn run_test_logic(
                         AnyConnWrapper::Sqlite(sql_conn) => {
                             let tx = sql_conn.transaction()?;
                             for param in params {
-                                let converted_params = sqlite_convert_params(&param)?;
+                                let converted_params = convert_sql_params::<SqliteParamsExecute> (&param, ConversionMode::Execute )?;
                                 tx.execute(
                                     &paramaterized_query,
-                                    &converted_params
-                                        .iter()
-                                        .map(|v| v as &dyn rusqlite::ToSql)
-                                        .collect::<Vec<_>>()[..]
-                                )?;
+                                    converted_params.0)?;
                             }
                             tx.commit()?;
                             Ok(())
@@ -235,7 +219,7 @@ async fn run_test_logic(
                                 let query = "select count(*) as cnt from test;";
 
                                 let mut stmt = tx.prepare(query)?;
-                                let mut res = stmt.query(params![])?;
+                                let mut res = stmt.query([])?;
                                 // let cnt: i64 = res.next().unwrap().get(0)?;
                                 let x: i32 = if let Some(row) = res.next()? {
                                     row.get(0)?
@@ -246,13 +230,10 @@ async fn run_test_logic(
                             }
                             {
                                 for param in params {
-                                    let converted_params = sqlite_convert_params(&param)?;
+                                    let converted_params = convert_sql_params::<SqliteParamsExecute>(&param, ConversionMode::Execute)?;
                                     tx.execute(
                                         &paramaterized_query,
-                                        &converted_params
-                                            .iter()
-                                            .map(|v| v as &dyn rusqlite::ToSql)
-                                            .collect::<Vec<_>>()[..]
+                                        converted_params.0
                                     )?;
                                 }
                             }
@@ -260,7 +241,7 @@ async fn run_test_logic(
                                 let query = "select count(*) as cnt from test;";
 
                                 let mut stmt = tx.prepare(query)?;
-                                let mut res = stmt.query(params![])?;
+                                let mut res = stmt.query([])?;
                                 // let cnt: i64 = res.next().unwrap().get(0)?;
                                 let x: i32 = if let Some(row) = res.next()? {
                                     row.get(0)?
@@ -314,9 +295,9 @@ async fn run_test_logic(
             xx.interact(move |xxx| {
                 let tx = xxx.transaction()?;
                 {
-                    let converted_params = sqlite_convert_params(&query_and_params.params)?;
+                    let converted_params = convert_sql_params::<SqliteParamsQuery>(&query_and_params.params, ConversionMode::Query )?;
                     let mut stmt = tx.prepare(&query_and_params.query)?;
-                    sqlite_build_result_set(&mut stmt, &converted_params)?;
+                    sqlite_build_result_set(&mut stmt, &converted_params.0)?;
                 }
                 // should be able to read that val even tho we're not done w tx
                 {
@@ -325,21 +306,21 @@ async fn run_test_logic(
                         params: vec![
                         ],
                     };
-                    let converted_params = sql_middleware::sqlite_convert_params(
-                        &query_and_params_vec.params
+                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                        &query_and_params_vec.params, ConversionMode::Query
                     )?;
                     let mut stmt = tx.prepare(&query_and_params_vec.query)?;
                     let result_set = {
-                        let rs = sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params)?;
+                        let rs = sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?;
                         rs
                     };
                     assert_eq!(result_set.results.len(), 1);
                     assert_eq!(*result_set.results[0].get("cnt").unwrap().as_int().unwrap(), 401);
                 }
                 {
-                    let converted_params = sqlite_convert_params(&query_and_params.params)?;
+                    let converted_params = convert_sql_params::<SqliteParamsQuery>(&query_and_params.params, ConversionMode::Query )?;
                     let mut stmt = tx.prepare(&query_and_params.query)?;
-                    sqlite_build_result_set(&mut stmt, &converted_params)?;
+                    sqlite_build_result_set(&mut stmt, &converted_params.0)?;
                 }
                 tx.commit()?;
                 Ok::<_, SqlMiddlewareDbError>(result_set)
