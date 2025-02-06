@@ -316,3 +316,19 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     }
 }
 
+/// Convert a slice of RowValues into database‐specific parameters.
+pub trait ParamConverter<'a> {
+    type Converted;
+
+    /// Convert a slice of RowValues into the backend’s parameter type.
+    fn convert_sql_params(params: &'a [RowValues], mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError>;
+}
+
+/// The conversion "mode".
+#[derive(Debug, Clone, Copy)]
+pub enum ConversionMode {
+    /// When the converted parameters will be used in a query (SELECT)
+    Query,
+    /// When the converted parameters will be used for statement execution (INSERT/UPDATE/etc.)
+    Execute,
+}

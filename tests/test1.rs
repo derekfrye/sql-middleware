@@ -79,8 +79,8 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
         }?;
 
         let qry = "SELECT * from test where recid in (?,?, ?);";
-        // let param = [RowValues::Int(1), RowValues::Int(2), RowValues::Int(3)];
-        let param = vec![RowValues::Int(1)];
+        let param = [RowValues::Int(1), RowValues::Int(2), RowValues::Int(3)];
+        // let param = vec![RowValues::Int(1)];
         let query_and_params = QueryAndParams {
             query: qry.to_string(),
             params: param.to_vec(),

@@ -90,8 +90,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
                 RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
-                        .unwrap(),
+                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?,
                 ),
             ],
         };

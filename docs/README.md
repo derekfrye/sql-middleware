@@ -1,6 +1,6 @@
 # sql-middleware
 
-Sql-middleware is an alternative to [SQLx](https://crates.io/crates/sqlx), focused on far fewer features, but a closer-to-native API for PostgreSQL & SQLite. Offering just a few convenience functions, its a small library with a similar API regardless of database backend. Includes the ability to drop-down to the underlying features of [tokio-postgres](https://crates.io/crates/tokio-postgres) or [rusqlite](https://crates.io/crates/rusqlite) libraries.
+Sql-middleware is an alternative to [SQLx](https://crates.io/crates/sqlx), focused on far fewer features, but a closer-to-native async API for PostgreSQL & SQLite. Offering just a few convenience functions, its a small library with a similar API regardless of database backend. Includes the ability to drop-down to the underlying features of [tokio-postgres](https://crates.io/crates/tokio-postgres) or [rusqlite](https://crates.io/crates/rusqlite) libraries.
 
 Created after first trying SQLx, being annoyed [as others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
@@ -19,8 +19,44 @@ cfg.host = Some("192.168.2.1".to_string());
 cfg.port = Some(5432);
 cfg.user = Some("test user".to_string());
 cfg.password = Some("passwd".to_string());
-let sql_configandpool = DbConfigAndPool::new(cfg, DatabaseType::Postgres).await;
-let sql_db = Db::new(sql_configandpool.clone()).unwrap();
+let sql_configandpool = ConfigAndPool::new_postgres(cfg.clone()).await?;
+let pool = config_and_pool.pool.get().await?;
+let mut conn = MiddlewarePool::get_connection(pool).await?;
+
+// simple api for running non-paramaterized queries
+let ddl_query = include_str!("test1.sql");
+conn.execute_batch(&ddl_query).await?;
+
+// or you can directly control the transaction flow
+let query_and_params = QueryAndParams {
+    query: "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)".to_string(),
+    params: vec![
+        RowValues::Int(123456),
+        RowValues::Text("test name".to_string()),
+        RowValues::Timestamp(
+            NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?,
+        ),
+    ],
+    is_read_only: false,
+};
+
+{
+    let converted_params =
+        PostgresParams::convert(&query_and_params.params)?;
+    let tx = pgconn.transaction().await?;
+    tx.prepare(query_and_params.query.as_str()).await?;
+    let result_set = {
+        let rs = tx
+            .execute(query_and_params.query.as_str(), &converted_params.as_refs())
+            .await?;
+
+        rs
+    };
+    tx.commit().await?;
+    Ok::<_, SqlMiddlewareDbError>(result_set)
+}?;
+
+Ok(())
 let qry = "SELECT * from $fn1 where eventname in ($1,$3,$4);";
 let param = [RowValues::Text("event1".to_string()), RowValues::Text("event1".to_string()), RowValues::Text("event1".to_string()), RowValues::Text("event1".to_string())];
 let sql_fn = ["sp_get_event_name($1)"];

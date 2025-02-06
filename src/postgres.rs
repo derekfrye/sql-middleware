@@ -2,7 +2,7 @@
 use std::error::Error;
 
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, SqlMiddlewareDbError, MiddlewarePool, ResultSet, RowValues,
+    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError
 };
 use chrono::NaiveDateTime;
 use deadpool_postgres::Transaction;
@@ -55,42 +55,6 @@ impl ConfigAndPool {
     }
 }
 
-/// Convert a single column from a Postgres row into a RowValues.
-/// Note: if you need additional type mappings, add them here.
-#[allow(dead_code)]
-pub fn extract_pg_value(row: &tokio_postgres::Row, col_name: &str, type_name: &str) -> RowValues {
-    match type_name {
-        "INT4" | "INT8" | "BIGINT" | "INTEGER" | "INT" => {
-            let v: i64 = row.get(col_name);
-            RowValues::Int(v)
-        }
-        "TEXT" | "VARCHAR" => {
-            let s: String = row.get(col_name);
-            RowValues::Text(s)
-        }
-        "BOOL" | "BOOLEAN" => {
-            let b: bool = row.get(col_name);
-            RowValues::Bool(b)
-        }
-        "TIMESTAMP" | "TIMESTAMPTZ" => {
-            let ts: chrono::NaiveDateTime = row.get(col_name);
-            RowValues::Timestamp(ts)
-        }
-        "FLOAT8" | "DOUBLE PRECISION" => {
-            let f: f64 = row.get(col_name);
-            RowValues::Float(f)
-        }
-        "BYTEA" => {
-            let b: Vec<u8> = row.get(col_name);
-            RowValues::Blob(b)
-        }
-        _ => {
-            // fallback
-            RowValues::Null
-        }
-    }
-}
-
 pub struct Params<'a> {
     references: Vec<&'a (dyn ToSql + Sync)>,
 }
@@ -118,6 +82,17 @@ impl<'a> Params<'a> {
         &self.references
     }
 }
+
+impl<'a> ParamConverter<'a> for Params<'a> {
+    type Converted = Params<'a>;
+
+    fn convert_sql_params(params: &'a [RowValues], _mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError> {
+        // Simply delegate to your existing conversion:
+        Self::convert(params)
+    }
+
+}
+
 
 impl ToSql for RowValues {
     fn to_sql(
@@ -220,18 +195,6 @@ fn postgres_extract_value(row: &tokio_postgres::Row, idx: usize) -> Result<RowVa
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
 }
-
-
-// #[async_trait]
-// impl StatementExecutor for PgStatementExecutor {
-
-//     async fn execute_select(&mut self, params: &[RowValues]) -> Result<ResultSet, DbError> {
-//         let params_converted = Params::convert(params)?;
-//         let rows = self.stmt.query(&params_converted).await?;
-//         let result_set = build_result_set(&self.stmt, params_converted.as_refs(), &rows).await?;
-//         Ok(result_set)
-//     }
-// }
 
 pub async fn execute_batch(pg_client: &mut Object, query: &str) -> Result<(), SqlMiddlewareDbError> {
     // Begin a transaction

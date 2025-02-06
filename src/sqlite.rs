@@ -6,7 +6,7 @@ use rusqlite::Statement;
 use rusqlite::ToSql;
 
 use crate::middleware::{
-    ConfigAndPool, CustomDbRow, DatabaseType, SqlMiddlewareDbError, MiddlewarePool, ResultSet, RowValues,
+    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError
 };
 
 // influenced design: https://tedspence.com/investigating-rust-with-sqlite-53d1f9a41112, https://www.powersync.com/blog/sqlite-optimizations-for-ultra-high-performance
@@ -87,6 +87,41 @@ where
     let x = convert_params(&params_vec)?;
     Ok(rusqlite::params_from_iter(x.into_iter()))
 }
+
+/// Wrapper for SQLite parameters for queries.
+pub struct SqliteParamsQuery(pub Vec<rusqlite::types::Value>);
+
+/// Wrapper for SQLite parameters for execution.
+pub struct SqliteParamsExecute(pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>);
+
+impl<'a> ParamConverter<'a>  for SqliteParamsQuery {
+    type Converted = Self;
+
+    fn convert_sql_params(params: &[RowValues], mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError> {
+        match mode {
+            // For a query, use the conversion that returns a Vec<Value>
+            ConversionMode::Query => convert_params(params).map(SqliteParamsQuery),
+            // Or, if you really want to support execution mode with this type, you might decide how to handle it:
+            ConversionMode::Execute => {
+                // For example, you could also call the “query” conversion here or return an error.
+                convert_params(params).map(SqliteParamsQuery)
+            }
+        }
+    }
+}
+
+impl<'a> ParamConverter<'a>  for SqliteParamsExecute {
+    type Converted = Self;
+
+    fn convert_sql_params(params: &[RowValues], mode: ConversionMode) -> Result<Self::Converted, SqlMiddlewareDbError> {
+        match mode {
+            ConversionMode::Execute => convert_params_for_execute(params.to_vec()).map(SqliteParamsExecute),
+            // For queries you might not support the “execute” wrapper:
+            ConversionMode::Query => Err(SqlMiddlewareDbError::Other("Execute conversion required for this operation".into())),
+        }
+    }
+}
+
 
 
 fn sqlite_extract_value_sync(row: &rusqlite::Row, idx: usize) -> Result<RowValues, SqlMiddlewareDbError> {
