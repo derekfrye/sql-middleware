@@ -121,7 +121,7 @@ conn.execute_batch(&ddl_query).await?;
 
 ### Parameterized Queries
 
-Consistent api for running parametrized queries. Includes a data structure for queries and parameters that works regardless of db backend. (Notice query difference in `?1` (SQLite) vs. `$1` (Postgres example).)
+Consistent api for running parametrized queries. Includes a data structure for queries and parameters that works regardless of db backend. (Notice param difference between SQLite `?1` and Postgres `$1`.)
 
 <table>
 <tr>
@@ -213,7 +213,7 @@ conn.execute_dml(
 
 ### Transactions with custom logic
 
-Here, the APIs do differ. (Appears not easy to consolidate, so idk that we'll fix it.) So if you need custom transactions with logic between `connection.transaction()` and `connection.commit()`, its supported, but it looks database-specific.
+Here, the APIs do differ. (Appears not easy to consolidate, so idk that we'll ever have similar API.) So if you need transactions with rust code between `connection.transaction()` and `connection.commit()`, its supported, but it becomes a bit more database-specific.
 
 <table>
 <tr>
