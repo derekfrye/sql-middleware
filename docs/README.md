@@ -1,6 +1,6 @@
 # sql-middleware
 
-Sql-middleware is a lightweight wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres) and [rusqlite](https://crates.io/crates/rusqlite), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api (via [deadpool-sqlite](https://github.com/deadpool-rs/deadpool) and tokio-postgres). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres) and [rusqlite](https://crates.io/crates/rusqlite), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api (via [deadpool-sqlite](https://github.com/deadpool-rs/deadpool) and tokio-postgres). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
 
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
@@ -10,7 +10,7 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 
 ## Examples
 
-More examples available [here](../tests/).
+More examples available in the [tests dir](../tests/).
 
 ### Get a connection from the pool
 
@@ -162,6 +162,11 @@ let converted_params =
             &q.params,
             ConversionMode::Execute
         )?;
+
+conn.execute_dml(
+    &q.query, 
+    &converted_params)
+.await?;
 ```
 
 </td>
@@ -194,6 +199,11 @@ let converted_params
             &q.params,
             ConversionMode::Execute
     )?;
+
+conn.execute_dml(
+    &q.query, 
+    &converted_params)
+.await?;
 ```
 
 </td>

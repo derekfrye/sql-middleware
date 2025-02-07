@@ -8,15 +8,11 @@ use sql_middleware::{
     },
     sqlite_build_result_set, SqlMiddlewareDbError, SqliteParamsQuery,
 };
-// use sqlx_middleware::convenience_items::{create_tables, MissingDbObjects};
-// use sqlx_middleware::db::{ConfigAndPool, DatabaseType, Db, QueryState};
-
-// use sqlx_middleware::model::{CheckType, QueryAndParams, RowValues};
 use std::vec;
 use tokio::runtime::Runtime;
 
 #[test]
-fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
+fn sqlite_multiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
     Ok(rt.block_on(async {
         let x = "file::memory:?cache=shared".to_string();

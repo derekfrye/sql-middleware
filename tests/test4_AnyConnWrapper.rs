@@ -114,7 +114,7 @@ async fn run_test_logic(
     let test_tbl_query = "CREATE TABLE test (id bigint, name text);";
     conn.execute_batch(test_tbl_query).await?;
 
-    let paramaterized_query = match db_type {
+    let parameterized_query = match db_type {
         DatabaseType::Postgres => "INSERT INTO test (id, name) VALUES ($1, $2);",
         DatabaseType::Sqlite => "INSERT INTO test (id, name) VALUES (?1, ?2);",
     };
@@ -125,12 +125,12 @@ async fn run_test_logic(
         .collect();
     // dbg!(&params);
 
-    // conn.execute_dml(paramaterized_query, &params[0]).await?;
+    // conn.execute_dml(parameterized_query, &params[0]).await?;
 
     // lets first run this through 100 transactions, yikes
     for param in params {
         // println!("param: {:?}", param);
-        conn.execute_dml(&paramaterized_query, &param).await?;
+        conn.execute_dml(&parameterized_query, &param).await?;
     }
 
     let query = "select count(*) as cnt from test;";
@@ -153,7 +153,7 @@ async fn run_test_logic(
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
-                    tx.execute(paramaterized_query, &postgres_params.as_refs())
+                    tx.execute(parameterized_query, &postgres_params.as_refs())
                         .await?;
                 }
                 tx.commit().await?;
@@ -165,7 +165,7 @@ async fn run_test_logic(
         DatabaseType::Sqlite => {
             let res = conn
                 .interact_sync({
-                    let paramaterized_query = paramaterized_query.to_string();
+                    let parameterized_query = parameterized_query.to_string();
                     let params = params.clone();
                     move |wrapper| match wrapper {
                         AnyConnWrapper::Sqlite(sql_conn) => {
@@ -175,7 +175,7 @@ async fn run_test_logic(
                                     &param,
                                     ConversionMode::Execute,
                                 )?;
-                                tx.execute(&paramaterized_query, converted_params.0)?;
+                                tx.execute(&parameterized_query, converted_params.0)?;
                             }
                             tx.commit()?;
                             Ok(())
@@ -211,7 +211,7 @@ async fn run_test_logic(
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
-                    tx.execute(paramaterized_query, &postgres_params.as_refs())
+                    tx.execute(parameterized_query, &postgres_params.as_refs())
                         .await?;
                 }
                 tx.commit().await?;
@@ -223,7 +223,7 @@ async fn run_test_logic(
         DatabaseType::Sqlite => {
             let res = conn
                 .interact_sync({
-                    let paramaterized_query = paramaterized_query.to_string();
+                    let parameterized_query = parameterized_query.to_string();
                     let params = params.clone();
                     move |wrapper| {
                         match wrapper {
@@ -249,7 +249,7 @@ async fn run_test_logic(
                                         >(
                                             &param, ConversionMode::Execute
                                         )?;
-                                        tx.execute(&paramaterized_query, converted_params.0)?;
+                                        tx.execute(&parameterized_query, converted_params.0)?;
                                     }
                                 }
                                 {
@@ -294,7 +294,7 @@ async fn run_test_logic(
     ];
 
     let query_and_params = QueryAndParams {
-        query: paramaterized_query.to_string(),
+        query: parameterized_query.to_string(),
         params,
     };
 
