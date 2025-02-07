@@ -1,6 +1,6 @@
 # sql-middleware
 
-Sql-middleware is a lightweight wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres) and [rusqlite](https://crates.io/crates/rusqlite), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api (via [deadpool-sqlite](https://github.com/deadpool-rs/deadpool) and tokio-postgres). Think of it as a slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but focused on a consistent api for postgres and sqlite.
+Sql-middleware is a lightweight wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres) and [rusqlite](https://crates.io/crates/rusqlite), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api (via [deadpool-sqlite](https://github.com/deadpool-rs/deadpool) and tokio-postgres). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
 
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
@@ -9,6 +9,11 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 * Minimal overhead (just synatax convenience).
 
 ## Example
+
+| Feature       | PostgreSQL | SQLite     |
+|---------------|-------------|------------|
+| Connection    | `Config::new_postgres` | `Config::new_sqlite` |
+| Query Syntax  | `$1, $2, $3` | `?1, ?2, ?3` |
 
 <table>
 <tr>
@@ -21,7 +26,8 @@ SQLite
 </tr>
 <tr>
 <td>
-<pre lang="rust">
+
+```rust
 let mut cfg = deadpool_postgres::Config::new();
 cfg.dbname = Some("test_db".to_string());
 cfg.host = Some("192.168.2.1".to_string());
@@ -68,10 +74,12 @@ tx.prepare(query_and_params.query.as_str())
 tx.execute(query_and_params.query.as_str()
     , &converted_params.as_refs()).await?;
 tx.commit().await?;
-</pre>
+```
+
 </td>
 <td>
-<pre lang="rust">
+
+```rust
 let cfg = "file::memory:?cache=shared".to_string();
 
 
@@ -137,7 +145,8 @@ sconn
         Ok::<_, SqlMiddlewareDbError>(())
     })
     .await?
-</pre>
+```
+
 </td>
 </tr>
 </table>
