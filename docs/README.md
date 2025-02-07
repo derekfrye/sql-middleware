@@ -10,11 +10,6 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 
 ## Example
 
-| Feature       | PostgreSQL | SQLite     |
-|---------------|-------------|------------|
-| Connection    | `Config::new_postgres` | `Config::new_sqlite` |
-| Query Syntax  | `$1, $2, $3` | `?1, ?2, ?3` |
-
 <table>
 <tr>
 <th>
@@ -38,7 +33,8 @@ cfg.password = Some("passwd".to_string());
 let config_and_pool = ConfigAndPool::new_postgres(cfg)
     .await?;
 let pool = config_and_pool.pool.get().await?;
-let conn = MiddlewarePool::get_connection(pool).await?;
+let conn = MiddlewarePool::get_connection(pool)
+    .await?;
 
 // simple api for running non-paramaterized queries
 let ddl_query = include_str!("test1.sql");
@@ -60,11 +56,16 @@ let query_and_params = QueryAndParams {
     ],
 };
 
+// similar api
 let converted_params = 
     convert_sql_params::<PostgresParams>(
     &query_and_params.params,
     ConversionMode::Execute
 )?;
+
+
+
+
 
 // full control over your transactions
 let tx = pgconn.transaction().await?;
@@ -73,7 +74,26 @@ tx.prepare(query_and_params.query.as_str())
     .await?;
 tx.execute(query_and_params.query.as_str()
     , &converted_params.as_refs()).await?;
-tx.commit().await?;
+tx.commit().await?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ```
 
 </td>
@@ -85,20 +105,20 @@ let cfg = "file::memory:?cache=shared".to_string();
 
 
 
-
-
+// same api for connection
+// sqlite just has fewer required things (no port, etc.)
 let config_and_pool = ConfigAndPool::
     new_sqlite(cfg).await?;
 let pool = config_and_pool.pool.get().await?;
 let conn = MiddlewarePool::get_connection(pool)
     .await?;
 
-// simple api for running non-paramaterized queries
+// same api for non-paramaterized queries
 let ddl_query = include_str!("test1.sql");
 conn.execute_batch(&ddl_query).await?;
 
-// consistent way for defining queries and parameters
-// regardless of db backend
+// similar way of defining parameters
+// notice ?1 params instead of $1
 let query_and_params = QueryAndParams {
     query: "INSERT INTO test (espn_id, name, ins_ts)
         VALUES (?1, ?2, ?3)".to_string(),
@@ -113,12 +133,15 @@ let query_and_params = QueryAndParams {
     ],
 };
 
+// straight forward api for query parameters
 let converted_params = convert_sql_params
     ::<SqliteParamsExecute>(
         &query_and_params.params,
         ConversionMode::Execute
     )?;
 
+// a little more gymnastics needed
+// to get an async object from deadpool
 let sconn = match &conn {
     MiddlewarePoolConnection::Sqlite(sconn) 
         => sconn,
@@ -127,6 +150,7 @@ let sconn = match &conn {
 };
 
 // full control over your transactions
+// here the apis are db-specific
 sconn
     .interact(move |xxx| {
         let tx = xxx.transaction()?;
@@ -138,6 +162,8 @@ sconn
                 &query.params,
                 ConversionMode::Execute,
             )?;
+
+            // could loop & process other things here...
             stmt.execute(converted_params.0)?;
         }
 
