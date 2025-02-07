@@ -23,31 +23,43 @@ SQLite
 <td>
 
 ```rust
-let mut cfg = deadpool_postgres::Config::new();
-cfg.dbname = Some("test_db".to_string());
-cfg.host = Some("192.168.2.1".to_string());
+let mut cfg = deadpool_postgres
+    ::Config::new();
+cfg.dbname = Some("test_db"
+    .to_string());
+cfg.host = Some("192.168.2.1"
+    .to_string());
 cfg.port = Some(5432);
-cfg.user = Some("test user".to_string());
-cfg.password = Some("passwd".to_string());
+cfg.user = Some("test user"
+    .to_string());
+cfg.password = Some("passwd"
+    .to_string());
 
-let config_and_pool = ConfigAndPool::new_postgres(cfg)
+let c = ConfigAndPool
+    ::new_postgres(cfg)
     .await?;
-let pool = config_and_pool.pool.get().await?;
-let conn = MiddlewarePool::get_connection(pool)
+let pool = c.pool.get().await?;
+let conn = MiddlewarePool
+    ::get_connection(pool)
     .await?;
 
-// simple api for running non-paramaterized queries
-let ddl_query = include_str!("test1.sql");
-conn.execute_batch(&ddl_query).await?;
+// simple api for batch queries
+let ddl_query = 
+    include_str!("test1.sql");
+conn.
+    execute_batch(&ddl_query).await?;
 
-// consistent way for defining queries and parameters 
+// consistent struct for 
+// queries and params
 // regardless of db backend
-let query_and_params = QueryAndParams {
-    query: "INSERT INTO test (espn_id, name, ins_ts) 
-        VALUES ($1, $2, $3)".to_string(),
+let q = QueryAndParams {
+    query: "INSERT INTO test (espn_id, name
+        , ins_ts) VALUES ($1, $2
+        , $3)".to_string(),
     params: vec![
         RowValues::Int(123456),
-        RowValues::Text("test name".to_string()),
+        RowValues::Text("test name"
+            .to_string()),
         RowValues::Timestamp(
             NaiveDateTime::parse_from_str(
                 "2021-08-06 16:00:00"
@@ -56,10 +68,12 @@ let query_and_params = QueryAndParams {
     ],
 };
 
-// similar api
+// consistent way to
+// convert query & params
+// to what db backend expects
 let converted_params = 
     convert_sql_params::<PostgresParams>(
-    &query_and_params.params,
+    &q.params,
     ConversionMode::Execute
 )?;
 
@@ -67,14 +81,20 @@ let converted_params =
 
 
 
-// full control over your transactions
-let tx = pgconn.transaction().await?;
-// could loop & process other things here...
-tx.prepare(query_and_params.query.as_str())
+// full control over transactions
+let tx = conn.transaction().await?;
+// could do other rust code here first...
+tx.prepare(q.query
+    .as_str())
     .await?;
-tx.execute(query_and_params.query.as_str()
-    , &converted_params.as_refs()).await?;
+tx.execute(q.query
+    .as_str()
+    , &converted_params.as_refs()
+    ).await?;
 tx.commit().await?
+
+
+
 
 
 
@@ -100,31 +120,43 @@ tx.commit().await?
 <td>
 
 ```rust
-let cfg = "file::memory:?cache=shared".to_string();
-
+let cfg = "file::memory:?cache=shared"
+    .to_string();
 
 
 
 // same api for connection
-// sqlite just has fewer required things (no port, etc.)
-let config_and_pool = ConfigAndPool::
+// sqlite just has fewer required 
+// things (no port, etc.)
+let c = ConfigAndPool::
     new_sqlite(cfg).await?;
-let pool = config_and_pool.pool.get().await?;
-let conn = MiddlewarePool::get_connection(pool)
+let pool = c.pool.get().await?;
+let conn = MiddlewarePool
+    ::get_connection(pool)
     .await?;
+
+
+
+
+
+
 
 // same api for non-paramaterized queries
 let ddl_query = include_str!("test1.sql");
 conn.execute_batch(&ddl_query).await?;
 
-// similar way of defining parameters
-// notice ?1 params instead of $1
-let query_and_params = QueryAndParams {
-    query: "INSERT INTO test (espn_id, name, ins_ts)
-        VALUES (?1, ?2, ?3)".to_string(),
+
+
+// same struct for query and params
+// notice ?1 instead of $1 w postgres
+let q = QueryAndParams {
+    query: "INSERT INTO test (espn_id, name
+        , ins_ts) VALUES (?1, ?2
+        , ?3)".to_string(),
     params: vec![
         RowValues::Int(123456),
-        RowValues::Text("test name".to_string()),
+        RowValues::Text("test name"
+            .to_string()),
         RowValues::Timestamp(
             NaiveDateTime::parse_from_str(
                 "2021-08-06 16:00:00"
@@ -133,7 +165,10 @@ let query_and_params = QueryAndParams {
     ],
 };
 
-// straight forward api for query parameters
+
+
+
+// similar api for query parameters
 let converted_params = convert_sql_params
     ::<SqliteParamsExecute>(
         &query_and_params.params,
@@ -141,7 +176,8 @@ let converted_params = convert_sql_params
     )?;
 
 // a little more gymnastics needed
-// to get an async object from deadpool
+// to get an object from deadpool for
+// custom code within transactions
 let sconn = match &conn {
     MiddlewarePoolConnection::Sqlite(sconn) 
         => sconn,
@@ -150,21 +186,25 @@ let sconn = match &conn {
 };
 
 // full control over your transactions
-// here the apis are db-specific
+// here the api is sqlite specific
 sconn
     .interact(move |xxx| {
         let tx = xxx.transaction()?;
-        for query in query_and_params_vec.iter() {
+        for query in <custom obj>.iter() {
             let mut stmt = tx.
                 prepare(&query.query)?;
             let converted_params = 
-                convert_sql_params::<SqliteParamsExecute>(
-                &query.params,
-                ConversionMode::Execute,
-            )?;
+                convert_sql_params
+                    ::<SqliteParamsExecute>(
+                        &query.params,
+                        ConversionMode
+                            ::Execute,
+                    )?;
 
-            // could loop & process other things here...
-            stmt.execute(converted_params.0)?;
+            stmt.execute(
+                    converted_params
+                    .0
+                )?;
         }
 
         tx.commit()?;
