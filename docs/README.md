@@ -10,6 +10,8 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 
 ## Example
 
+More examples available [here](../tests/).
+
 <table>
 <tr>
 <th>
