@@ -24,6 +24,7 @@ fn sqlite_mutltiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
         let config_and_pool = ConfigAndPool::new_sqlite(x).await?;
         let pool = config_and_pool.pool.get().await?;
         let sqlite_conn = MiddlewarePool::get_connection(pool).await?;
+        
         let sconn = match &sqlite_conn {
             MiddlewarePoolConnection::Sqlite(sconn) => sconn,
             _ => panic!("Only sqlite is supported "),
