@@ -2,10 +2,12 @@ CREATE TABLE IF NOT EXISTS event_user_player (
     -- drop table event_user_player cascade
     eup_id INTEGER NOT NULL PRIMARY KEY,
     event_id INTEGER NOT NULL REFERENCES event(event_id),
-    user_id INTEGER NOT NULL REFERENCES golfuser(user_id),
-    player_id INTEGER NOT NULL REFERENCES player(player_id),
+    user_id INTEGER NOT NULL REFERENCES bettor(user_id),
+    golfer_id INTEGER NOT NULL REFERENCES golfer(golfer_id),
     last_refresh_ts DATETIME,
-    ins_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ins_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (event_id, user_id, golfer_id)
     );
 
 

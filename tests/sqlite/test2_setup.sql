@@ -1,3 +1,15 @@
+-- CREATE TABLE IF NOT EXISTS -- drop table test cascade
+--                 test (
+--                 recid INTEGER PRIMARY KEY AUTOINCREMENT
+--                 , a int
+--                 , b text
+--                 , c datetime not null default current_timestamp
+--                 , d real
+--                 , e boolean
+--                 , f blob
+--                 , g json
+--                 );
+
 INSERT INTO test (a, b, c, d, e, f, g) VALUES
 (1, 'Alpha', '2024-01-01 08:00:01', 10.5, 1, X'426C6F623132', '{"name": "Alice", "age": 30}');
 
