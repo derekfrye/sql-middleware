@@ -19,9 +19,10 @@ impl ConfigAndPool {
         let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
 
         // Create the pool
-        let pool = cfg.create_pool(Runtime::Tokio1).map_err(|e| {
-            SqlMiddlewareDbError::Other(format!("Failed to create Deadpool SQLite pool: {}", e))
-        })?;
+        let pool = cfg.create_pool(Runtime::Tokio1)
+            .map_err(|e| SqlMiddlewareDbError::ConnectionError(
+                format!("Failed to create SQLite pool: {}", e)
+            ))?;
 
         // Initialize the database (e.g., create tables)
         {
@@ -36,7 +37,7 @@ impl ConfigAndPool {
                     PRAGMA journal_mode = WAL;
                 ",
                     )
-                    .map_err(|e| SqlMiddlewareDbError::SqliteError(e))
+                    .map_err(SqlMiddlewareDbError::SqliteError)
                 })
                 .await?;
         }
@@ -48,16 +49,13 @@ impl ConfigAndPool {
     }
 }
 
-// Convert rusqlite::Error into DbError.
-impl From<rusqlite::Error> for SqlMiddlewareDbError {
-    fn from(err: rusqlite::Error) -> Self {
-        SqlMiddlewareDbError::SqliteError(err)
-    }
-}
+// The #[from] attribute on the SqlMiddlewareDbError::SqliteError variant  
+// automatically generates this implementation
 
+/// Convert InteractError to a more specific SqlMiddlewareDbError
 impl From<deadpool_sqlite::InteractError> for SqlMiddlewareDbError {
     fn from(err: deadpool_sqlite::InteractError) -> Self {
-        SqlMiddlewareDbError::Other(format!("Deadpool SQLite Interact Error: {}", err))
+        SqlMiddlewareDbError::ConnectionError(format!("SQLite Interact Error: {}", err))
     }
 }
 
@@ -70,14 +68,18 @@ pub fn convert_params(
         let v = match p {
             RowValues::Int(i) => rusqlite::types::Value::Integer(*i),
             RowValues::Float(f) => rusqlite::types::Value::Real(*f),
-            RowValues::Text(s) => rusqlite::types::Value::Text(s.to_string()), // Using to_string() is better here
+            RowValues::Text(s) => rusqlite::types::Value::Text(s.clone()), // We need to clone but we use clone() explicitly
             RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
             RowValues::Timestamp(dt) => {
-                let formatted = dt.format("%F %T%.f").to_string(); // Adjust precision as needed
+                let formatted = dt.format("%F %T%.f").to_string(); // Conversion needs to allocate
                 rusqlite::types::Value::Text(formatted)
             }
             RowValues::Null => rusqlite::types::Value::Null,
-            RowValues::JSON(jsval) => rusqlite::types::Value::Text(jsval.to_string()),
+            RowValues::JSON(jsval) => {
+                // Only serialize once to avoid multiple allocations
+                let json_str = jsval.to_string();
+                rusqlite::types::Value::Text(json_str)
+            },
             RowValues::Blob(bytes) => {
                 // Only clone if we need to - this is unavoidable with rusqlite::Value
                 rusqlite::types::Value::Blob(bytes.to_vec())
@@ -88,6 +90,7 @@ pub fn convert_params(
     Ok(vec_values)
 }
 
+/// Convert parameters for execution operations
 pub fn convert_params_for_execute<I>(
     iter: I,
 ) -> Result<ParamsFromIter<std::vec::IntoIter<Value>>, SqlMiddlewareDbError>
@@ -119,10 +122,15 @@ impl<'a> ParamConverter<'a> for SqliteParamsQuery {
             ConversionMode::Query => convert_params(params).map(SqliteParamsQuery),
             // Or, if you really want to support execution mode with this type, you might decide how to handle it:
             ConversionMode::Execute => {
-                // For example, you could also call the “query” conversion here or return an error.
+                // For example, you could also call the "query" conversion here or return an error.
                 convert_params(params).map(SqliteParamsQuery)
             }
         }
+    }
+    
+    fn supports_mode(mode: ConversionMode) -> bool {
+        // This converter is primarily for query operations
+        mode == ConversionMode::Query
     }
 }
 
@@ -137,14 +145,20 @@ impl<'a> ParamConverter<'a> for SqliteParamsExecute {
             ConversionMode::Execute => {
                 convert_params_for_execute(params.to_vec()).map(SqliteParamsExecute)
             }
-            // For queries you might not support the “execute” wrapper:
-            ConversionMode::Query => Err(SqlMiddlewareDbError::Other(
-                "Execute conversion required for this operation".into(),
+            // For queries you might not support the "execute" wrapper:
+            ConversionMode::Query => Err(SqlMiddlewareDbError::ParameterError(
+                "SqliteParamsExecute can only be used with Execute mode".into(),
             )),
         }
     }
+    
+    fn supports_mode(mode: ConversionMode) -> bool {
+        // This converter is only for execution operations
+        mode == ConversionMode::Execute
+    }
 }
 
+/// Extract a RowValues from a SQLite row
 fn sqlite_extract_value_sync(
     row: &rusqlite::Row,
     idx: usize,
@@ -163,6 +177,7 @@ fn sqlite_extract_value_sync(
     }
 }
 
+/// Build a result set from a SQLite query
 /// Only SELECT queries return rows affected. If a DML is sent, it does run it.
 /// If there's more than one query in the statment, idk which statement will be run.
 pub fn build_result_set(
@@ -200,6 +215,7 @@ pub fn build_result_set(
     Ok(result_set)
 }
 
+/// Execute a batch of SQL statements for SQLite
 pub async fn execute_batch(
     sqlite_client: &Object,
     query: &str,
@@ -221,10 +237,11 @@ pub async fn execute_batch(
             Ok(())
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::Other(format!("Interact error: {}", e)))
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))
         .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
 }
 
+/// Execute a SELECT query in SQLite
 pub async fn execute_select(
     sqlite_client: &Object,
     query: &str,
@@ -234,26 +251,21 @@ pub async fn execute_select(
     let params_owned = convert_params(params)?;
 
     // Use interact to run the blocking code in a separate thread.
-    sqlite_client
-        .interact(move |conn| -> rusqlite::Result<ResultSet> {
+    let result = sqlite_client
+        .interact(move |conn| {
             // Prepare the query
             let mut stmt = conn.prepare(&query_owned)?;
 
-            // Execute the query and map SqlMiddlewareDbError to rusqlite::Error
-            // This works because SqlMiddlewareDbError implements From<rusqlite::Error>
-            build_result_set(&mut stmt, &params_owned).map_err(|e| {
-                if let SqlMiddlewareDbError::SqliteError(sqlite_err) = e {
-                    sqlite_err
-                } else {
-                    rusqlite::Error::InvalidParameterName(format!("{:?}", e))
-                }
-            })
+            // Execute the query
+            build_result_set(&mut stmt, &params_owned)
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::Other(format!("Interact error: {}", e)))
-        .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?;
+
+    result
 }
 
+/// Execute a DML query (INSERT, UPDATE, DELETE) in SQLite
 pub async fn execute_dml(
     sqlite_client: &Object,
     query: &str,
@@ -279,6 +291,6 @@ pub async fn execute_dml(
             Ok(rows)
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::Other(format!("Interact error: {}", e)))
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))
         .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
 }

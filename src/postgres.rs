@@ -15,39 +15,34 @@ use tokio_postgres::{
 };
 use tokio_util::bytes;
 
-// If you prefer to keep the `From<tokio_postgres::Error>` for DbError here,
-// you can do so. But note we’ve already declared the variant in db_model.
-impl From<tokio_postgres::Error> for SqlMiddlewareDbError {
-    fn from(err: tokio_postgres::Error) -> Self {
-        SqlMiddlewareDbError::PostgresError(err)
-    }
-}
+// The #[from] attribute on the SqlMiddlewareDbError::PostgresError variant
+// automatically generates this implementation
 
 impl ConfigAndPool {
-    /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
+    /// Asynchronous initializer for ConfigAndPool with Postgres
     pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
         // Validate all required config fields are present
         if pg_config.dbname.is_none() {
-            return Err(SqlMiddlewareDbError::Other("dbname is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError("dbname is required".to_string()));
         }
 
         if pg_config.host.is_none() {
-            return Err(SqlMiddlewareDbError::Other("host is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError("host is required".to_string()));
         }
         if pg_config.port.is_none() {
-            return Err(SqlMiddlewareDbError::Other("port is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError("port is required".to_string()));
         }
         if pg_config.user.is_none() {
-            return Err(SqlMiddlewareDbError::Other("user is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError("user is required".to_string()));
         }
         if pg_config.password.is_none() {
-            return Err(SqlMiddlewareDbError::Other("password is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError("password is required".to_string()));
         }
 
         // Attempt to create connection pool
         let pg_pool = pg_config
             .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
-            .map_err(|e| SqlMiddlewareDbError::Other(format!("Failed to create deadpool_postgres pool: {}", e)))?;
+            .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to create Postgres pool: {}", e)))?;
             
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Postgres(pg_pool),
@@ -56,12 +51,13 @@ impl ConfigAndPool {
     }
 }
 
+/// Container for Postgres parameters with lifetime tracking
 pub struct Params<'a> {
     references: Vec<&'a (dyn ToSql + Sync)>,
 }
 
 impl<'a> Params<'a> {
-    // Single parameter conversion remains mostly the same
+    /// Convert from a slice of RowValues to Postgres parameters
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         let references: Vec<&(dyn ToSql + Sync)> =
             params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
@@ -69,7 +65,7 @@ impl<'a> Params<'a> {
         Ok(Params { references })
     }
 
-    // Adjusted convert_for_batch method
+    /// Convert a Vec of RowValues for batch operations
     pub fn convert_for_batch(
         params: &'a Vec<RowValues>,
     ) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
@@ -81,6 +77,7 @@ impl<'a> Params<'a> {
         Ok(references)
     }
 
+    /// Get a reference to the underlying parameter array
     pub fn as_refs(&self) -> &[&(dyn ToSql + Sync)] {
         &self.references
     }
@@ -95,6 +92,11 @@ impl<'a> ParamConverter<'a> for Params<'a> {
     ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         // Simply delegate to your existing conversion:
         Self::convert(params)
+    }
+    
+    // PostgresParams supports both query and execution modes
+    fn supports_mode(_mode: ConversionMode) -> bool {
+        true
     }
 }
 
@@ -111,7 +113,7 @@ impl ToSql for RowValues {
             RowValues::Bool(b) => (*b).to_sql(ty, out),
             RowValues::Timestamp(dt) => dt.to_sql(ty, out),
             RowValues::Null => Ok(IsNull::Yes),
-            RowValues::JSON(jsval) => jsval.to_string().to_sql(ty, out),
+            RowValues::JSON(jsval) => jsval.to_sql(ty, out),
             RowValues::Blob(bytes) => bytes.to_sql(ty, out),
         }
     }
@@ -141,6 +143,7 @@ impl ToSql for RowValues {
     to_sql_checked!();
 }
 
+/// Build a result set from a Postgres query execution
 pub async fn build_result_set<'a>(
     stmt: &Statement,
     params: &[&(dyn ToSql + Sync)],
@@ -149,8 +152,7 @@ pub async fn build_result_set<'a>(
     // Execute the query
     let rows = transaction
         .query(stmt, params)
-        .await
-        .map_err(SqlMiddlewareDbError::PostgresError)?;
+        .await?;
 
     let column_names: Vec<String> = stmt
         .columns()
@@ -193,51 +195,44 @@ fn postgres_extract_value(
     // For simplicity, we'll handle common types. You may need to expand this.
     if type_info.name() == "int4" || type_info.name() == "int8" {
         let val: Option<i64> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))
     } else if type_info.name() == "float4" || type_info.name() == "float8" {
         let val: Option<f64> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Float))
     } else if type_info.name() == "bool" {
         let val: Option<bool> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Bool))
     } else if type_info.name() == "timestamp" || type_info.name() == "timestamptz" {
         let val: Option<NaiveDateTime> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Timestamp))
     } else if type_info.name() == "json" || type_info.name() == "jsonb" {
         let val: Option<Value> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::JSON))
     } else if type_info.name() == "bytea" {
         let val: Option<Vec<u8>> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Blob))
     } else if type_info.name() == "text"
         || type_info.name() == "varchar"
         || type_info.name() == "char"
     {
         let val: Option<String> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     } else {
         // For other types, attempt to get as string
         let val: Option<String> = row
-            .try_get(idx)
-            .map_err(SqlMiddlewareDbError::PostgresError)?;
+            .try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
 }
 
+/// Execute a batch of SQL statements for Postgres
 pub async fn execute_batch(
     pg_client: &mut Object,
     query: &str,
@@ -254,6 +249,7 @@ pub async fn execute_batch(
     Ok(())
 }
 
+/// Execute a SELECT query with parameters
 pub async fn execute_select(
     pg_client: &mut Object,
     query: &str,
@@ -267,6 +263,7 @@ pub async fn execute_select(
     Ok(result_set)
 }
 
+/// Execute a DML query (INSERT, UPDATE, DELETE) with parameters
 pub async fn execute_dml(
     pg_client: &mut Object,
     query: &str,

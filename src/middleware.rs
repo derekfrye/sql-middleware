@@ -1,6 +1,4 @@
-// use std::error::Error;
-use std::fmt;
-// use tokio::task::spawn_blocking;
+// All thiserror imports are handled by the macro
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use clap::ValueEnum;
@@ -57,14 +55,33 @@ pub struct ConfigAndPool {
 #[derive(Debug, Error)]
 pub enum SqlMiddlewareDbError {
     #[error(transparent)]
-    PostgresError(tokio_postgres::Error),
+    PostgresError(#[from] tokio_postgres::Error),
+    
     #[error(transparent)]
-    SqliteError(rusqlite::Error),
+    SqliteError(#[from] rusqlite::Error),
+    
     #[error(transparent)]
-    PoolErrorPostgres(deadpool::managed::PoolError<tokio_postgres::Error>),
+    PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
+    
     #[error(transparent)]
-    PoolErrorSqlite(deadpool::managed::PoolError<rusqlite::Error>),
-
+    PoolErrorSqlite(#[from] deadpool::managed::PoolError<rusqlite::Error>),
+    
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+    
+    #[error("Connection error: {0}")]
+    ConnectionError(String),
+    
+    #[error("Parameter conversion error: {0}")]
+    ParameterError(String),
+    
+    #[error("SQL execution error: {0}")]
+    ExecutionError(String),
+    
+    #[error("Unimplemented feature: {0}")]
+    Unimplemented(String),
+    
+    #[error("Other database error: {0}")]
     Other(String),
 }
 
@@ -152,7 +169,11 @@ impl MiddlewarePoolConnection {
                 let client: &mut tokio_postgres::Client = pg_obj.as_mut();
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
-            _ => unimplemented!(),
+            MiddlewarePoolConnection::Sqlite(_) => {
+                Err(SqlMiddlewareDbError::Unimplemented(
+                    "interact_async is not supported for SQLite; use interact_sync instead".to_string()
+                ))
+            }
         }
     }
 
@@ -171,7 +192,11 @@ impl MiddlewarePoolConnection {
                     })
                     .await?
             }
-            _ => unimplemented!(),
+            MiddlewarePoolConnection::Postgres(_) => {
+                Err(SqlMiddlewareDbError::Unimplemented(
+                    "interact_sync is not supported for Postgres; use interact_async instead".to_string()
+                ))
+            }
         }
     }
 }
@@ -179,11 +204,20 @@ impl MiddlewarePoolConnection {
 // ----------------------------------------
 // Common impl blocks for DbError
 // ----------------------------------------
+// We don't need this anymore as thiserror already generates a Display implementation
+// The #[error] attributes on the enum variants define the format for each variant
+// This is commented out to show what was here originally
+/*
 impl fmt::Display for SqlMiddlewareDbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SqlMiddlewareDbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
             SqlMiddlewareDbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
+            SqlMiddlewareDbError::ConfigError(msg) => write!(f, "ConfigError: {}", msg),
+            SqlMiddlewareDbError::ConnectionError(msg) => write!(f, "ConnectionError: {}", msg),
+            SqlMiddlewareDbError::ParameterError(msg) => write!(f, "ParameterError: {}", msg),
+            SqlMiddlewareDbError::ExecutionError(msg) => write!(f, "ExecutionError: {}", msg),
+            SqlMiddlewareDbError::Unimplemented(msg) => write!(f, "Unimplemented: {}", msg),
             SqlMiddlewareDbError::Other(msg) => write!(f, "Other: {}", msg),
             SqlMiddlewareDbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
             SqlMiddlewareDbError::PoolErrorPostgres(pool_error) => {
@@ -192,6 +226,7 @@ impl fmt::Display for SqlMiddlewareDbError {
         }
     }
 }
+*/
 
 // ----------------------------------------
 // Impl for RowValues that is DB-agnostic
@@ -334,7 +369,9 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     }
 }
 
-/// Convert a slice of RowValues into database‐specific parameters.
+/// Convert a slice of RowValues into database-specific parameters.
+/// This trait provides a unified interface for converting generic RowValues
+/// to database-specific parameter types.
 pub trait ParamConverter<'a> {
     type Converted;
 
@@ -343,10 +380,21 @@ pub trait ParamConverter<'a> {
         params: &'a [RowValues],
         mode: ConversionMode,
     ) -> Result<Self::Converted, SqlMiddlewareDbError>;
+    
+    /// Check if this converter supports the given mode
+    /// 
+    /// # Arguments
+    /// * `mode` - The conversion mode to check
+    /// 
+    /// # Returns
+    /// * `bool` - Whether this converter supports the mode
+    fn supports_mode(_mode: ConversionMode) -> bool {
+        true // By default, support both modes
+    }
 }
 
 /// The conversion "mode".
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConversionMode {
     /// When the converted parameters will be used in a query (SELECT)
     Query,
