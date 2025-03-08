@@ -26,33 +26,33 @@ impl From<tokio_postgres::Error> for SqlMiddlewareDbError {
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
     pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
+        // Validate all required config fields are present
         if pg_config.dbname.is_none() {
-            panic!("dbname is required");
+            return Err(SqlMiddlewareDbError::Other("dbname is required".to_string()));
         }
 
         if pg_config.host.is_none() {
-            panic!("host is required");
+            return Err(SqlMiddlewareDbError::Other("host is required".to_string()));
         }
         if pg_config.port.is_none() {
-            panic!("port is required");
+            return Err(SqlMiddlewareDbError::Other("port is required".to_string()));
         }
         if pg_config.user.is_none() {
-            panic!("user is required");
+            return Err(SqlMiddlewareDbError::Other("user is required".to_string()));
         }
         if pg_config.password.is_none() {
-            panic!("password is required");
+            return Err(SqlMiddlewareDbError::Other("password is required".to_string()));
         }
 
-        let pg_config_res = pg_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls);
-        match pg_config_res {
-            Ok(pg_pool) => Ok(ConfigAndPool {
-                pool: MiddlewarePool::Postgres(pg_pool),
-                db_type: DatabaseType::Postgres,
-            }),
-            Err(e) => {
-                panic!("Failed to create deadpool_postgres pool: {}", e);
-            }
-        }
+        // Attempt to create connection pool
+        let pg_pool = pg_config
+            .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
+            .map_err(|e| SqlMiddlewareDbError::Other(format!("Failed to create deadpool_postgres pool: {}", e)))?;
+            
+        Ok(ConfigAndPool {
+            pool: MiddlewarePool::Postgres(pg_pool),
+            db_type: DatabaseType::Postgres,
+        })
     }
 }
 
@@ -116,9 +116,26 @@ impl ToSql for RowValues {
         }
     }
 
-    fn accepts(_ty: &Type) -> bool {
-        // Implement type acceptance logic based on your needs
-        true
+    fn accepts(ty: &Type) -> bool {
+        // Only accept types we can properly handle
+        match *ty {
+            // Integer types
+            Type::INT2 | Type::INT4 | Type::INT8 => true,
+            // Floating point types
+            Type::FLOAT4 | Type::FLOAT8 => true,
+            // Text types
+            Type::TEXT | Type::VARCHAR | Type::CHAR | Type::NAME => true,
+            // Boolean type
+            Type::BOOL => true,
+            // Date/time types
+            Type::TIMESTAMP | Type::TIMESTAMPTZ | Type::DATE => true,
+            // JSON types
+            Type::JSON | Type::JSONB => true,
+            // Binary data
+            Type::BYTEA => true,
+            // For any other type, we don't accept
+            _ => false,
+        }
     }
 
     to_sql_checked!();
@@ -142,17 +159,19 @@ pub async fn build_result_set<'a>(
         .collect();
 
     let mut result_set = ResultSet::new();
+    // Store column names once in the result set
+    let column_names_rc = std::sync::Arc::new(column_names);
 
     for row in rows {
         let mut row_values = Vec::new();
 
-        for (i, _col_name) in column_names.iter().enumerate() {
+        for i in 0..column_names_rc.len() {
             let value = postgres_extract_value(&row, i)?;
             row_values.push(value);
         }
 
         result_set.results.push(CustomDbRow {
-            column_names: column_names.clone(),
+            column_names: column_names_rc.clone(), // Now just cloning an Arc pointer, not the entire Vec
             rows: row_values,
         });
 

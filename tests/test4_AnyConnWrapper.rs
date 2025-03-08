@@ -48,7 +48,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Initialize Sqlite pool
                     let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
                     let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(pool).await?;
+                    let mut conn = MiddlewarePool::get_connection(&pool).await?;
 
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
@@ -57,7 +57,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Initialize Postgres pool
                     let config_and_pool = ConfigAndPool2::new_postgres(cfg.clone()).await?;
                     let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(pool).await?;
+                    let mut conn = MiddlewarePool::get_connection(&pool).await?;
 
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Postgres).await?;
@@ -362,9 +362,9 @@ async fn run_test_logic(
         }
     })?;
 
-    // println!("dbdrive: {:?}, res: {:?}", db_type, res);
+    // println!("dbdriver: {:?}, res: {:?}", db_type, res);
 
-    // make sure to match the val frmo above
+    // make sure to match the val from above
     let query = "select count(*) as cnt,name from test where id = 990 group by name;";
     let result_set = conn.execute_select(query, &[]).await?;
     // theres two in here now, we inserted same val 2x above

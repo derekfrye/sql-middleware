@@ -70,7 +70,7 @@ pub enum SqlMiddlewareDbError {
 
 #[derive(Debug, Clone)]
 pub struct CustomDbRow {
-    pub column_names: Vec<String>,
+    pub column_names: std::sync::Arc<Vec<String>>,
     pub rows: Vec<RowValues>,
 }
 
@@ -105,20 +105,12 @@ impl ResultSet {
 }
 
 impl MiddlewarePool {
-    pub async fn get(&self) -> Result<MiddlewarePool, SqlMiddlewareDbError> {
-        match self {
-            MiddlewarePool::Postgres(pool) => {
-                let pool = pool.clone();
-                Ok(MiddlewarePool::Postgres(pool))
-            }
-            MiddlewarePool::Sqlite(pool) => {
-                let pool = pool.clone();
-                Ok(MiddlewarePool::Sqlite(pool))
-            }
-        }
+    // Return a reference to self instead of cloning the entire pool
+    pub async fn get(&self) -> Result<&MiddlewarePool, SqlMiddlewareDbError> {
+        Ok(self)
     }
     pub async fn get_connection(
-        pool: MiddlewarePool,
+        pool: &MiddlewarePool,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         match pool {
             MiddlewarePool::Postgres(pool) => {

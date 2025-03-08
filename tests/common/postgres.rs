@@ -91,7 +91,7 @@ pub fn setup_postgres_container(
                 thread::sleep(Duration::from_millis(100));
             }
 
-            let conn = MiddlewarePool::get_connection(pool.clone()).await;
+            let conn = MiddlewarePool::get_connection(&pool).await;
             if conn.is_ok() {
                 let pgconn = match conn? {
                     MiddlewarePoolConnection::Postgres(pgconn) => pgconn,

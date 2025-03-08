@@ -67,7 +67,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
         let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
+        let conn = MiddlewarePool::get_connection(&pool).await?;
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
@@ -130,12 +130,12 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         })?;
 
         let expected_result = vec![CustomDbRow {
-            column_names: vec![
+            column_names: std::sync::Arc::new(vec![
                 "event_id".to_string(),
                 "espn_id".to_string(),
                 "name".to_string(),
                 "ins_ts".to_string()
-            ],
+            ]),
             rows: vec![
                 RowValues::Int(1),
                 RowValues::Int(123456),

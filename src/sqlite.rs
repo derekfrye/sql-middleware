@@ -70,7 +70,7 @@ pub fn convert_params(
         let v = match p {
             RowValues::Int(i) => rusqlite::types::Value::Integer(*i),
             RowValues::Float(f) => rusqlite::types::Value::Real(*f),
-            RowValues::Text(s) => rusqlite::types::Value::Text(s.clone()),
+            RowValues::Text(s) => rusqlite::types::Value::Text(s.to_string()), // Using to_string() is better here
             RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
             RowValues::Timestamp(dt) => {
                 let formatted = dt.format("%F %T%.f").to_string(); // Adjust precision as needed
@@ -78,7 +78,10 @@ pub fn convert_params(
             }
             RowValues::Null => rusqlite::types::Value::Null,
             RowValues::JSON(jsval) => rusqlite::types::Value::Text(jsval.to_string()),
-            RowValues::Blob(bytes) => rusqlite::types::Value::Blob(bytes.clone()),
+            RowValues::Blob(bytes) => {
+                // Only clone if we need to - this is unavoidable with rusqlite::Value
+                rusqlite::types::Value::Blob(bytes.to_vec())
+            },
         };
         vec_values.push(v);
     }
@@ -168,6 +171,9 @@ pub fn build_result_set(
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
     let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    
+    // Store column names once in the result set
+    let column_names_rc = std::sync::Arc::new(column_names);
 
     let mut rows_iter = stmt.query(&param_refs[..])?;
     let mut result_set = ResultSet {
@@ -178,13 +184,13 @@ pub fn build_result_set(
     while let Some(row) = rows_iter.next()? {
         let mut row_values = Vec::new();
 
-        for (i, _col_name) in column_names.iter().enumerate() {
+        for i in 0..column_names_rc.len() {
             let value = sqlite_extract_value_sync(row, i)?;
             row_values.push(value);
         }
 
         result_set.results.push(CustomDbRow {
-            column_names: column_names.clone(),
+            column_names: column_names_rc.clone(), // Just cloning an Arc pointer
             rows: row_values,
         });
 
@@ -202,7 +208,7 @@ pub async fn execute_batch(
 
     // Use interact to run the blocking code in a separate thread.
     sqlite_client
-        .interact(move |conn| {
+        .interact(move |conn| -> rusqlite::Result<()> {
             // Begin a transaction
             let tx = conn.transaction()?;
 
@@ -214,8 +220,9 @@ pub async fn execute_batch(
 
             Ok(())
         })
-        .await?
-        .map_err(SqlMiddlewareDbError::SqliteError) // Map the inner rusqlite::Error to DbError
+        .await
+        .map_err(|e| SqlMiddlewareDbError::Other(format!("Interact error: {}", e)))
+        .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
 }
 
 pub async fn execute_select(
@@ -227,19 +234,24 @@ pub async fn execute_select(
     let params_owned = convert_params(params)?;
 
     // Use interact to run the blocking code in a separate thread.
-    let result_set = sqlite_client
-        .interact(move |conn| {
+    sqlite_client
+        .interact(move |conn| -> rusqlite::Result<ResultSet> {
             // Prepare the query
             let mut stmt = conn.prepare(&query_owned)?;
 
-            // Execute the query
-            let result_set = build_result_set(&mut stmt, &params_owned)?;
-
-            Ok::<_, SqlMiddlewareDbError>(result_set)
+            // Execute the query and map SqlMiddlewareDbError to rusqlite::Error
+            // This works because SqlMiddlewareDbError implements From<rusqlite::Error>
+            build_result_set(&mut stmt, &params_owned).map_err(|e| {
+                if let SqlMiddlewareDbError::SqliteError(sqlite_err) = e {
+                    sqlite_err
+                } else {
+                    rusqlite::Error::InvalidParameterName(format!("{:?}", e))
+                }
+            })
         })
-        .await??;
-
-    Ok(result_set)
+        .await
+        .map_err(|e| SqlMiddlewareDbError::Other(format!("Interact error: {}", e)))
+        .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
 }
 
 pub async fn execute_dml(
@@ -251,8 +263,8 @@ pub async fn execute_dml(
     let params_owned = convert_params(params)?;
 
     // Use interact to run the blocking code in a separate thread.
-    let result_set = sqlite_client
-        .interact(move |conn| {
+    sqlite_client
+        .interact(move |conn| -> rusqlite::Result<usize> {
             // Prepare the query
             let tx = conn.transaction()?;
             // Execute the query
@@ -264,9 +276,9 @@ pub async fn execute_dml(
             };
             tx.commit()?;
 
-            Ok::<_, SqlMiddlewareDbError>(rows)
+            Ok(rows)
         })
-        .await??;
-
-    Ok(result_set)
+        .await
+        .map_err(|e| SqlMiddlewareDbError::Other(format!("Interact error: {}", e)))
+        .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
 }
