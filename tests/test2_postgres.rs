@@ -129,14 +129,14 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             Ok::<_, SqlMiddlewareDbError>(result_set)
         })?;
 
-        let expected_result = vec![CustomDbRow {
-            column_names: std::sync::Arc::new(vec![
+        let expected_result = vec![sql_middleware::test_helpers::create_test_row(
+            vec![
                 "event_id".to_string(),
                 "espn_id".to_string(),
                 "name".to_string(),
                 "ins_ts".to_string()
-            ]),
-            rows: vec![
+            ],
+            vec![
                 RowValues::Int(1),
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
@@ -146,8 +146,8 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                         "%Y-%m-%d %H:%M:%S"
                     ).unwrap()
                 )
-            ],
-        }];
+            ]
+        )];
 
         let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
 

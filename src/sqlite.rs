@@ -191,10 +191,8 @@ pub fn build_result_set(
     let column_names_rc = std::sync::Arc::new(column_names);
 
     let mut rows_iter = stmt.query(&param_refs[..])?;
-    let mut result_set = ResultSet {
-        results: Vec::new(),
-        rows_affected: 0,
-    };
+    // Create result set with default capacity
+    let mut result_set = ResultSet::with_capacity(10);
 
     while let Some(row) = rows_iter.next()? {
         let mut row_values = Vec::new();
@@ -204,12 +202,7 @@ pub fn build_result_set(
             row_values.push(value);
         }
 
-        result_set.results.push(CustomDbRow {
-            column_names: column_names_rc.clone(), // Just cloning an Arc pointer
-            rows: row_values,
-        });
-
-        result_set.rows_affected += 1;
+        result_set.add_row(CustomDbRow::new(column_names_rc.clone(), row_values));
     }
 
     Ok(result_set)

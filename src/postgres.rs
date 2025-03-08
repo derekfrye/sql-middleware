@@ -160,7 +160,9 @@ pub async fn build_result_set<'a>(
         .map(|col| col.name().to_string())
         .collect();
 
-    let mut result_set = ResultSet::new();
+    // Preallocate capacity if we can estimate the number of rows
+    let capacity = rows.len();
+    let mut result_set = ResultSet::with_capacity(capacity);
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);
 
@@ -172,10 +174,7 @@ pub async fn build_result_set<'a>(
             row_values.push(value);
         }
 
-        result_set.results.push(CustomDbRow {
-            column_names: column_names_rc.clone(), // Now just cloning an Arc pointer, not the entire Vec
-            rows: row_values,
-        });
+        result_set.add_row(CustomDbRow::new(column_names_rc.clone(), row_values));
 
         result_set.rows_affected += 1;
     }

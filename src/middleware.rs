@@ -11,45 +11,197 @@ use thiserror::Error;
 use crate::{postgres, sqlite};
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
+/// Wrapper around a database connection for generic code
+/// 
+/// This enum allows code to handle either PostgreSQL or SQLite 
+/// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
+    /// PostgreSQL client connection
     Postgres(&'a mut tokio_postgres::Client),
+    /// SQLite database connection
     Sqlite(&'a mut SqliteConnectionType),
 }
 
+/// A query and its parameters bundled together
+/// 
+/// This type makes it easier to pass around a SQL query and its
+/// parameters as a single unit.
 #[derive(Debug, Clone)]
 pub struct QueryAndParams {
+    /// The SQL query string
     pub query: String,
+    /// The parameters to be bound to the query
     pub params: Vec<RowValues>,
 }
 
+impl QueryAndParams {
+    /// Create a new QueryAndParams with the given query string and parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The SQL query string
+    /// * `params` - The parameters to bind to the query
+    ///
+    /// # Returns
+    ///
+    /// A new QueryAndParams instance
+    pub fn new(query: impl Into<String>, params: Vec<RowValues>) -> Self {
+        Self {
+            query: query.into(),
+            params,
+        }
+    }
+    
+    /// Create a new QueryAndParams with no parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The SQL query string
+    ///
+    /// # Returns
+    ///
+    /// A new QueryAndParams instance with an empty parameter list
+    pub fn new_without_params(query: impl Into<String>) -> Self {
+        Self {
+            query: query.into(),
+            params: Vec::new(),
+        }
+    }
+}
+
+/// Values that can be stored in a database row or used as query parameters
+///
+/// This enum provides a unified representation of database values across
+/// different database engines.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RowValues {
+    /// Integer value (64-bit)
     Int(i64),
+    /// Floating point value (64-bit)
     Float(f64),
+    /// Text/string value
     Text(String),
+    /// Boolean value
     Bool(bool),
+    /// Timestamp value
     Timestamp(NaiveDateTime),
+    /// NULL value
     Null,
+    /// JSON value
     JSON(JsonValue),
+    /// Binary data
     Blob(Vec<u8>),
 }
 
-#[derive(Debug, Clone)]
-pub enum MiddlewarePool {
-    Postgres(DeadpoolPostgresPool),
-    Sqlite(DeadpoolSqlitePool),
+impl RowValues {
+    /// Create a new NULL value
+    pub fn null() -> Self {
+        Self::Null
+    }
+    
+    /// Create a new integer value
+    pub fn integer(value: i64) -> Self {
+        Self::Int(value)
+    }
+    
+    /// Create a new text value
+    pub fn text(value: impl Into<String>) -> Self {
+        Self::Text(value.into())
+    }
+    
+    /// Create a new boolean value
+    pub fn boolean(value: bool) -> Self {
+        Self::Bool(value)
+    }
+    
+    /// Create a new timestamp value
+    pub fn timestamp(value: NaiveDateTime) -> Self {
+        Self::Timestamp(value)
+    }
+    
+    /// Check if this value is NULL
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, ValueEnum)]
+/// The database type supported by this middleware
+#[derive(Debug, Clone, PartialEq, Eq, Hash, ValueEnum)]
 pub enum DatabaseType {
+    /// PostgreSQL database
     Postgres,
+    /// SQLite database
     Sqlite,
 }
 
+impl DatabaseType {
+    /// Returns true if this is a PostgreSQL database
+    pub fn is_postgres(&self) -> bool {
+        matches!(self, Self::Postgres)
+    }
+    
+    /// Returns true if this is a SQLite database
+    pub fn is_sqlite(&self) -> bool {
+        matches!(self, Self::Sqlite)
+    }
+    
+    /// Get the database type name as a string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Postgres => "PostgreSQL",
+            Self::Sqlite => "SQLite",
+        }
+    }
+}
+
+/// Connection pool for database access
+///
+/// This enum wraps the different connection pool types for the
+/// supported database engines.
+#[derive(Debug, Clone)]
+pub enum MiddlewarePool {
+    /// PostgreSQL connection pool
+    Postgres(DeadpoolPostgresPool),
+    /// SQLite connection pool
+    Sqlite(DeadpoolSqlitePool),
+}
+
+impl MiddlewarePool {
+    /// Get the database type for this connection pool
+    pub fn database_type(&self) -> DatabaseType {
+        match self {
+            Self::Postgres(_) => DatabaseType::Postgres,
+            Self::Sqlite(_) => DatabaseType::Sqlite,
+        }
+    }
+}
+
+/// Configuration and connection pool for a database
+///
+/// This struct holds both the configuration and the connection pool
+/// for a database, making it easier to manage database connections.
 #[derive(Clone, Debug)]
 pub struct ConfigAndPool {
+    /// The connection pool
     pub pool: MiddlewarePool,
+    /// The database type
     pub db_type: DatabaseType,
+}
+
+impl ConfigAndPool {
+    /// Create a new ConfigAndPool instance
+    ///
+    /// # Arguments
+    ///
+    /// * `pool` - The connection pool
+    /// * `db_type` - The database type
+    ///
+    /// # Returns
+    ///
+    /// A new ConfigAndPool instance
+    pub fn new(pool: MiddlewarePool, db_type: DatabaseType) -> Self {
+        Self { pool, db_type }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -85,17 +237,77 @@ pub enum SqlMiddlewareDbError {
     Other(String),
 }
 
+/// A row from a database query result
+///
+/// This struct represents a single row from a database query result,
+/// with access to both the column names and the values.
 #[derive(Debug, Clone)]
 pub struct CustomDbRow {
+    /// The column names for this row (shared across all rows in a result set)
     pub column_names: std::sync::Arc<Vec<String>>,
+    /// The values for this row
     pub rows: Vec<RowValues>,
+    // Internal cache for faster column lookups (to avoid repeated string comparisons)
+    #[doc(hidden)]
+    column_index_cache: std::sync::Arc<std::collections::HashMap<String, usize>>,
 }
 
 impl CustomDbRow {
+    /// Create a new database row
+    ///
+    /// # Arguments
+    ///
+    /// * `column_names` - The column names
+    /// * `rows` - The values for this row
+    ///
+    /// # Returns
+    ///
+    /// A new CustomDbRow instance
+    pub fn new(column_names: std::sync::Arc<Vec<String>>, rows: Vec<RowValues>) -> Self {
+        // Build a cache of column name to index for faster lookups
+        let cache = std::sync::Arc::new(
+            column_names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| (name.clone(), i))
+                .collect::<std::collections::HashMap<_, _>>()
+        );
+        
+        Self { 
+            column_names, 
+            rows,
+            column_index_cache: cache,
+        }
+    }
+    
+    /// Get the index of a column by name
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column
+    ///
+    /// # Returns
+    ///
+    /// The index of the column, or None if not found
     pub fn get_column_index(&self, column_name: &str) -> Option<usize> {
+        // First check the cache
+        if let Some(&idx) = self.column_index_cache.get(column_name) {
+            return Some(idx);
+        }
+        
+        // Fall back to linear search
         self.column_names.iter().position(|col| col == column_name)
     }
 
+    /// Get a value from the row by column name
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column
+    ///
+    /// # Returns
+    ///
+    /// The value at the column, or None if the column wasn't found
     pub fn get(&self, column_name: &str) -> Option<&RowValues> {
         let index_opt = self.get_column_index(column_name);
         if let Some(idx) = index_opt {
@@ -104,20 +316,106 @@ impl CustomDbRow {
             None
         }
     }
+    
+    /// Get a value from the row by column index
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index of the column
+    ///
+    /// # Returns
+    ///
+    /// The value at the index, or None if the index is out of bounds
+    pub fn get_by_index(&self, index: usize) -> Option<&RowValues> {
+        self.rows.get(index)
+    }
+    
+    /// Get the number of columns in the row
+    pub fn column_count(&self) -> usize {
+        self.column_names.len()
+    }
+    
+    /// Get an iterator over the column names
+    pub fn column_names(&self) -> impl Iterator<Item = &String> {
+        self.column_names.iter()
+    }
+    
+    /// Get an iterator over the column values
+    pub fn values(&self) -> impl Iterator<Item = &RowValues> {
+        self.rows.iter()
+    }
+    
+    /// Get an iterator over (column_name, value) pairs
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &RowValues)> {
+        self.column_names.iter().zip(self.rows.iter())
+    }
 }
 
+/// A result set from a database query
+///
+/// This struct represents the result of a database query,
+/// containing the rows returned by the query and metadata.
 #[derive(Debug, Clone, Default)]
 pub struct ResultSet {
+    /// The rows returned by the query
     pub results: Vec<CustomDbRow>,
+    /// The number of rows affected (for DML statements)
     pub rows_affected: usize,
+    /// The number of rows in the result set (cached for performance)
+    row_count: usize,
 }
 
 impl ResultSet {
+    /// Create a new empty result set
     pub fn new() -> ResultSet {
         ResultSet {
             results: vec![],
             rows_affected: 0,
+            row_count: 0,
         }
+    }
+    
+    /// Create a new result set with a known capacity
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - The initial capacity for the result rows
+    ///
+    /// # Returns
+    ///
+    /// A new ResultSet instance with preallocated capacity
+    pub fn with_capacity(capacity: usize) -> ResultSet {
+        ResultSet {
+            results: Vec::with_capacity(capacity),
+            rows_affected: 0,
+            row_count: 0,
+        }
+    }
+    
+    /// Add a row to the result set
+    ///
+    /// # Arguments
+    ///
+    /// * `row` - The row to add
+    pub fn add_row(&mut self, row: CustomDbRow) {
+        self.results.push(row);
+        self.row_count = self.results.len();
+        self.rows_affected += 1;
+    }
+    
+    /// Get the number of rows in the result set
+    pub fn row_count(&self) -> usize {
+        self.row_count
+    }
+    
+    /// Check if the result set is empty
+    pub fn is_empty(&self) -> bool {
+        self.row_count == 0
+    }
+    
+    /// Get an iterator over the rows in the result set
+    pub fn iter(&self) -> impl Iterator<Item = &CustomDbRow> {
+        self.results.iter()
     }
 }
 
@@ -301,9 +599,6 @@ impl RowValues {
         }
     }
 
-    pub fn is_null(&self) -> bool {
-        matches!(self, RowValues::Null)
-    }
 }
 
 #[async_trait]
