@@ -60,10 +60,16 @@ pub mod prelude {
         SqlMiddlewareDbError,
         DatabaseType,
         ConversionMode,
+        QueryAndParams,
+        AnyConnWrapper,
     };
     
     pub use crate::convert_sql_params;
-    pub use crate::params::{PostgresParams, SqliteParamsExecute, SqliteParamsQuery};
+    pub use crate::postgres_build_result_set;
+    pub use crate::sqlite_build_result_set;
+    pub use crate::PostgresParams;
+    pub use crate::SqliteParamsExecute;
+    pub use crate::SqliteParamsQuery;
 }
 
 // Core modules
@@ -73,65 +79,38 @@ pub mod middleware;
 mod postgres;
 mod sqlite;
 
-// Public parameter conversion module
-pub mod params {
-    //! Parameter conversion types for different database backends.
-    //! 
-    //! This module provides the types needed to convert generic parameter
-    //! values into database-specific formats.
-    
-    pub use crate::postgres::Params as PostgresParams;
-    pub use crate::sqlite::SqliteParamsExecute;
-    pub use crate::sqlite::SqliteParamsQuery;
-}
+// Direct exports of frequently used types and functions for simplicity
+pub use middleware::{
+    ConfigAndPool, 
+    MiddlewarePool, 
+    MiddlewarePoolConnection,
+    AsyncDatabaseExecutor,
+    ResultSet, 
+    CustomDbRow,
+    RowValues,
+    SqlMiddlewareDbError,
+    DatabaseType,
+    ConversionMode,
+    QueryAndParams,
+    AnyConnWrapper,
+    ParamConverter,
+};
 
-// Public database-specific functionality
-pub mod db {
-    //! Database-specific functionality.
-    //! 
-    //! This module exposes certain database-specific functions that
-    //! may be needed for advanced use cases.
-    
-    pub use crate::postgres::build_result_set as postgres_build_result_set;
-    pub use crate::sqlite::build_result_set as sqlite_build_result_set;
-}
-
-// Legacy exports for backward compatibility with existing tests and code
-// These will be deprecated and eventually removed
-#[doc(hidden)]
-pub use middleware::SqlMiddlewareDbError;
-#[doc(hidden)]
+pub use postgres::Params as PostgresParams;
 pub use postgres::build_result_set as postgres_build_result_set;
-#[doc(hidden)]
 pub use sqlite::build_result_set as sqlite_build_result_set;
-#[doc(hidden)]
-pub use params::PostgresParams;
-#[doc(hidden)]
-pub use params::SqliteParamsExecute;
-#[doc(hidden)]
-pub use params::SqliteParamsQuery;
+pub use sqlite::SqliteParamsExecute;
+pub use sqlite::SqliteParamsQuery;
 
-// Module to help with testing
-/// Utilities for testing the sql-middleware crate
+// Module to help with testing - needed for existing tests
 pub mod test_helpers {
-    //! Utilities for testing the sql-middleware crate.
-    //!
-    //! This module provides helper functions and types for writing tests
-    //! against the sql-middleware API.
-    
     use std::sync::Arc;
     use crate::middleware::{CustomDbRow, RowValues};
     
-    /// Create a CustomDbRow for testing purposes
     pub fn create_test_row(column_names: Vec<String>, values: Vec<RowValues>) -> CustomDbRow {
         CustomDbRow::new(Arc::new(column_names), values)
     }
 }
-
-// Re-export important traits
-use middleware::ConversionMode;
-use middleware::ParamConverter;
-use middleware::RowValues;
 
 /// Convert a slice of generic RowValues into database-specific parameters.
 ///
@@ -151,7 +130,7 @@ use middleware::RowValues;
 ///
 /// ```rust,no_run
 /// use sql_middleware::prelude::*;
-/// use sql_middleware::params::PostgresParams;
+/// use sql_middleware::PostgresParams;
 /// use sql_middleware::convert_sql_params;
 ///
 /// fn convert_parameters<'a>(values: &'a [RowValues]) -> Result<PostgresParams<'a>, SqlMiddlewareDbError> {

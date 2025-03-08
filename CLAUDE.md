@@ -1,39 +1,35 @@
 # SQL-Middleware Style Guide
 
-## Build Commands
+## Build & Test Commands
 - Build: `cargo build`
+- Check: `cargo clippy`
+- Format: `cargo fmt`
 - Test all: `cargo test`
-- Test single: `cargo test test_name`
-- Example: `cargo test test4_trait`
+- Test single: `cargo test test_name` (e.g. `cargo test test2_postgres`)
+- Verbose test: `cargo test -- --nocapture`
 
 ## Code Style
 
-### Imports
-- Group by source: std, external crates, local modules
-- Use relative paths for local imports
+### Imports & Organization
+- Group imports: std lib, external crates, local modules
 - Example: `use crate::{postgres, sqlite};`
+- Order: Types first, then implementations
 
-### Types
-- Enums for type variants: `DatabaseType`, `RowValues`
-- Error handling with thiserror: `#[derive(Error)]`
-- Use async traits with `#[async_trait]`
-
-### Naming
-- Snake_case for functions/variables
-- CamelCase for types/traits
-- Types first, then implementations
-
-### Error Handling
-- Use Result<T, SqlMiddlewareDbError>
+### Types & Error Handling
+- Enums for variants: `DatabaseType`, `RowValues`
+- Use `thiserror` with `#[derive(Error)]`
+- Async traits with `#[async_trait]`
+- Return `Result<T, SqlMiddlewareDbError>`
 - Propagate errors with `?`
-- Custom error type with transparent errors
 
-### Documentation
-- Include SQL file paths in test code
-- Use descriptive variable names
-- Maintain similar API between database backends
+### Naming Conventions
+- snake_case for functions/variables
+- PascalCase for types/traits
+- Descriptive variable names
 
 ### Database API
-- Consistent API for basic operations
-- Database-specific API for transactions
-- Use convert_sql_params for parameters
+- Consistent interfaces between Postgres/SQLite
+- Use `convert_sql_params` for parameter conversion
+- Transaction handling with database-specific APIs
+- `QueryAndParams` for typed query parameters
+- Proper error propagation and handling

@@ -94,31 +94,6 @@ pub enum RowValues {
 }
 
 impl RowValues {
-    /// Create a new NULL value
-    pub fn null() -> Self {
-        Self::Null
-    }
-    
-    /// Create a new integer value
-    pub fn integer(value: i64) -> Self {
-        Self::Int(value)
-    }
-    
-    /// Create a new text value
-    pub fn text(value: impl Into<String>) -> Self {
-        Self::Text(value.into())
-    }
-    
-    /// Create a new boolean value
-    pub fn boolean(value: bool) -> Self {
-        Self::Bool(value)
-    }
-    
-    /// Create a new timestamp value
-    pub fn timestamp(value: NaiveDateTime) -> Self {
-        Self::Timestamp(value)
-    }
-    
     /// Check if this value is NULL
     pub fn is_null(&self) -> bool {
         matches!(self, Self::Null)
@@ -134,26 +109,6 @@ pub enum DatabaseType {
     Sqlite,
 }
 
-impl DatabaseType {
-    /// Returns true if this is a PostgreSQL database
-    pub fn is_postgres(&self) -> bool {
-        matches!(self, Self::Postgres)
-    }
-    
-    /// Returns true if this is a SQLite database
-    pub fn is_sqlite(&self) -> bool {
-        matches!(self, Self::Sqlite)
-    }
-    
-    /// Get the database type name as a string
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Postgres => "PostgreSQL",
-            Self::Sqlite => "SQLite",
-        }
-    }
-}
-
 /// Connection pool for database access
 ///
 /// This enum wraps the different connection pool types for the
@@ -166,16 +121,6 @@ pub enum MiddlewarePool {
     Sqlite(DeadpoolSqlitePool),
 }
 
-impl MiddlewarePool {
-    /// Get the database type for this connection pool
-    pub fn database_type(&self) -> DatabaseType {
-        match self {
-            Self::Postgres(_) => DatabaseType::Postgres,
-            Self::Sqlite(_) => DatabaseType::Sqlite,
-        }
-    }
-}
-
 /// Configuration and connection pool for a database
 ///
 /// This struct holds both the configuration and the connection pool
@@ -186,22 +131,6 @@ pub struct ConfigAndPool {
     pub pool: MiddlewarePool,
     /// The database type
     pub db_type: DatabaseType,
-}
-
-impl ConfigAndPool {
-    /// Create a new ConfigAndPool instance
-    ///
-    /// # Arguments
-    ///
-    /// * `pool` - The connection pool
-    /// * `db_type` - The database type
-    ///
-    /// # Returns
-    ///
-    /// A new ConfigAndPool instance
-    pub fn new(pool: MiddlewarePool, db_type: DatabaseType) -> Self {
-        Self { pool, db_type }
-    }
 }
 
 #[derive(Debug, Error)]
@@ -329,26 +258,6 @@ impl CustomDbRow {
     pub fn get_by_index(&self, index: usize) -> Option<&RowValues> {
         self.rows.get(index)
     }
-    
-    /// Get the number of columns in the row
-    pub fn column_count(&self) -> usize {
-        self.column_names.len()
-    }
-    
-    /// Get an iterator over the column names
-    pub fn column_names(&self) -> impl Iterator<Item = &String> {
-        self.column_names.iter()
-    }
-    
-    /// Get an iterator over the column values
-    pub fn values(&self) -> impl Iterator<Item = &RowValues> {
-        self.rows.iter()
-    }
-    
-    /// Get an iterator over (column_name, value) pairs
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &RowValues)> {
-        self.column_names.iter().zip(self.rows.iter())
-    }
 }
 
 /// A result set from a database query
@@ -361,20 +270,9 @@ pub struct ResultSet {
     pub results: Vec<CustomDbRow>,
     /// The number of rows affected (for DML statements)
     pub rows_affected: usize,
-    /// The number of rows in the result set (cached for performance)
-    row_count: usize,
 }
 
 impl ResultSet {
-    /// Create a new empty result set
-    pub fn new() -> ResultSet {
-        ResultSet {
-            results: vec![],
-            rows_affected: 0,
-            row_count: 0,
-        }
-    }
-    
     /// Create a new result set with a known capacity
     ///
     /// # Arguments
@@ -388,7 +286,6 @@ impl ResultSet {
         ResultSet {
             results: Vec::with_capacity(capacity),
             rows_affected: 0,
-            row_count: 0,
         }
     }
     
@@ -399,23 +296,7 @@ impl ResultSet {
     /// * `row` - The row to add
     pub fn add_row(&mut self, row: CustomDbRow) {
         self.results.push(row);
-        self.row_count = self.results.len();
         self.rows_affected += 1;
-    }
-    
-    /// Get the number of rows in the result set
-    pub fn row_count(&self) -> usize {
-        self.row_count
-    }
-    
-    /// Check if the result set is empty
-    pub fn is_empty(&self) -> bool {
-        self.row_count == 0
-    }
-    
-    /// Get an iterator over the rows in the result set
-    pub fn iter(&self) -> impl Iterator<Item = &CustomDbRow> {
-        self.results.iter()
     }
 }
 
@@ -575,9 +456,9 @@ impl RowValues {
         None
     }
 
-    pub fn as_json(&self) -> Option<&serde_json::Value> {
-        if let RowValues::JSON(value) = self {
-            Some(value)
+    pub fn as_float(&self) -> Option<f64> {
+        if let RowValues::Float(value) = self {
+            Some(*value)
         } else {
             None
         }
@@ -590,15 +471,6 @@ impl RowValues {
             None
         }
     }
-
-    pub fn as_float(&self) -> Option<f64> {
-        if let RowValues::Float(value) = self {
-            Some(*value)
-        } else {
-            None
-        }
-    }
-
 }
 
 #[async_trait]
