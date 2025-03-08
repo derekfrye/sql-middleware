@@ -75,9 +75,9 @@ pub fn convert_params(
                 rusqlite::types::Value::Text(formatted)
             }
             RowValues::Null => rusqlite::types::Value::Null,
-            RowValues::JSON(jsval) => {
+            RowValues::JSON(jval) => {
                 // Only serialize once to avoid multiple allocations
-                let json_str = jsval.to_string();
+                let json_str = jval.to_string();
                 rusqlite::types::Value::Text(json_str)
             },
             RowValues::Blob(bytes) => {
@@ -179,7 +179,7 @@ fn sqlite_extract_value_sync(
 
 /// Build a result set from a SQLite query
 /// Only SELECT queries return rows affected. If a DML is sent, it does run it.
-/// If there's more than one query in the statment, idk which statement will be run.
+/// If there's more than one query in the statement, idk which statement will be run.
 pub fn build_result_set(
     stmt: &mut Statement,
     params: &[Value],

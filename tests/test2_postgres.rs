@@ -8,7 +8,6 @@ use common::postgres::{ setup_postgres_container, stop_postgres_container };
 use sql_middleware::middleware::{
     ConfigAndPool,
     ConversionMode,
-    CustomDbRow,
     MiddlewarePool,
     MiddlewarePoolConnection,
     QueryAndParams,
