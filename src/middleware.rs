@@ -1,6 +1,4 @@
-// use std::error::Error;
-use std::fmt;
-// use tokio::task::spawn_blocking;
+// All thiserror imports are handled by the macro
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use clap::ValueEnum;
@@ -13,72 +11,232 @@ use thiserror::Error;
 use crate::{postgres, sqlite};
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
+/// Wrapper around a database connection for generic code
+/// 
+/// This enum allows code to handle either PostgreSQL or SQLite 
+/// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
+    /// PostgreSQL client connection
     Postgres(&'a mut tokio_postgres::Client),
+    /// SQLite database connection
     Sqlite(&'a mut SqliteConnectionType),
 }
 
+/// A query and its parameters bundled together
+/// 
+/// This type makes it easier to pass around a SQL query and its
+/// parameters as a single unit.
 #[derive(Debug, Clone)]
 pub struct QueryAndParams {
+    /// The SQL query string
     pub query: String,
+    /// The parameters to be bound to the query
     pub params: Vec<RowValues>,
 }
 
+impl QueryAndParams {
+    /// Create a new QueryAndParams with the given query string and parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The SQL query string
+    /// * `params` - The parameters to bind to the query
+    ///
+    /// # Returns
+    ///
+    /// A new QueryAndParams instance
+    pub fn new(query: impl Into<String>, params: Vec<RowValues>) -> Self {
+        Self {
+            query: query.into(),
+            params,
+        }
+    }
+    
+    /// Create a new QueryAndParams with no parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The SQL query string
+    ///
+    /// # Returns
+    ///
+    /// A new QueryAndParams instance with an empty parameter list
+    pub fn new_without_params(query: impl Into<String>) -> Self {
+        Self {
+            query: query.into(),
+            params: Vec::new(),
+        }
+    }
+}
+
+/// Values that can be stored in a database row or used as query parameters
+///
+/// This enum provides a unified representation of database values across
+/// different database engines.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RowValues {
+    /// Integer value (64-bit)
     Int(i64),
+    /// Floating point value (64-bit)
     Float(f64),
+    /// Text/string value
     Text(String),
+    /// Boolean value
     Bool(bool),
+    /// Timestamp value
     Timestamp(NaiveDateTime),
+    /// NULL value
     Null,
+    /// JSON value
     JSON(JsonValue),
+    /// Binary data
     Blob(Vec<u8>),
 }
 
-#[derive(Debug, Clone)]
-pub enum MiddlewarePool {
-    Postgres(DeadpoolPostgresPool),
-    Sqlite(DeadpoolSqlitePool),
+impl RowValues {
+    /// Check if this value is NULL
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, ValueEnum)]
+/// The database type supported by this middleware
+#[derive(Debug, Clone, PartialEq, Eq, Hash, ValueEnum)]
 pub enum DatabaseType {
+    /// PostgreSQL database
     Postgres,
+    /// SQLite database
     Sqlite,
 }
 
+/// Connection pool for database access
+///
+/// This enum wraps the different connection pool types for the
+/// supported database engines.
+#[derive(Debug, Clone)]
+pub enum MiddlewarePool {
+    /// PostgreSQL connection pool
+    Postgres(DeadpoolPostgresPool),
+    /// SQLite connection pool
+    Sqlite(DeadpoolSqlitePool),
+}
+
+/// Configuration and connection pool for a database
+///
+/// This struct holds both the configuration and the connection pool
+/// for a database, making it easier to manage database connections.
 #[derive(Clone, Debug)]
 pub struct ConfigAndPool {
+    /// The connection pool
     pub pool: MiddlewarePool,
+    /// The database type
     pub db_type: DatabaseType,
 }
 
 #[derive(Debug, Error)]
 pub enum SqlMiddlewareDbError {
     #[error(transparent)]
-    PostgresError(tokio_postgres::Error),
+    PostgresError(#[from] tokio_postgres::Error),
+    
     #[error(transparent)]
-    SqliteError(rusqlite::Error),
+    SqliteError(#[from] rusqlite::Error),
+    
     #[error(transparent)]
-    PoolErrorPostgres(deadpool::managed::PoolError<tokio_postgres::Error>),
+    PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
+    
     #[error(transparent)]
-    PoolErrorSqlite(deadpool::managed::PoolError<rusqlite::Error>),
-
+    PoolErrorSqlite(#[from] deadpool::managed::PoolError<rusqlite::Error>),
+    
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+    
+    #[error("Connection error: {0}")]
+    ConnectionError(String),
+    
+    #[error("Parameter conversion error: {0}")]
+    ParameterError(String),
+    
+    #[error("SQL execution error: {0}")]
+    ExecutionError(String),
+    
+    #[error("Unimplemented feature: {0}")]
+    Unimplemented(String),
+    
+    #[error("Other database error: {0}")]
     Other(String),
 }
 
+/// A row from a database query result
+///
+/// This struct represents a single row from a database query result,
+/// with access to both the column names and the values.
 #[derive(Debug, Clone)]
 pub struct CustomDbRow {
-    pub column_names: Vec<String>,
+    /// The column names for this row (shared across all rows in a result set)
+    pub column_names: std::sync::Arc<Vec<String>>,
+    /// The values for this row
     pub rows: Vec<RowValues>,
+    // Internal cache for faster column lookups (to avoid repeated string comparisons)
+    #[doc(hidden)]
+    column_index_cache: std::sync::Arc<std::collections::HashMap<String, usize>>,
 }
 
 impl CustomDbRow {
+    /// Create a new database row
+    ///
+    /// # Arguments
+    ///
+    /// * `column_names` - The column names
+    /// * `rows` - The values for this row
+    ///
+    /// # Returns
+    ///
+    /// A new CustomDbRow instance
+    pub fn new(column_names: std::sync::Arc<Vec<String>>, rows: Vec<RowValues>) -> Self {
+        // Build a cache of column name to index for faster lookups
+        let cache = std::sync::Arc::new(
+            column_names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| (name.clone(), i))
+                .collect::<std::collections::HashMap<_, _>>()
+        );
+        
+        Self { 
+            column_names, 
+            rows,
+            column_index_cache: cache,
+        }
+    }
+    
+    /// Get the index of a column by name
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column
+    ///
+    /// # Returns
+    ///
+    /// The index of the column, or None if not found
     pub fn get_column_index(&self, column_name: &str) -> Option<usize> {
+        // First check the cache
+        if let Some(&idx) = self.column_index_cache.get(column_name) {
+            return Some(idx);
+        }
+        
+        // Fall back to linear search
         self.column_names.iter().position(|col| col == column_name)
     }
 
+    /// Get a value from the row by column name
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column
+    ///
+    /// # Returns
+    ///
+    /// The value at the column, or None if the column wasn't found
     pub fn get(&self, column_name: &str) -> Option<&RowValues> {
         let index_opt = self.get_column_index(column_name);
         if let Some(idx) = index_opt {
@@ -87,38 +245,68 @@ impl CustomDbRow {
             None
         }
     }
+    
+    /// Get a value from the row by column index
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index of the column
+    ///
+    /// # Returns
+    ///
+    /// The value at the index, or None if the index is out of bounds
+    pub fn get_by_index(&self, index: usize) -> Option<&RowValues> {
+        self.rows.get(index)
+    }
 }
 
+/// A result set from a database query
+///
+/// This struct represents the result of a database query,
+/// containing the rows returned by the query and metadata.
 #[derive(Debug, Clone, Default)]
 pub struct ResultSet {
+    /// The rows returned by the query
     pub results: Vec<CustomDbRow>,
+    /// The number of rows affected (for DML statements)
     pub rows_affected: usize,
 }
 
 impl ResultSet {
-    pub fn new() -> ResultSet {
+    /// Create a new result set with a known capacity
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - The initial capacity for the result rows
+    ///
+    /// # Returns
+    ///
+    /// A new ResultSet instance with preallocated capacity
+    pub fn with_capacity(capacity: usize) -> ResultSet {
         ResultSet {
-            results: vec![],
+            results: Vec::with_capacity(capacity),
             rows_affected: 0,
         }
+    }
+    
+    /// Add a row to the result set
+    ///
+    /// # Arguments
+    ///
+    /// * `row` - The row to add
+    pub fn add_row(&mut self, row: CustomDbRow) {
+        self.results.push(row);
+        self.rows_affected += 1;
     }
 }
 
 impl MiddlewarePool {
-    pub async fn get(&self) -> Result<MiddlewarePool, SqlMiddlewareDbError> {
-        match self {
-            MiddlewarePool::Postgres(pool) => {
-                let pool = pool.clone();
-                Ok(MiddlewarePool::Postgres(pool))
-            }
-            MiddlewarePool::Sqlite(pool) => {
-                let pool = pool.clone();
-                Ok(MiddlewarePool::Sqlite(pool))
-            }
-        }
+    // Return a reference to self instead of cloning the entire pool
+    pub async fn get(&self) -> Result<&MiddlewarePool, SqlMiddlewareDbError> {
+        Ok(self)
     }
     pub async fn get_connection(
-        pool: MiddlewarePool,
+        pool: &MiddlewarePool,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         match pool {
             MiddlewarePool::Postgres(pool) => {
@@ -160,7 +348,11 @@ impl MiddlewarePoolConnection {
                 let client: &mut tokio_postgres::Client = pg_obj.as_mut();
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
-            _ => unimplemented!(),
+            MiddlewarePoolConnection::Sqlite(_) => {
+                Err(SqlMiddlewareDbError::Unimplemented(
+                    "interact_async is not supported for SQLite; use interact_sync instead".to_string()
+                ))
+            }
         }
     }
 
@@ -179,7 +371,11 @@ impl MiddlewarePoolConnection {
                     })
                     .await?
             }
-            _ => unimplemented!(),
+            MiddlewarePoolConnection::Postgres(_) => {
+                Err(SqlMiddlewareDbError::Unimplemented(
+                    "interact_sync is not supported for Postgres; use interact_async instead".to_string()
+                ))
+            }
         }
     }
 }
@@ -187,11 +383,20 @@ impl MiddlewarePoolConnection {
 // ----------------------------------------
 // Common impl blocks for DbError
 // ----------------------------------------
+// We don't need this anymore as thiserror already generates a Display implementation
+// The #[error] attributes on the enum variants define the format for each variant
+// This is commented out to show what was here originally
+/*
 impl fmt::Display for SqlMiddlewareDbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SqlMiddlewareDbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
             SqlMiddlewareDbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
+            SqlMiddlewareDbError::ConfigError(msg) => write!(f, "ConfigError: {}", msg),
+            SqlMiddlewareDbError::ConnectionError(msg) => write!(f, "ConnectionError: {}", msg),
+            SqlMiddlewareDbError::ParameterError(msg) => write!(f, "ParameterError: {}", msg),
+            SqlMiddlewareDbError::ExecutionError(msg) => write!(f, "ExecutionError: {}", msg),
+            SqlMiddlewareDbError::Unimplemented(msg) => write!(f, "Unimplemented: {}", msg),
             SqlMiddlewareDbError::Other(msg) => write!(f, "Other: {}", msg),
             SqlMiddlewareDbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
             SqlMiddlewareDbError::PoolErrorPostgres(pool_error) => {
@@ -200,6 +405,7 @@ impl fmt::Display for SqlMiddlewareDbError {
         }
     }
 }
+*/
 
 // ----------------------------------------
 // Impl for RowValues that is DB-agnostic
@@ -250,9 +456,9 @@ impl RowValues {
         None
     }
 
-    pub fn as_json(&self) -> Option<&serde_json::Value> {
-        if let RowValues::JSON(value) = self {
-            Some(value)
+    pub fn as_float(&self) -> Option<f64> {
+        if let RowValues::Float(value) = self {
+            Some(*value)
         } else {
             None
         }
@@ -264,18 +470,6 @@ impl RowValues {
         } else {
             None
         }
-    }
-
-    pub fn as_float(&self) -> Option<f64> {
-        if let RowValues::Float(value) = self {
-            Some(*value)
-        } else {
-            None
-        }
-    }
-
-    pub fn is_null(&self) -> bool {
-        matches!(self, RowValues::Null)
     }
 }
 
@@ -342,7 +536,9 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     }
 }
 
-/// Convert a slice of RowValues into database‐specific parameters.
+/// Convert a slice of RowValues into database-specific parameters.
+/// This trait provides a unified interface for converting generic RowValues
+/// to database-specific parameter types.
 pub trait ParamConverter<'a> {
     type Converted;
 
@@ -351,10 +547,21 @@ pub trait ParamConverter<'a> {
         params: &'a [RowValues],
         mode: ConversionMode,
     ) -> Result<Self::Converted, SqlMiddlewareDbError>;
+    
+    /// Check if this converter supports the given mode
+    /// 
+    /// # Arguments
+    /// * `mode` - The conversion mode to check
+    /// 
+    /// # Returns
+    /// * `bool` - Whether this converter supports the mode
+    fn supports_mode(_mode: ConversionMode) -> bool {
+        true // By default, support both modes
+    }
 }
 
 /// The conversion "mode".
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConversionMode {
     /// When the converted parameters will be used in a query (SELECT)
     Query,

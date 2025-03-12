@@ -18,7 +18,7 @@ use std::vec;
 use tokio::runtime::Runtime;
 
 #[test]
-fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> {
+fn sqlite_multiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
     rt.block_on(async {
         let x = "file::memory:?cache=shared".to_string();
@@ -26,7 +26,7 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
         // cfg.dbname = Some("xxx".to_string());
         let config_and_pool = ConfigAndPool::new_sqlite(x).await.unwrap();
         let pool = config_and_pool.pool.get().await?;
-        let sqlite_conn = MiddlewarePool::get_connection(pool).await?;
+        let sqlite_conn = MiddlewarePool::get_connection(&pool).await?;
         let sconn = match &sqlite_conn {
             MiddlewarePoolConnection::Sqlite(sconn) => sconn,
             _ => panic!("Only sqlite is supported "),
@@ -202,7 +202,7 @@ fn sqlite_mutltiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> 
 
         // this was a param above
         assert_eq!(*res.results[3].get("a").unwrap().as_int().unwrap(), 100);
-        // this was a param abvoe too
+        // this was a param above too
         assert_eq!(res.results[3].get("d").unwrap().as_float().unwrap(), 100.75);
         // dbg!(&res.results[3]);
         // this was hard-coded

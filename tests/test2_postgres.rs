@@ -8,7 +8,6 @@ use common::postgres::{ setup_postgres_container, stop_postgres_container };
 use sql_middleware::middleware::{
     ConfigAndPool,
     ConversionMode,
-    CustomDbRow,
     MiddlewarePool,
     MiddlewarePoolConnection,
     QueryAndParams,
@@ -67,7 +66,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
         let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
+        let conn = MiddlewarePool::get_connection(&pool).await?;
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
@@ -129,14 +128,14 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             Ok::<_, SqlMiddlewareDbError>(result_set)
         })?;
 
-        let expected_result = vec![CustomDbRow {
-            column_names: vec![
+        let expected_result = vec![sql_middleware::test_helpers::create_test_row(
+            vec![
                 "event_id".to_string(),
                 "espn_id".to_string(),
                 "name".to_string(),
                 "ins_ts".to_string()
             ],
-            rows: vec![
+            vec![
                 RowValues::Int(1),
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
@@ -146,8 +145,8 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                         "%Y-%m-%d %H:%M:%S"
                     ).unwrap()
                 )
-            ],
-        }];
+            ]
+        )];
 
         let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
 
