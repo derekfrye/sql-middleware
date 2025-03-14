@@ -5,16 +5,17 @@ Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crate
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
 ## Goals
-* Provide convenience functions for common sql query patterns while offering the underlying flexibility of deadpool-sqlite and deadpool-postgres.
-* Minimal overhead (just syntax convenience).
+* Convenience functions for common sql query patterns
+* Keep underlying flexibility of deadpool-sqlite and deadpool-postgres.
+* Minimal overhead (just syntax convenience/wrapper fns).
 
 ## Examples
 
-More examples available in the [tests dir](../tests/).
+More examples available in the [tests dir](../tests/), and this is in-use with a tiny little website app, [rusty-golf](https://github.com/derekfrye/rusty-golf).
 
 ### Importing
 
-Use the prelude to import everything you need with a single line:
+Use the prelude to import everything you need, or import stuff item by item:
 
 ```rust
 use sql_middleware::prelude::*;
@@ -69,15 +70,17 @@ let cfg =
 
 
 
+
+
 // same api for connection
 // sqlite just has fewer required 
 // config items (no port, etc.)
 let c = ConfigAndPool::
-    new_sqlite(cfg).await?;
+    new_sqlite(cfg)
+    .await?;
 let conn = MiddlewarePool
     ::get_connection(&c.pool)
     .await?;
-
 
 ```
 
@@ -104,7 +107,7 @@ SQLite
 ```rust
 // simple api for batch queries
 let ddl_query =
-    include_str!("test1.sql");
+    include_str!("/path/to/test1.sql");
 conn.execute_batch(&ddl_query).await?;
 ```
 
@@ -114,7 +117,7 @@ conn.execute_batch(&ddl_query).await?;
 ```rust
 // same api
 let ddl_query = 
-    include_str!("test1.sql");
+    include_str!("/path/to/test1.sql");
 conn.execute_batch(&ddl_query).await?;
 ```
 
@@ -141,6 +144,7 @@ SQLite
 
 ```rust
 // Create query with parameters
+// tokio-postgres uses $-style params
 let q = QueryAndParams::new(
     "INSERT INTO test (espn_id, name, ins_ts) 
      VALUES ($1, $2, $3)",
@@ -174,6 +178,7 @@ conn.execute_dml(
 
 ```rust
 // Create query with parameters
+// rusqlite uses ?-style params
 let q = QueryAndParams::new(
     "INSERT INTO test (espn_id, name, ins_ts) 
      VALUES (?1, ?2, ?3)",
@@ -209,7 +214,7 @@ conn.execute_dml(
 
 ### Queries without parameters
 
-You can create queries without parameters using `new_without_params`:
+You can create queries without parameters using `new_without_params`, same whether using sqlite or postgres:
 
 ```rust
 let query = QueryAndParams::new_without_params(
@@ -220,7 +225,7 @@ let results = conn.execute_select(&query.query, &[]).await?;
 
 ### Transactions with custom logic
 
-Here, the APIs do differ as they use the underlying database's transaction capabilities. Each database backend has its own transaction handling approach.
+Here, the APIs differ, because the underlying database's transaction approach differs. It doesn't appear easy to make these consistent. But this is the way to do queries if you need custom app logic between `connection.transaction()` and `connection.commit()`.
 
 <table>
 <tr>
@@ -237,15 +242,17 @@ SQLite
 ```rust
 // Get PostgreSQL-specific connection
 let pg_conn = match &conn {
-    MiddlewarePoolConnection::Postgres(pg) => pg,
+    MiddlewarePoolConnection::Postgres(pg) 
+        => pg,
     _ => panic!("Expected Postgres connection"),
 };
 
 // Get client
 let pg_client = &pg_conn.client;
 
-// Start transaction
 let tx = pg_client.transaction().await?;
+
+// could run custom logic anwhere between stmts
 
 // Prepare statement
 let stmt = tx.prepare(&q.query).await?;
@@ -263,8 +270,14 @@ let rows = tx.execute(
     converted_params.as_refs()
 ).await?;
 
-// Commit transaction
 tx.commit().await?;
+
+
+
+
+
+
+
 ```
 
 </td>
@@ -273,14 +286,14 @@ tx.commit().await?;
 ```rust
 // Get SQLite-specific connection
 let sqlite_conn = match &conn {
-    MiddlewarePoolConnection::Sqlite(sqlite) => sqlite,
+    MiddlewarePoolConnection::Sqlite(sqlite) 
+        => sqlite,
     _ => panic!("Expected SQLite connection"),
 };
 
-// Use interact for async transaction handling
+// Use interact for async tx
 let rows = sqlite_conn
     .interact(move |conn| {
-        // Start transaction
         let tx = conn.transaction()?;
         
         // Convert parameters
@@ -290,6 +303,8 @@ let rows = sqlite_conn
                 ConversionMode::Execute
             )?;
             
+// could run custom logic anwhere between stmts
+
         // Create parameter references
         let param_refs: Vec<&dyn ToSql> =
             converted_params.0.iter()
@@ -302,7 +317,6 @@ let rows = sqlite_conn
             stmt.execute(&param_refs[..])?
         };
         
-        // Commit transaction
         tx.commit()?;
         
         Ok::<_, SqlMiddlewareDbError>(rows)
@@ -327,6 +341,7 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
 ) -> Result<(), SqlMiddlewareDbError> {
     let query = QueryAndParams::new(
         // Use appropriate parameter syntax for your DB
+        // if you don't, it will probably fail
         "INSERT INTO users (id, name) VALUES ($1, $2)",
         vec![
             RowValues::Int(user_id),
