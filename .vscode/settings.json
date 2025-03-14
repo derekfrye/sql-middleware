@@ -6,8 +6,10 @@
         "passwordx",
         "pgconn",
         "recid",
+        "rustdoc",
         "sconn",
         "Seedable",
+        "stmts",
         "tbls",
         "thiserror"
     ]

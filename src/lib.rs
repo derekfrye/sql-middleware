@@ -42,6 +42,8 @@
  * ```
  */
 
+ #![forbid(unsafe_code)]
+
 // Re-export everything that should be part of the public API
 pub mod prelude {
     //! Convenient imports for common functionality.

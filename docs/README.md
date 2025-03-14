@@ -1,5 +1,7 @@
 # sql-middleware
 
+![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
+
 Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres) and [rusqlite](https://crates.io/crates/rusqlite), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api (via [deadpool-sqlite](https://github.com/deadpool-rs/deadpool) and tokio-postgres). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
 
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
@@ -252,7 +254,7 @@ let pg_client = &pg_conn.client;
 
 let tx = pg_client.transaction().await?;
 
-// could run custom logic anwhere between stmts
+// could run custom logic anywhere between stmts
 
 // Prepare statement
 let stmt = tx.prepare(&q.query).await?;
@@ -303,7 +305,7 @@ let rows = sqlite_conn
                 ConversionMode::Execute
             )?;
             
-// could run custom logic anwhere between stmts
+// could run custom logic anywhere between stmts
 
         // Create parameter references
         let param_refs: Vec<&dyn ToSql> =
