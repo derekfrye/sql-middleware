@@ -312,7 +312,8 @@ async fn run_test_logic(
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Sqlite(ref mut xx) => {
+        MiddlewarePoolConnection::Sqlite(xx) => {
+            let xx = &mut *xx;
             xx.interact(move |xxx| {
                 let tx = xxx.transaction()?;
                 {

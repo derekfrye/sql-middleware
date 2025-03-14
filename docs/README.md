@@ -12,6 +12,14 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 
 More examples available in the [tests dir](../tests/).
 
+### Importing
+
+Use the prelude to import everything you need with a single line:
+
+```rust
+use sql_middleware::prelude::*;
+```
+
 ### Get a connection from the pool
 
 Similar api regardless of db backend.
@@ -44,9 +52,8 @@ cfg.password = Some("passwd"
 let c = ConfigAndPool
     ::new_postgres(cfg)
     .await?;
-let pool = c.pool.get().await?;
 let conn = MiddlewarePool
-    ::get_connection(pool)
+    ::get_connection(&c.pool)
     .await?;
 
 ```
@@ -62,16 +69,13 @@ let cfg =
 
 
 
-
-
 // same api for connection
 // sqlite just has fewer required 
 // config items (no port, etc.)
 let c = ConfigAndPool::
     new_sqlite(cfg).await?;
-let pool = c.pool.get().await?;
 let conn = MiddlewarePool
-    ::get_connection(pool)
+    ::get_connection(&c.pool)
     .await?;
 
 
@@ -121,7 +125,7 @@ conn.execute_batch(&ddl_query).await?;
 
 ### Parameterized Queries
 
-Consistent api for running parametrized queries. Includes a data structure for queries and parameters that works regardless of db backend. (Notice param difference between SQLite `?1` and Postgres `$1`.)
+Consistent api for running parametrized queries using the `QueryAndParams` struct. Database-specific parameter syntax is handled by the middleware.
 
 <table>
 <tr>
@@ -136,12 +140,11 @@ SQLite
 <td>
 
 ```rust
-let q = QueryAndParams {
-    query: 
-        "INSERT INTO test (espn_id, name
-        , ins_ts) VALUES ($1, $2
-        , $3)".to_string(),
-    params: vec![
+// Create query with parameters
+let q = QueryAndParams::new(
+    "INSERT INTO test (espn_id, name, ins_ts) 
+     VALUES ($1, $2, $3)",
+    vec![
         RowValues::Int(123456),
         RowValues::Text("test name"
             .to_string()),
@@ -150,19 +153,16 @@ let q = QueryAndParams {
                 "2021-08-06 16:00:00"
                 , "%Y-%m-%d %H:%M:%S")?,
         ),
-    ],
-};
+    ]);
 
-// consistent way to
-// convert query & params
-// to what db backend expects
+// Convert params using the ParamConverter trait
 let converted_params = 
-    convert_sql_params
-        ::<PostgresParams>(
-            &q.params,
-            ConversionMode::Execute
-        )?;
+    convert_sql_params::<PostgresParams>(
+        &q.params,
+        ConversionMode::Execute
+    )?;
 
+// Execute the query
 conn.execute_dml(
     &q.query, 
     &converted_params)
@@ -173,12 +173,11 @@ conn.execute_dml(
 <td>
 
 ```rust
-let q = QueryAndParams {
-    query: 
-        "INSERT INTO test (espn_id, name
-        , ins_ts) VALUES (?1, ?2
-        , ?3)".to_string(),
-    params: vec![
+// Create query with parameters
+let q = QueryAndParams::new(
+    "INSERT INTO test (espn_id, name, ins_ts) 
+     VALUES (?1, ?2, ?3)",
+    vec![
         RowValues::Int(123456),
         RowValues::Text("test name"
             .to_string()),
@@ -187,19 +186,16 @@ let q = QueryAndParams {
                 "2021-08-06 16:00:00"
                 , "%Y-%m-%d %H:%M:%S")?,
         ),
-    ],
-};
+    ]);
 
-
-
-// similar api for query parameters
-let converted_params 
-    = convert_sql_params
-        ::<SqliteParamsExecute>(
-            &q.params,
-            ConversionMode::Execute
+// Similar API for parameter conversion
+let converted_params = 
+    convert_sql_params::<SqliteParamsExecute>(
+        &q.params,
+        ConversionMode::Execute
     )?;
 
+// Execute the query
 conn.execute_dml(
     &q.query, 
     &converted_params)
@@ -210,10 +206,21 @@ conn.execute_dml(
 </td>
 </tr>
 </table>
+
+### Queries without parameters
+
+You can create queries without parameters using `new_without_params`:
+
+```rust
+let query = QueryAndParams::new_without_params(
+    "SELECT * FROM users"
+);
+let results = conn.execute_select(&query.query, &[]).await?;
+```
 
 ### Transactions with custom logic
 
-Here, the APIs do differ. (Appears not easy to consolidate, so idk that we'll ever have similar API.) So if you need transactions with rust code between `connection.transaction()` and `connection.commit()`, its supported, but it becomes a bit more database-specific.
+Here, the APIs do differ as they use the underlying database's transaction capabilities. Each database backend has its own transaction handling approach.
 
 <table>
 <tr>
@@ -228,76 +235,111 @@ SQLite
 <td>
 
 ```rust
-// full control over transactions
-let tx = conn.transaction().await?;
+// Get PostgreSQL-specific connection
+let pg_conn = match &conn {
+    MiddlewarePoolConnection::Postgres(pg) => pg,
+    _ => panic!("Expected Postgres connection"),
+};
 
-// could run other code in between too...
-tx.prepare(
-    q.query.as_str())
-    .await?;
+// Get client
+let pg_client = &pg_conn.client;
 
-tx.execute(
-    q.query.as_str()
-    , &converted_params.as_refs()
-    ).await?;
+// Start transaction
+let tx = pg_client.transaction().await?;
 
-tx.commit().await?
+// Prepare statement
+let stmt = tx.prepare(&q.query).await?;
 
+// Convert parameters
+let converted_params = 
+    convert_sql_params::<PostgresParams>(
+        &q.params,
+        ConversionMode::Execute
+    )?;
 
+// Execute query
+let rows = tx.execute(
+    &stmt, 
+    converted_params.as_refs()
+).await?;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Commit transaction
+tx.commit().await?;
 ```
 
 </td>
 <td>
 
 ```rust
-// little more needed up-front
-// to get an object with interact()
-let sconn = match &conn {
-    MiddlewarePoolConnection::Sqlite(sconn) 
-        => sconn,
-    _
-        => panic!("Sqlite only demo."),
+// Get SQLite-specific connection
+let sqlite_conn = match &conn {
+    MiddlewarePoolConnection::Sqlite(sqlite) => sqlite,
+    _ => panic!("Expected SQLite connection"),
 };
 
-sconn
-    .interact(move |xxx| {
-        let tx = xxx.transaction()?;
-        let mut stmt = tx
-            .prepare(&q.query)?;
+// Use interact for async transaction handling
+let rows = sqlite_conn
+    .interact(move |conn| {
+        // Start transaction
+        let tx = conn.transaction()?;
+        
+        // Convert parameters
         let converted_params = 
-            convert_sql_params
-                ::<SqliteParamsExecute>(
-                    &q.params,
-                    ConversionMode::Execute
-                )?;
-
-        stmt.execute(
-            converted_params
-            .0
-        )?;
-    }
-
-    tx.commit()?;
-    Ok::<_, SqlMiddlewareDbError>(())
-})
-.await?
+            convert_sql_params::<SqliteParamsExecute>(
+                &q.params,
+                ConversionMode::Execute
+            )?;
+            
+        // Create parameter references
+        let param_refs: Vec<&dyn ToSql> =
+            converted_params.0.iter()
+                .map(|v| v as &dyn ToSql)
+                .collect();
+        
+        // Prepare and execute
+        let rows = {
+            let mut stmt = tx.prepare(&q.query)?;
+            stmt.execute(&param_refs[..])?
+        };
+        
+        // Commit transaction
+        tx.commit()?;
+        
+        Ok::<_, SqlMiddlewareDbError>(rows)
+    })
+    .await?;
 ```
 
 </td>
 </tr>
 </table>
+
+### Using the AsyncDatabaseExecutor trait
+
+The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations:
+
+```rust
+// This works for both PostgreSQL and SQLite connections
+async fn insert_user<T: AsyncDatabaseExecutor>(
+    conn: &T,
+    user_id: i32,
+    name: &str
+) -> Result<(), SqlMiddlewareDbError> {
+    let query = QueryAndParams::new(
+        // Use appropriate parameter syntax for your DB
+        "INSERT INTO users (id, name) VALUES ($1, $2)",
+        vec![
+            RowValues::Int(user_id),
+            RowValues::Text(name.to_string()),
+        ]
+    );
+    
+    // Execute query through the trait
+    conn.execute_dml(
+        &query.query,
+        &conn.convert_params(&query.params, ConversionMode::Execute)?
+    ).await?;
+    
+    Ok(())
+}
+```
