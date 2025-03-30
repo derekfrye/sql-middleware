@@ -1,11 +1,15 @@
 {
     "cSpell.words": [
         "AUTOINCREMENT",
+        "chacha",
         "golfstatistic",
         "passwordx",
         "pgconn",
         "recid",
+        "rustdoc",
         "sconn",
+        "Seedable",
+        "stmts",
         "tbls",
         "thiserror"
     ]

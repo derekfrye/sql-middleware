@@ -2,6 +2,15 @@
 name = "sql-middleware"
 version = "0.1.5"
 edition = "2024"
+authors = ["Derek Frye <derek.frye@gmail.com>"]
+license = "BSD-2-Clause"
+description = "Lightweight & similar async wrappers for tokio-postgres and rusqlite."
+repository = "https://github.com/derekfrye/sql-middleware"
+readme = "docs/README.md"
+homepage = "https://github.com/derekfrye/sql-middleware"
+keywords = ["sql", "sqlx", "sqlite", "postgres", "postgresql"]
+documentation = "https://docs.rs/sql-middleware"
+
 
 [dependencies]
 # checked March 2025
@@ -18,7 +27,19 @@ deadpool = "0"
 thiserror = "2"
 async-trait = "0"
 
+[package.metadata.docs.rs]
+rustdoc-args = ["--deny", "unsafe_code"]
+
 
 [dependencies.tokio-util]
 version = "0"
 features = ["full"]
+
+[dev-dependencies]
+criterion = { version = "0", features = ["async_tokio"] }
+rand = "0"
+rand_chacha = "0"
+
+[[bench]]
+name = "database_benchmark"
+harness = false
