@@ -1,8 +1,9 @@
 // use rusty_golf::controller::score;
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
-use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use deadpool_sqlite::rusqlite::{ self, params };
+#[cfg(feature = "test-utils")]
+use sql_middleware::test_utils::postgres::{setup_postgres_container, stop_postgres_container};
 use sql_middleware::{
     convert_sql_params,
     middleware::{
@@ -13,9 +14,6 @@ use sql_middleware::{
     SqliteParamsExecute, SqliteParamsQuery,
 };
 use tokio::runtime::Runtime;
-mod common {
-    pub mod postgres;
-}
 
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {

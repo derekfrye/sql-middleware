@@ -11,6 +11,8 @@ homepage = "https://github.com/derekfrye/sql-middleware"
 keywords = ["sql", "sqlx", "sqlite", "postgres", "postgresql"]
 documentation = "https://docs.rs/sql-middleware"
 
+[features]
+test-utils = []
 
 [dependencies]
 # checked March 2025
@@ -39,6 +41,7 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
+sql-middleware = { path = ".", features = ["test-utils"] }
 
 [[bench]]
 name = "database_benchmark"

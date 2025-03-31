@@ -2,7 +2,6 @@
 // use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 // use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
 use chrono::NaiveDateTime;
-use common::postgres::{ setup_postgres_container, stop_postgres_container };
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
@@ -19,12 +18,11 @@ use sql_middleware::{
     PostgresParams,
     SqlMiddlewareDbError,
 };
+#[cfg(feature = "test-utils")]
+use sql_middleware::test_utils::postgres::{setup_postgres_container, stop_postgres_container};
 
 use std::vec;
 use tokio::runtime::Runtime;
-mod common {
-    pub mod postgres;
-}
 
 #[test]
 fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {

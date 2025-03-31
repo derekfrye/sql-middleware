@@ -44,6 +44,10 @@
 
  #![forbid(unsafe_code)]
 
+// Test utilities module - only compiled with test-utils feature
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
+
 // Re-export everything that should be part of the public API
 pub mod prelude {
     //! Convenient imports for common functionality.
