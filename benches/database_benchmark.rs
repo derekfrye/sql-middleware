@@ -8,7 +8,7 @@ use sql_middleware::{
     SqlMiddlewareDbError,
 };
 #[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::postgres::{ setup_postgres_container, stop_postgres_container };
+use sql_middleware::test_utils::testing_postgres::{ setup_postgres_container, stop_postgres_container };
 use std::{ path::Path, fs };
 use tokio::runtime::Runtime;
 
@@ -142,7 +142,7 @@ async fn setup_postgres_db(
     db_user: &str,
     db_pass: &str,
     db_name: &str
-) -> Result<(ConfigAndPool, sql_middleware::test_utils::postgres::PostgresContainer), Box<dyn std::error::Error>> {
+) -> Result<(ConfigAndPool, sql_middleware::test_utils::testing_postgres::PostgresContainer), Box<dyn std::error::Error>> {
     let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());

@@ -3,7 +3,7 @@
 
 // use deadpool_sqlite::rusqlite::{ self, params };
 #[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::postgres::{setup_postgres_container, stop_postgres_container};
+use sql_middleware::test_utils::testing_postgres::{setup_postgres_container, stop_postgres_container};
 use sql_middleware::{
     convert_sql_params,
     middleware::{
