@@ -46,3 +46,7 @@ sql-middleware = { path = ".", features = ["test-utils"] }
 [[bench]]
 name = "database_benchmark"
 harness = false
+
+[profile.bench]
+debug = true
+opt-level = 0
