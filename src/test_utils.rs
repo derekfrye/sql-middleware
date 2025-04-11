@@ -10,7 +10,7 @@ use std::{
 use tokio::runtime::Runtime;
 
 /// Test utilities for PostgreSQL testing and benchmarking
-pub mod testing_postgres {
+pub mod postgres {
     use super::*;
 
     /// Represents a running PostgreSQL container

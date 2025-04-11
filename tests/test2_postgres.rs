@@ -19,7 +19,7 @@ use sql_middleware::{
     SqlMiddlewareDbError,
 };
 #[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::testing_postgres::{setup_postgres_container, stop_postgres_container};
+use sql_middleware::test_utils::postgres::{setup_postgres_container, stop_postgres_container};
 
 use std::vec;
 use tokio::runtime::Runtime;
