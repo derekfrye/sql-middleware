@@ -4,22 +4,29 @@ use chrono::NaiveDateTime;
 use clap::ValueEnum;
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
+use deadpool::managed::Pool;
 use rusqlite::Connection as SqliteConnectionType;
 use serde_json::Value as JsonValue;
+use std::ops::DerefMut;
 use thiserror::Error;
+use tokio::net::TcpStream;
+use tokio_util::compat::Compat;
+use tiberius::Client as TiberiusClient;
 
-use crate::{postgres, sqlite};
+use crate::{postgres, sqlite, mssql};
 pub type SqliteWritePool = DeadpoolSqlitePool;
 
 /// Wrapper around a database connection for generic code
 /// 
-/// This enum allows code to handle either PostgreSQL or SQLite 
+/// This enum allows code to handle PostgreSQL, SQLite, or SQL Server
 /// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
     /// PostgreSQL client connection
     Postgres(&'a mut tokio_postgres::Client),
     /// SQLite database connection
     Sqlite(&'a mut SqliteConnectionType),
+    /// SQL Server client connection
+    Mssql(&'a mut TiberiusClient<Compat<TcpStream>>),
 }
 
 /// A query and its parameters bundled together
@@ -107,6 +114,8 @@ pub enum DatabaseType {
     Postgres,
     /// SQLite database
     Sqlite,
+    /// SQL Server database
+    Mssql,
 }
 
 /// Connection pool for database access
@@ -119,6 +128,8 @@ pub enum MiddlewarePool {
     Postgres(DeadpoolPostgresPool),
     /// SQLite connection pool
     Sqlite(DeadpoolSqlitePool),
+    /// SQL Server connection pool
+    Mssql(Pool<crate::mssql::MssqlManager>),
 }
 
 /// Configuration and connection pool for a database
@@ -142,10 +153,19 @@ pub enum SqlMiddlewareDbError {
     SqliteError(#[from] rusqlite::Error),
     
     #[error(transparent)]
+    MssqlError(#[from] tiberius::error::Error),
+    
+    #[error(transparent)]
     PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
     
     #[error(transparent)]
     PoolErrorSqlite(#[from] deadpool::managed::PoolError<rusqlite::Error>),
+    
+    #[error(transparent)]
+    PoolErrorMssql(#[from] deadpool::managed::PoolError<tiberius::error::Error>),
+    
+    #[error("SQL Server connection pool error: {0}")]
+    TiberiusPoolError(String),
     
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -323,6 +343,13 @@ impl MiddlewarePool {
                     .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
                 Ok(MiddlewarePoolConnection::Sqlite(conn))
             }
+            MiddlewarePool::Mssql(pool) => {
+                let conn = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
+                Ok(MiddlewarePoolConnection::Mssql(conn))
+            }
         }
     }
 }
@@ -331,6 +358,7 @@ impl MiddlewarePool {
 pub enum MiddlewarePoolConnection {
     Postgres(PostgresObject),
     Sqlite(SqliteObject),
+    Mssql(deadpool::managed::Object<crate::mssql::MssqlManager>),
 }
 
 impl MiddlewarePoolConnection {
@@ -347,6 +375,11 @@ impl MiddlewarePoolConnection {
                 // Assuming PostgresObject dereferences to tokio_postgres::Client
                 let client: &mut tokio_postgres::Client = pg_obj.as_mut();
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
+            }
+            MiddlewarePoolConnection::Mssql(mssql_obj) => {
+                // Get client from Object
+                let client = mssql_obj.deref_mut();
+                Ok(func(AnyConnWrapper::Mssql(client)).await)
             }
             MiddlewarePoolConnection::Sqlite(_) => {
                 Err(SqlMiddlewareDbError::Unimplemented(
@@ -371,9 +404,9 @@ impl MiddlewarePoolConnection {
                     })
                     .await?
             }
-            MiddlewarePoolConnection::Postgres(_) => {
+            MiddlewarePoolConnection::Postgres(_) | MiddlewarePoolConnection::Mssql(_) => {
                 Err(SqlMiddlewareDbError::Unimplemented(
-                    "interact_sync is not supported for Postgres; use interact_async instead".to_string()
+                    "interact_sync is not supported for Postgres or SQL Server; use interact_async instead".to_string()
                 ))
             }
         }
@@ -504,6 +537,9 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_batch(sqlite_client, query).await
             }
+            MiddlewarePoolConnection::Mssql(mssql_client) => {
+                mssql::execute_batch(mssql_client, query).await
+            }
         }
     }
     async fn execute_select(
@@ -518,6 +554,9 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_select(sqlite_client, query, params).await
             }
+            MiddlewarePoolConnection::Mssql(mssql_client) => {
+                mssql::execute_select(mssql_client, query, params).await
+            }
         }
     }
     async fn execute_dml(
@@ -531,6 +570,9 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             }
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_dml(sqlite_client, query, params).await
+            }
+            MiddlewarePoolConnection::Mssql(mssql_client) => {
+                mssql::execute_dml(mssql_client, query, params).await
             }
         }
     }
