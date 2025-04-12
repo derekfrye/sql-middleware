@@ -102,7 +102,10 @@ pub mod testing_postgres {
                     let pgconn = match conn? {
                         MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
                         MiddlewarePoolConnection::Sqlite(_) => {
-                            panic!("Only sqlite is supported");
+                            panic!("Only postgres is supported for this test");
+                        },
+                        MiddlewarePoolConnection::Mssql(_) => {
+                            panic!("Only postgres is supported for this test");
                         }
                     };
 

@@ -4,7 +4,6 @@ use chrono::NaiveDateTime;
 use clap::ValueEnum;
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
-use deadpool::managed::Pool;
 use rusqlite::Connection as SqliteConnectionType;
 use serde_json::Value as JsonValue;
 use std::ops::DerefMut;
@@ -12,6 +11,7 @@ use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_util::compat::Compat;
 use tiberius::Client as TiberiusClient;
+use deadpool_tiberius::Pool as TiberiusPool;
 
 use crate::{postgres, sqlite, mssql};
 pub type SqliteWritePool = DeadpoolSqlitePool;
@@ -122,14 +122,25 @@ pub enum DatabaseType {
 ///
 /// This enum wraps the different connection pool types for the
 /// supported database engines.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum MiddlewarePool {
     /// PostgreSQL connection pool
     Postgres(DeadpoolPostgresPool),
     /// SQLite connection pool
     Sqlite(DeadpoolSqlitePool),
     /// SQL Server connection pool
-    Mssql(Pool<crate::mssql::MssqlManager>),
+    Mssql(TiberiusPool),
+}
+
+// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+impl std::fmt::Debug for MiddlewarePool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Postgres(pool) => f.debug_tuple("Postgres").field(pool).finish(),
+            Self::Sqlite(pool) => f.debug_tuple("Sqlite").field(pool).finish(),
+            Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
+        }
+    }
 }
 
 /// Configuration and connection pool for a database
@@ -354,11 +365,21 @@ impl MiddlewarePool {
     }
 }
 
-#[derive(Debug)]
 pub enum MiddlewarePoolConnection {
     Postgres(PostgresObject),
     Sqlite(SqliteObject),
-    Mssql(deadpool::managed::Object<crate::mssql::MssqlManager>),
+    Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
+}
+
+// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+impl std::fmt::Debug for MiddlewarePoolConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Postgres(conn) => f.debug_tuple("Postgres").field(conn).finish(),
+            Self::Sqlite(conn) => f.debug_tuple("Sqlite").field(conn).finish(),
+            Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusConnection>").finish(),
+        }
+    }
 }
 
 impl MiddlewarePoolConnection {

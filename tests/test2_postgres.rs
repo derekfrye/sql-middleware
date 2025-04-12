@@ -68,7 +68,10 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
-                panic!("Only sqlite is supported");
+                panic!("Only postgres is supported in this test");
+            },
+            MiddlewarePoolConnection::Mssql(_) => {
+                panic!("Only postgres is supported in this test");
             }
         };
 

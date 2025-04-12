@@ -125,7 +125,6 @@ pub mod prelude {
     pub use crate::SqliteParamsQuery;
     pub use crate::MssqlParams;
     pub use crate::MssqlClient;
-    pub use crate::MssqlManager;
     pub use crate::create_mssql_client;
 }
 
@@ -163,7 +162,6 @@ pub use mssql::Params as MssqlParams;
 pub use mssql::build_result_set as mssql_build_result_set;
 pub use mssql::create_mssql_client;
 pub use mssql::MssqlClient;
-pub use mssql::MssqlManager;
 
 // Module to help with testing - needed for existing tests
 pub mod test_helpers {

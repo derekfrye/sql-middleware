@@ -1,43 +1,30 @@
-// mssql.rs - SQL Server support via Tiberius
+// mssql.rs - SQL Server support via Tiberius and deadpool-tiberius
 //! SQL Server (MSSQL) connection and query handling via Tiberius
 //! 
 //! This module provides the implementation of the middleware for Microsoft SQL Server.
-//! It uses the Tiberius crate for connecting to and querying SQL Server databases.
+//! It uses the Tiberius crate for connecting to and querying SQL Server databases,
+//! with connection pooling provided by deadpool.
 
 use crate::middleware::{
     ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter,
     ResultSet, RowValues, SqlMiddlewareDbError,
 };
-use async_trait::async_trait;
-use chrono::{Datelike, NaiveDateTime, Timelike};
-use deadpool::managed::{Manager, Object, Pool, RecycleError};
+use chrono::NaiveDateTime;
+use deadpool::managed::Object;
+use deadpool_tiberius::Manager as TiberiusManager;
 use futures_util::TryStreamExt;
 use std::borrow::Cow;
 use std::fmt;
 use std::ops::DerefMut;
-use tiberius::{AuthMethod, Client, ColumnData, IntoSql, ToSql};
+use tiberius::{Client, ColumnData, IntoSql, ToSql};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 /// Type alias for SQL Server client
 pub type MssqlClient = Client<Compat<TcpStream>>;
 
-/// Manager for SQL Server connections (used with Deadpool)
-#[derive(Clone)]
-pub struct MssqlManager {
-    config: tiberius::Config,
-    server: String,
-    port: u16,
-}
-
-impl fmt::Debug for MssqlManager {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MssqlManager")
-            .field("server", &self.server)
-            .field("port", &self.port)
-            .finish()
-    }
-}
+/// Type alias for SQL Server Manager from deadpool-tiberius
+pub type MssqlManager = TiberiusManager;
 
 /// Parameter wrapper for SQL Server
 pub enum SqlParam<'a> {
@@ -75,41 +62,6 @@ impl<'a> IntoSql<'a> for SqlParam<'a> {
     }
 }
 
-// Implementation of the deadpool Manager trait for MssqlManager
-#[async_trait]
-impl Manager for MssqlManager {
-    type Type = MssqlClient;
-    type Error = tiberius::error::Error;
-
-    async fn create(&self) -> Result<Self::Type, Self::Error> {
-        let config = self.config.clone();
-        
-        // Connect to SQL Server
-        let addr = format!("{}:{}", self.server, self.port);
-        let tcp = TcpStream::connect(addr).await
-            .map_err(|e| tiberius::error::Error::Io {
-                kind: e.kind(),
-                message: format!("TCP connection error: {}", e),
-            })?;
-        
-        let tcp = tcp.compat_write();
-        Client::connect(config, tcp).await
-    }
-
-    async fn recycle(
-        &self,
-        client: &mut Self::Type,
-        _metrics: &deadpool::managed::Metrics,
-    ) -> Result<(), RecycleError<Self::Error>> {
-        // Check if connection is still usable by running a simple query
-        let query = tiberius::Query::new("SELECT 1");
-        match query.query(client).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(RecycleError::Backend(e)),
-        }
-    }
-}
-
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with SQL Server (MSSQL)
     pub async fn new_mssql(
@@ -118,28 +70,25 @@ impl ConfigAndPool {
         user: String,
         password: String,
         port: Option<u16>,
-        _instance_name: Option<String>, // For future named instance support
+        instance_name: Option<String>, // For named instance support
     ) -> Result<Self, SqlMiddlewareDbError> {
-        // Configure SQL Server connection
-        let mut config = tiberius::Config::new();
-        config.host(&server);
-        config.database(&database);
-        config.authentication(AuthMethod::sql_server(&user, &password));
+        // Create deadpool-tiberius manager and configure it
+        let mut manager = deadpool_tiberius::Manager::new()
+            .host(&server)
+            .port(port.unwrap_or(1433))
+            .database(&database)
+            .basic_authentication(&user, &password)
+            .trust_cert();
+            
+        // Add instance name if provided
+        if let Some(instance) = &instance_name {
+            manager = manager.instance_name(instance);
+        }
         
-        let port_val = port.unwrap_or(1433);
-        config.port(port_val);
-        
-        // Create manager for SQL Server connections
-        let manager = MssqlManager {
-            config,
-            server,
-            port: port_val,
-        };
-        
-        // Create deadpool connection pool
-        let pool = Pool::builder(manager)
+        // Create pool
+        let pool = manager
             .max_size(20)
-            .build()
+            .create_pool()
             .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQL Server pool: {}", e)))?;
 
         Ok(ConfigAndPool {
@@ -193,11 +142,17 @@ fn row_value_to_sql_param<'a>(row_value: &'a RowValues) -> SqlParam<'a> {
         RowValues::Text(s) => SqlParam::Text(s),
         RowValues::Bool(b) => SqlParam::Bool(*b),
         RowValues::Timestamp(dt) => {
-            // For timestamps, convert to ISO-8601 string
-            SqlParam::Text(&format!("{}", dt))
+            // For timestamps, convert to ISO-8601 string format
+            // Using a string representation for timestamps to avoid lifetime issues
+            let dt_str = dt.to_string();
+            SqlParam::Text(Box::leak(dt_str.into_boxed_str()))
         },
         RowValues::Null => SqlParam::None,
-        RowValues::JSON(jsval) => SqlParam::Text(jsval.to_string().as_str()),
+        RowValues::JSON(jsval) => {
+            // Using Box::leak to extend the string's lifetime
+            let json_str = jsval.to_string();
+            SqlParam::Text(Box::leak(json_str.into_boxed_str()))
+        },
         RowValues::Blob(bytes) => SqlParam::Binary(bytes),
     }
 }
@@ -403,16 +358,22 @@ pub async fn create_mssql_client(
     user: &str,
     password: &str,
     port: Option<u16>,
-    _instance_name: Option<&str>, // Not fully supported yet
+    instance_name: Option<&str>,
 ) -> Result<MssqlClient, SqlMiddlewareDbError> {
     let mut config = tiberius::Config::new();
     
     config.host(server);
     config.database(database);
-    config.authentication(AuthMethod::sql_server(user, password));
+    config.authentication(tiberius::AuthMethod::sql_server(user, password));
     
     let port_val = port.unwrap_or(1433);
     config.port(port_val);
+    
+    if let Some(instance) = instance_name {
+        config.instance_name(instance);
+    }
+    
+    config.trust_cert(); // For testing/development
 
     // Create TCP stream 
     let tcp = TcpStream::connect(format!("{}:{}", server, port_val)).await
