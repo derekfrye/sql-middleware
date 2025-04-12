@@ -301,6 +301,8 @@ pub struct ResultSet {
     pub results: Vec<CustomDbRow>,
     /// The number of rows affected (for DML statements)
     pub rows_affected: usize,
+    /// Column names shared by all rows (to avoid duplicating in each row)
+    column_names: Option<std::sync::Arc<Vec<String>>>,
 }
 
 impl ResultSet {
@@ -317,15 +319,71 @@ impl ResultSet {
         ResultSet {
             results: Vec::with_capacity(capacity),
             rows_affected: 0,
+            column_names: None,
         }
+    }
+    
+    /// Set the column names for this result set (to be shared by all rows)
+    pub fn set_column_names(&mut self, column_names: std::sync::Arc<Vec<String>>) {
+        self.column_names = Some(column_names);
+    }
+    
+    /// Get the column names for this result set
+    pub fn get_column_names(&self) -> Option<&std::sync::Arc<Vec<String>>> {
+        self.column_names.as_ref()
     }
     
     /// Add a row to the result set
     ///
     /// # Arguments
     ///
+    /// * `row_values` - The values for this row
+    pub fn add_row_values(&mut self, row_values: Vec<RowValues>) {
+        if let Some(column_names) = &self.column_names {
+            // Build a cache of column name to index for faster lookups
+            // We only need to build this cache once and reuse it
+            lazy_static::lazy_static! {
+                static ref CACHE_MAP: std::sync::Mutex<std::collections::HashMap<usize, std::sync::Arc<std::collections::HashMap<String, usize>>>> = std::sync::Mutex::new(std::collections::HashMap::new());
+            }
+            
+            // Use the pointer to column_names as a key for the cache
+            let ptr = column_names.as_ref().as_ptr() as usize;
+            let cache = {
+                let mut cache_map = CACHE_MAP.lock().unwrap();
+                let cache_entry = cache_map.entry(ptr).or_insert_with(|| {
+                    std::sync::Arc::new(
+                        column_names
+                            .iter()
+                            .enumerate()
+                            .map(|(i, name)| (name.to_string(), i))
+                            .collect::<std::collections::HashMap<_, _>>()
+                    )
+                });
+                cache_entry.clone()
+            };
+            
+            let row = CustomDbRow {
+                column_names: column_names.clone(),
+                rows: row_values,
+                column_index_cache: cache,
+            };
+            
+            self.results.push(row);
+            self.rows_affected += 1;
+        }
+    }
+    
+    /// Add a row to the result set (legacy method, less efficient)
+    ///
+    /// # Arguments
+    ///
     /// * `row` - The row to add
     pub fn add_row(&mut self, row: CustomDbRow) {
+        // If column names haven't been set yet, use the ones from this row
+        if self.column_names.is_none() {
+            self.column_names = Some(row.column_names.clone());
+        }
+        
         self.results.push(row);
         self.rows_affected += 1;
     }
@@ -437,29 +495,7 @@ impl MiddlewarePoolConnection {
 // ----------------------------------------
 // Common impl blocks for DbError
 // ----------------------------------------
-// We don't need this anymore as thiserror already generates a Display implementation
 // The #[error] attributes on the enum variants define the format for each variant
-// This is commented out to show what was here originally
-/*
-impl fmt::Display for SqlMiddlewareDbError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SqlMiddlewareDbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
-            SqlMiddlewareDbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
-            SqlMiddlewareDbError::ConfigError(msg) => write!(f, "ConfigError: {}", msg),
-            SqlMiddlewareDbError::ConnectionError(msg) => write!(f, "ConnectionError: {}", msg),
-            SqlMiddlewareDbError::ParameterError(msg) => write!(f, "ParameterError: {}", msg),
-            SqlMiddlewareDbError::ExecutionError(msg) => write!(f, "ExecutionError: {}", msg),
-            SqlMiddlewareDbError::Unimplemented(msg) => write!(f, "Unimplemented: {}", msg),
-            SqlMiddlewareDbError::Other(msg) => write!(f, "Other: {}", msg),
-            SqlMiddlewareDbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
-            SqlMiddlewareDbError::PoolErrorPostgres(pool_error) => {
-                write!(f, "PoolErrorPostgres: {:?}", pool_error)
-            }
-        }
-    }
-}
-*/
 
 // ----------------------------------------
 // Impl for RowValues that is DB-agnostic
@@ -496,7 +532,7 @@ impl RowValues {
 
     pub fn as_timestamp(&self) -> Option<chrono::NaiveDateTime> {
         if let RowValues::Timestamp(value) = self {
-            return Some(value.clone());
+            return Some(*value); // Use dereferencing instead of clone for Copy types
         } else if let Some(s) = self.as_text() {
             // Try "YYYY-MM-DD HH:MM:SS"
             if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
@@ -587,7 +623,7 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     ) -> Result<usize, SqlMiddlewareDbError> {
         match self {
             MiddlewarePoolConnection::Postgres(pg_client) => {
-                postgres::execute_dml(pg_client, query, &params).await
+                postgres::execute_dml(pg_client, query, params).await
             }
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_dml(sqlite_client, query, params).await

@@ -2,7 +2,7 @@
 use std::error::Error;
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter,
+    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter,
     ResultSet, RowValues, SqlMiddlewareDbError,
 };
 use chrono::NaiveDateTime;
@@ -65,11 +65,14 @@ impl<'a> Params<'a> {
         Ok(Params { references })
     }
 
-    /// Convert a Vec of RowValues for batch operations
+    /// Convert a slice of RowValues for batch operations
     pub fn convert_for_batch(
-        params: &'a Vec<RowValues>,
+        params: &'a [RowValues],
     ) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
-        let mut references = Vec::new();
+        // Pre-allocate capacity for better performance
+        let mut references = Vec::with_capacity(params.len());
+        
+        // Avoid collect() and just push directly
         for p in params {
             references.push(p as &(dyn ToSql + Sync));
         }
@@ -144,10 +147,10 @@ impl ToSql for RowValues {
 }
 
 /// Build a result set from a Postgres query execution
-pub async fn build_result_set<'a>(
+pub async fn build_result_set(
     stmt: &Statement,
     params: &[&(dyn ToSql + Sync)],
-    transaction: &Transaction<'a>,
+    transaction: &Transaction<'_>,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Execute the query
     let rows = transaction
@@ -165,18 +168,21 @@ pub async fn build_result_set<'a>(
     let mut result_set = ResultSet::with_capacity(capacity);
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);
+    result_set.set_column_names(column_names_rc);
 
     for row in rows {
         let mut row_values = Vec::new();
 
-        for i in 0..column_names_rc.len() {
+        let col_count = result_set.get_column_names()
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("No column names available".to_string()))?
+            .len();
+            
+        for i in 0..col_count {
             let value = postgres_extract_value(&row, i)?;
             row_values.push(value);
         }
 
-        result_set.add_row(CustomDbRow::new(column_names_rc.clone(), row_values));
-
-        result_set.rows_affected += 1;
+        result_set.add_row_values(row_values);
     }
 
     Ok(result_set)

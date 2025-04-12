@@ -6,7 +6,7 @@
 //! with connection pooling provided by deadpool.
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter,
+    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter,
     ResultSet, RowValues, SqlMiddlewareDbError,
 };
 use chrono::NaiveDateTime;
@@ -15,7 +15,7 @@ use deadpool_tiberius::Manager as TiberiusManager;
 use futures_util::TryStreamExt;
 use std::borrow::Cow;
 use std::ops::DerefMut;
-use tiberius::{Client, ColumnData, IntoSql, ToSql};
+use tiberius::{Client, ColumnData, ToSql};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
@@ -69,8 +69,13 @@ pub struct Params<'a> {
 impl<'a> Params<'a> {
     /// Convert from a slice of RowValues to SQL Server parameters
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
-        let references: Vec<&(dyn ToSql + Sync)> =
-            params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
+        // Pre-allocate space for performance
+        let mut references = Vec::with_capacity(params.len());
+        
+        // Avoid iterator.collect() allocation overhead
+        for p in params {
+            references.push(p as &(dyn ToSql + Sync));
+        }
 
         Ok(Params { references })
     }
@@ -97,48 +102,8 @@ impl<'a> ParamConverter<'a> for Params<'a> {
     }
 }
 
-/// Represents a parameter that can be directly bound to a Tiberius query
-/// Unlike SqlParam which is borrowed, this variant owns all its data
-enum OwnedParam {
-    Int(i64),
-    Float(f64),
-    Text(String),
-    Bool(bool),
-    Binary(Vec<u8>),
-    None,
-}
-
-impl<'a> IntoSql<'a> for &'a OwnedParam {
-    fn into_sql(self) -> ColumnData<'a> {
-        match self {
-            OwnedParam::Int(i) => ColumnData::I64(Some(*i)),
-            OwnedParam::Float(f) => ColumnData::F64(Some(*f)),
-            OwnedParam::Text(s) => ColumnData::String(Some(Cow::from(s.as_str()))),
-            OwnedParam::Bool(b) => ColumnData::Bit(Some(*b)),
-            OwnedParam::Binary(b) => ColumnData::Binary(Some(Cow::from(b.as_slice()))),
-            OwnedParam::None => ColumnData::String(None),
-        }
-    }
-}
-
-/// Convert a RowValues to an OwnedParam that can be bound to a Tiberius query
-fn row_value_to_owned_param(row_value: &RowValues) -> OwnedParam {
-    match row_value {
-        RowValues::Int(i) => OwnedParam::Int(*i),
-        RowValues::Float(f) => OwnedParam::Float(*f),
-        RowValues::Text(s) => OwnedParam::Text(s.clone()),
-        RowValues::Bool(b) => OwnedParam::Bool(*b),
-        RowValues::Timestamp(dt) => {
-            // For timestamps, convert to ISO-8601 string format
-            OwnedParam::Text(dt.to_string())
-        },
-        RowValues::Null => OwnedParam::None,
-        RowValues::JSON(jsval) => {
-            OwnedParam::Text(jsval.to_string())
-        },
-        RowValues::Blob(bytes) => OwnedParam::Binary(bytes.clone()),
-    }
-}
+// Direct conversion methods are implemented in the bind_query_params function
+// and ToSql implementation for RowValues
 
 /// ToSql for RowValues for passing parameters
 impl ToSql for RowValues {
@@ -149,8 +114,22 @@ impl ToSql for RowValues {
             RowValues::Text(s) => ColumnData::String(Some(Cow::from(s.as_str()))),
             RowValues::Bool(b) => ColumnData::Bit(Some(*b)),
             RowValues::Timestamp(dt) => {
-                // Convert to string for simplicity
-                ColumnData::String(Some(Cow::from(dt.to_string())))
+                // Use thread_local storage for efficient timestamp formatting
+                thread_local! {
+                    static BUF: std::cell::RefCell<String> = std::cell::RefCell::new(String::with_capacity(32));
+                }
+                
+                // Format the timestamp efficiently
+                let formatted = BUF.with(|buf| {
+                    let mut s = buf.borrow_mut();
+                    s.clear();
+                    use std::fmt::Write;
+                    // ISO-8601 format
+                    write!(s, "{}", dt.format("%Y-%m-%dT%H:%M:%S%.f")).unwrap();
+                    ColumnData::String(Some(Cow::from(s.clone())))
+                });
+                
+                formatted
             },
             RowValues::Null => ColumnData::String(None),
             RowValues::JSON(jsval) => ColumnData::String(Some(Cow::from(jsval.to_string()))),
@@ -165,18 +144,8 @@ pub async fn build_result_set(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    // Create and prepare the query
-    let mut query_builder = tiberius::Query::new(query);
-    
-    // Convert parameters to owned values
-    let owned_params: Vec<OwnedParam> = params.iter()
-        .map(row_value_to_owned_param)
-        .collect();
-    
-    // Add parameters
-    for param in &owned_params {
-        query_builder.bind(param);
-    }
+    // Use the shared function to prepare and bind the query
+    let query_builder = bind_query_params(query, params);
 
     // Execute the query
     let mut stream = query_builder.query(client).await
@@ -198,15 +167,20 @@ pub async fn build_result_set(
     let mut result_set = ResultSet::with_capacity(10);
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);
+    result_set.set_column_names(column_names_rc);
 
     // Process the stream
     let mut rows_stream = stream.into_row_stream();
     while let Some(row_result) = rows_stream.try_next().await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {}", e)))?
     {
-        let mut row_values = Vec::with_capacity(column_names_rc.len());
-
-        for i in 0..column_names_rc.len() {
+        let col_count = result_set.get_column_names()
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("No column names available".to_string()))?
+            .len();
+            
+        let mut row_values = Vec::with_capacity(col_count);
+            
+        for i in 0..col_count {
             // Extract values from the row
             if let Some(value) = extract_value(&row_result, i)? {
                 row_values.push(value);
@@ -215,7 +189,7 @@ pub async fn build_result_set(
             }
         }
 
-        result_set.add_row(CustomDbRow::new(column_names_rc.clone(), row_values));
+        result_set.add_row_values(row_values);
     }
 
     Ok(result_set)
@@ -310,6 +284,37 @@ pub async fn execute_select(
     build_result_set(client, query, params).await
 }
 
+/// Bind parameters directly to the query for SQL Server
+/// Return a query builder with parameters already bound
+fn bind_query_params<'a>(
+    query: &'a str,
+    params: &[RowValues],
+) -> tiberius::Query<'a> {
+    // Create the query builder
+    let mut query_builder = tiberius::Query::new(query);
+    
+    // Bind parameters directly - not using OwnedParam as intermediary
+    // since tiberius Query will own the data
+    for param in params {
+        match param {
+            RowValues::Int(i) => query_builder.bind(*i),
+            RowValues::Float(f) => query_builder.bind(*f),
+            RowValues::Text(s) => query_builder.bind(s.clone()),
+            RowValues::Bool(b) => query_builder.bind(*b),
+            RowValues::Timestamp(dt) => {
+                // Format timestamps efficiently
+                let formatted = dt.format("%Y-%m-%dT%H:%M:%S%.f").to_string();
+                query_builder.bind(formatted);
+            },
+            RowValues::Null => query_builder.bind(Option::<String>::None),
+            RowValues::JSON(jsval) => query_builder.bind(jsval.to_string()),
+            RowValues::Blob(bytes) => query_builder.bind(bytes.clone()),
+        }
+    }
+    
+    query_builder
+}
+
 /// Execute a DML query (INSERT, UPDATE, DELETE) with parameters
 pub async fn execute_dml(
     mssql_client: &mut Object<MssqlManager>,
@@ -319,18 +324,8 @@ pub async fn execute_dml(
     // Get a client from the object
     let client = mssql_client.deref_mut();
 
-    // Prepare the query with parameters
-    let mut query_builder = tiberius::Query::new(query);
-    
-    // Convert parameters to owned values
-    let owned_params: Vec<OwnedParam> = params.iter()
-        .map(row_value_to_owned_param)
-        .collect();
-    
-    // Add parameters
-    for param in &owned_params {
-        query_builder.bind(param);
-    }
+    // Prepare and bind the query
+    let query_builder = bind_query_params(query, params);
 
     // Execute the query
     let exec_result = query_builder.execute(client).await
@@ -366,8 +361,20 @@ pub async fn create_mssql_client(
     
     config.trust_cert(); // For testing/development
 
-    // Create TCP stream 
-    let tcp = TcpStream::connect(format!("{}:{}", server, port_val)).await
+    // Create TCP stream using proper socket address
+    use std::net::ToSocketAddrs;
+    
+    // Try to resolve the socket address
+    let addr_iter = (server, port_val).to_socket_addrs()
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to resolve server address: {}", e)))?;
+    
+    // Find the first valid address
+    let server_addr = addr_iter.into_iter()
+        .next()
+        .ok_or_else(|| SqlMiddlewareDbError::ConnectionError(format!("No valid address found for {}", server)))?;
+    
+    // Connect to the resolved socket address
+    let tcp = TcpStream::connect(server_addr).await
         .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {}", e)))?;
     
     // Make compatible with Tiberius

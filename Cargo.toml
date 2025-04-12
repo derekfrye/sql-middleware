@@ -32,6 +32,7 @@ async-trait = "0"
 tiberius = { version = "0", features = ["chrono", "sql-browser-tokio"] }
 deadpool-tiberius = { git = "https://github.com/ingrese1nombre/deadpool-tiberius", branch = "master" }
 futures-util = "0"
+lazy_static = "1"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--deny", "unsafe_code"]
