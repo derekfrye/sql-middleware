@@ -117,14 +117,26 @@ pub mod prelude {
     };
     
     pub use crate::convert_sql_params;
+    
+    #[cfg(feature = "postgres")]
     pub use crate::postgres_build_result_set;
-    pub use crate::sqlite_build_result_set;
-    pub use crate::mssql_build_result_set;
+    #[cfg(feature = "postgres")]
     pub use crate::PostgresParams;
+    
+    #[cfg(feature = "sqlite")]
+    pub use crate::sqlite_build_result_set;
+    #[cfg(feature = "sqlite")]
     pub use crate::SqliteParamsExecute;
+    #[cfg(feature = "sqlite")]
     pub use crate::SqliteParamsQuery;
+    
+    #[cfg(feature = "mssql")]
+    pub use crate::mssql_build_result_set;
+    #[cfg(feature = "mssql")]
     pub use crate::MssqlParams;
+    #[cfg(feature = "mssql")]
     pub use crate::MssqlClient;
+    #[cfg(feature = "mssql")]
     pub use crate::create_mssql_client;
 }
 
@@ -132,8 +144,11 @@ pub mod prelude {
 pub mod middleware;
 
 // Private database-specific modules
+#[cfg(feature = "postgres")]
 mod postgres;
+#[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "mssql")]
 mod mssql;
 
 // Direct exports of frequently used types and functions for simplicity
@@ -153,14 +168,25 @@ pub use middleware::{
     ParamConverter,
 };
 
+#[cfg(feature = "postgres")]
 pub use postgres::Params as PostgresParams;
+#[cfg(feature = "postgres")]
 pub use postgres::build_result_set as postgres_build_result_set;
+
+#[cfg(feature = "sqlite")]
 pub use sqlite::build_result_set as sqlite_build_result_set;
+#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteParamsExecute;
+#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteParamsQuery;
+
+#[cfg(feature = "mssql")]
 pub use mssql::Params as MssqlParams;
+#[cfg(feature = "mssql")]
 pub use mssql::build_result_set as mssql_build_result_set;
+#[cfg(feature = "mssql")]
 pub use mssql::create_mssql_client;
+#[cfg(feature = "mssql")]
 pub use mssql::MssqlClient;
 
 // Module to help with testing - needed for existing tests
