@@ -14,7 +14,6 @@ use deadpool::managed::Object;
 use deadpool_tiberius::Manager as TiberiusManager;
 use futures_util::TryStreamExt;
 use std::borrow::Cow;
-use std::fmt;
 use std::ops::DerefMut;
 use tiberius::{Client, ColumnData, IntoSql, ToSql};
 use tokio::net::TcpStream;
@@ -25,42 +24,6 @@ pub type MssqlClient = Client<Compat<TcpStream>>;
 
 /// Type alias for SQL Server Manager from deadpool-tiberius
 pub type MssqlManager = TiberiusManager;
-
-/// Parameter wrapper for SQL Server
-pub enum SqlParam<'a> {
-    Int(i64),
-    Float(f64),
-    Text(&'a str),
-    Bool(bool), 
-    Binary(&'a [u8]),
-    None,
-}
-
-impl<'a> fmt::Debug for SqlParam<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SqlParam::Int(i) => write!(f, "SqlParam::Int({})", i),
-            SqlParam::Float(fl) => write!(f, "SqlParam::Float({})", fl),
-            SqlParam::Text(s) => write!(f, "SqlParam::Text({})", s),
-            SqlParam::Bool(b) => write!(f, "SqlParam::Bool({})", b),
-            SqlParam::Binary(_) => write!(f, "SqlParam::Binary(...)"),
-            SqlParam::None => write!(f, "SqlParam::None"),
-        }
-    }
-}
-
-impl<'a> IntoSql<'a> for SqlParam<'a> {
-    fn into_sql(self) -> ColumnData<'a> {
-        match self {
-            SqlParam::Int(i) => ColumnData::I64(Some(i)),
-            SqlParam::Float(f) => ColumnData::F64(Some(f)),
-            SqlParam::Text(s) => ColumnData::String(Some(Cow::from(s))),
-            SqlParam::Bool(b) => ColumnData::Bit(Some(b)),
-            SqlParam::Binary(b) => ColumnData::Binary(Some(Cow::from(b))),
-            SqlParam::None => ColumnData::String(None),
-        }
-    }
-}
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with SQL Server (MSSQL)
@@ -134,26 +97,46 @@ impl<'a> ParamConverter<'a> for Params<'a> {
     }
 }
 
-/// Convert a RowValues to a SqlParam that can be bound to a Tiberius query
-fn row_value_to_sql_param<'a>(row_value: &'a RowValues) -> SqlParam<'a> {
+/// Represents a parameter that can be directly bound to a Tiberius query
+/// Unlike SqlParam which is borrowed, this variant owns all its data
+enum OwnedParam {
+    Int(i64),
+    Float(f64),
+    Text(String),
+    Bool(bool),
+    Binary(Vec<u8>),
+    None,
+}
+
+impl<'a> IntoSql<'a> for &'a OwnedParam {
+    fn into_sql(self) -> ColumnData<'a> {
+        match self {
+            OwnedParam::Int(i) => ColumnData::I64(Some(*i)),
+            OwnedParam::Float(f) => ColumnData::F64(Some(*f)),
+            OwnedParam::Text(s) => ColumnData::String(Some(Cow::from(s.as_str()))),
+            OwnedParam::Bool(b) => ColumnData::Bit(Some(*b)),
+            OwnedParam::Binary(b) => ColumnData::Binary(Some(Cow::from(b.as_slice()))),
+            OwnedParam::None => ColumnData::String(None),
+        }
+    }
+}
+
+/// Convert a RowValues to an OwnedParam that can be bound to a Tiberius query
+fn row_value_to_owned_param(row_value: &RowValues) -> OwnedParam {
     match row_value {
-        RowValues::Int(i) => SqlParam::Int(*i),
-        RowValues::Float(f) => SqlParam::Float(*f),
-        RowValues::Text(s) => SqlParam::Text(s),
-        RowValues::Bool(b) => SqlParam::Bool(*b),
+        RowValues::Int(i) => OwnedParam::Int(*i),
+        RowValues::Float(f) => OwnedParam::Float(*f),
+        RowValues::Text(s) => OwnedParam::Text(s.clone()),
+        RowValues::Bool(b) => OwnedParam::Bool(*b),
         RowValues::Timestamp(dt) => {
             // For timestamps, convert to ISO-8601 string format
-            // Using a string representation for timestamps to avoid lifetime issues
-            let dt_str = dt.to_string();
-            SqlParam::Text(Box::leak(dt_str.into_boxed_str()))
+            OwnedParam::Text(dt.to_string())
         },
-        RowValues::Null => SqlParam::None,
+        RowValues::Null => OwnedParam::None,
         RowValues::JSON(jsval) => {
-            // Using Box::leak to extend the string's lifetime
-            let json_str = jsval.to_string();
-            SqlParam::Text(Box::leak(json_str.into_boxed_str()))
+            OwnedParam::Text(jsval.to_string())
         },
-        RowValues::Blob(bytes) => SqlParam::Binary(bytes),
+        RowValues::Blob(bytes) => OwnedParam::Binary(bytes.clone()),
     }
 }
 
@@ -185,10 +168,14 @@ pub async fn build_result_set(
     // Create and prepare the query
     let mut query_builder = tiberius::Query::new(query);
     
+    // Convert parameters to owned values
+    let owned_params: Vec<OwnedParam> = params.iter()
+        .map(row_value_to_owned_param)
+        .collect();
+    
     // Add parameters
-    for param in params {
-        let sql_param = row_value_to_sql_param(param);
-        query_builder.bind(sql_param);
+    for param in &owned_params {
+        query_builder.bind(param);
     }
 
     // Execute the query
@@ -335,10 +322,14 @@ pub async fn execute_dml(
     // Prepare the query with parameters
     let mut query_builder = tiberius::Query::new(query);
     
+    // Convert parameters to owned values
+    let owned_params: Vec<OwnedParam> = params.iter()
+        .map(row_value_to_owned_param)
+        .collect();
+    
     // Add parameters
-    for param in params {
-        let sql_param = row_value_to_sql_param(param);
-        query_builder.bind(sql_param);
+    for param in &owned_params {
+        query_builder.bind(param);
     }
 
     // Execute the query
@@ -346,7 +337,7 @@ pub async fn execute_dml(
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server DML execution error: {}", e)))?;
 
     // Get rows affected
-    let rows_affected: u64 = exec_result.rows_affected().into_iter().sum();
+    let rows_affected: u64 = exec_result.rows_affected().iter().sum();
 
     Ok(rows_affected as usize)
 }
