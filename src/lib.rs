@@ -2,13 +2,13 @@
  * SQL Middleware - A unified interface for SQL databases
  * 
  * This crate provides a middleware layer for SQL database access,
- * currently supporting SQLite and PostgreSQL backends. The main goal is to 
+ * currently supporting SQLite, PostgreSQL, and SQL Server backends. The main goal is to 
  * provide a unified, async-compatible API that works across different database systems.
  * 
  * # Features
  * 
  * - Asynchronous database access with deadpool connection pooling
- * - Support for SQLite and PostgreSQL backends
+ * - Support for SQLite, PostgreSQL, and SQL Server backends
  * - Unified parameter conversion system
  * - Consistent result handling across database engines
  * - Transaction support
@@ -18,7 +18,7 @@
  * ```rust,no_run
  * use sql_middleware::prelude::*;
  * 
- * async fn example() -> Result<(), SqlMiddlewareDbError> {
+ * async fn sqlite_example() -> Result<(), SqlMiddlewareDbError> {
  *     // Create a SQLite connection pool
  *     let config = ConfigAndPool::new_sqlite("my_database.db".to_string()).await?;
  *     
@@ -39,10 +39,60 @@
  *     
  *     Ok(())
  * }
+ * 
+ * async fn postgres_example() -> Result<(), SqlMiddlewareDbError> {
+ *     // Create a PostgreSQL connection pool
+ *     let mut pg_config = deadpool_postgres::Config::new();
+ *     pg_config.host = Some("localhost".to_string());
+ *     pg_config.port = Some(5432);
+ *     pg_config.dbname = Some("mydatabase".to_string());
+ *     pg_config.user = Some("user".to_string());
+ *     pg_config.password = Some("password".to_string());
+ *     
+ *     let config = ConfigAndPool::new_postgres(pg_config).await?;
+ *     
+ *     // Get a connection and execute a query
+ *     let pool = config.pool.get().await?;
+ *     let mut conn = MiddlewarePool::get_connection(&pool).await?;
+ *     
+ *     let result = conn.execute_select(
+ *         "SELECT * FROM users WHERE id = $1",
+ *         &[RowValues::Int(1)]
+ *     ).await?;
+ *     
+ *     Ok(())
+ * }
+ * 
+ * async fn sqlserver_example() -> Result<(), SqlMiddlewareDbError> {
+ *     // Create an SQL Server connection pool
+ *     let config = ConfigAndPool::new_mssql(
+ *         "localhost".to_string(),
+ *         "mydatabase".to_string(),
+ *         "sa".to_string(),
+ *         "strong_password".to_string(),
+ *         Some(1433),
+ *         None,
+ *     ).await?;
+ *     
+ *     // Get a connection and execute a query
+ *     let pool = config.pool.get().await?;
+ *     let mut conn = MiddlewarePool::get_connection(&pool).await?;
+ *     
+ *     let result = conn.execute_select(
+ *         "SELECT * FROM users WHERE id = @p1",
+ *         &[RowValues::Int(1)]
+ *     ).await?;
+ *     
+ *     Ok(())
+ * }
  * ```
  */
 
  #![forbid(unsafe_code)]
+
+// Test utilities module - only compiled with test-utils feature
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 // Re-export everything that should be part of the public API
 pub mod prelude {
@@ -67,19 +117,39 @@ pub mod prelude {
     };
     
     pub use crate::convert_sql_params;
+    
+    #[cfg(feature = "postgres")]
     pub use crate::postgres_build_result_set;
-    pub use crate::sqlite_build_result_set;
+    #[cfg(feature = "postgres")]
     pub use crate::PostgresParams;
+    
+    #[cfg(feature = "sqlite")]
+    pub use crate::sqlite_build_result_set;
+    #[cfg(feature = "sqlite")]
     pub use crate::SqliteParamsExecute;
+    #[cfg(feature = "sqlite")]
     pub use crate::SqliteParamsQuery;
+    
+    #[cfg(feature = "mssql")]
+    pub use crate::mssql_build_result_set;
+    #[cfg(feature = "mssql")]
+    pub use crate::MssqlParams;
+    #[cfg(feature = "mssql")]
+    pub use crate::MssqlClient;
+    #[cfg(feature = "mssql")]
+    pub use crate::create_mssql_client;
 }
 
 // Core modules
 pub mod middleware;
 
 // Private database-specific modules
+#[cfg(feature = "postgres")]
 mod postgres;
+#[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "mssql")]
+mod mssql;
 
 // Direct exports of frequently used types and functions for simplicity
 pub use middleware::{
@@ -98,11 +168,26 @@ pub use middleware::{
     ParamConverter,
 };
 
+#[cfg(feature = "postgres")]
 pub use postgres::Params as PostgresParams;
+#[cfg(feature = "postgres")]
 pub use postgres::build_result_set as postgres_build_result_set;
+
+#[cfg(feature = "sqlite")]
 pub use sqlite::build_result_set as sqlite_build_result_set;
+#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteParamsExecute;
+#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteParamsQuery;
+
+#[cfg(feature = "mssql")]
+pub use mssql::Params as MssqlParams;
+#[cfg(feature = "mssql")]
+pub use mssql::build_result_set as mssql_build_result_set;
+#[cfg(feature = "mssql")]
+pub use mssql::create_mssql_client;
+#[cfg(feature = "mssql")]
+pub use mssql::MssqlClient;
 
 // Module to help with testing - needed for existing tests
 pub mod test_helpers {

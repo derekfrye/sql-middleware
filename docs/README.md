@@ -2,14 +2,34 @@
 
 ![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
 
-Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres) and [rusqlite](https://crates.io/crates/rusqlite), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api (via [deadpool-sqlite](https://github.com/deadpool-rs/deadpool) and tokio-postgres). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
 
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
 ## Goals
 * Convenience functions for common sql query patterns
-* Keep underlying flexibility of deadpool-sqlite and deadpool-postgres.
-* Minimal overhead (just syntax convenience/wrapper fns).
+* Keep underlying flexibility of deadpool-sqlite, deadpool-postgres, and deadpool-tiberius
+* Minimal overhead (just syntax convenience/wrapper fns)
+* Allow consumers to only include the database backends they need
+
+## Feature Flags
+
+By default, all database backends are enabled. You can selectively enable only the backends you need:
+
+```toml
+# Only include SQLite and PostgreSQL support
+sql-middleware = { version = "0", features = ["sqlite", "postgres"] }
+
+# Only include SQLite support
+sql-middleware = { version = "0", features = ["sqlite"] }
+```
+
+Available features:
+- `sqlite`: Enables SQLite support
+- `postgres`: Enables PostgreSQL support
+- `mssql`: Enables SQL Server support
+- `default`: Enables all database backends (sqlite, postgres, mssql)
+- `test-utils`: Enables test utilities for internal testing
 
 ## Examples
 

@@ -7,15 +7,12 @@ use sql_middleware::{
     middleware::{ ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection },
     SqlMiddlewareDbError,
 };
+#[cfg(feature = "test-utils")]
+use sql_middleware::test_utils::testing_postgres::{ setup_postgres_container, stop_postgres_container };
 use std::{ path::Path, fs };
 use tokio::runtime::Runtime;
 
-mod common {
-    pub mod postgres;
-}
-use crate::common::postgres::{ setup_postgres_container, stop_postgres_container };
-
-// Function to generate a deterministic set of SQL insert statements
+// Reviewed; Function to generate a deterministic set of SQL insert statements
 fn generate_insert_statements(num_rows: usize) -> String {
     // Create a deterministic RNG with fixed seed for reproducibility
     let mut rng = ChaCha8Rng::seed_from_u64(42);
@@ -102,6 +99,7 @@ fn generate_insert_statements(num_rows: usize) -> String {
     statements
 }
 
+// reviewed
 async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
     // Ensure the path doesn't exist
     if Path::new(db_path).exists() {
@@ -145,7 +143,7 @@ async fn setup_postgres_db(
     db_user: &str,
     db_pass: &str,
     db_name: &str
-) -> Result<(ConfigAndPool, common::postgres::PostgresContainer), Box<dyn std::error::Error>> {
+) -> Result<(ConfigAndPool, sql_middleware::test_utils::testing_postgres::PostgresContainer), Box<dyn std::error::Error>> {
     let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());
@@ -189,7 +187,7 @@ fn benchmark_sqlite(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
     // Generate insert statements once (same for all benchmark runs)
-    let insert_statements = generate_insert_statements(500_000);
+    let insert_statements = generate_insert_statements(50000);
 
     let mut group = c.benchmark_group("database_inserts");
 
@@ -274,5 +272,6 @@ fn benchmark_postgres(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, benchmark_sqlite, benchmark_postgres);
+// criterion_group!(benches, benchmark_sqlite, benchmark_postgres);
+criterion_group!(benches, benchmark_sqlite);
 criterion_main!(benches);

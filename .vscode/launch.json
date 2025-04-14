@@ -22,6 +22,18 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}",
+        },{
+            "name": "SQLite Benchmark",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/release/deps/database_benchmark-026012cd6f6eb1f2",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            },
+            "stopOnEntry": false,
+            "sourceLanguages": ["rust"]
         }
     ]
 }

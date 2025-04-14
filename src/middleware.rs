@@ -2,24 +2,56 @@
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use clap::ValueEnum;
-use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
-use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
-use rusqlite::Connection as SqliteConnectionType;
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-use crate::{postgres, sqlite};
+#[cfg(feature = "mssql")]
+use std::ops::DerefMut;
+
+// Conditional imports based on enabled features
+#[cfg(feature = "postgres")]
+use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
+#[cfg(feature = "postgres")]
+use tokio_postgres;
+
+#[cfg(feature = "sqlite")]
+use deadpool_sqlite::{rusqlite, Object as SqliteObject, Pool as DeadpoolSqlitePool};
+#[cfg(feature = "sqlite")]
+use rusqlite::Connection as SqliteConnectionType;
+#[cfg(feature = "sqlite")]
 pub type SqliteWritePool = DeadpoolSqlitePool;
+
+#[cfg(feature = "mssql")]
+use tokio::net::TcpStream;
+#[cfg(feature = "mssql")]
+use tokio_util::compat::Compat;
+#[cfg(feature = "mssql")]
+use tiberius::Client as TiberiusClient;
+#[cfg(feature = "mssql")]
+use deadpool_tiberius::Pool as TiberiusPool;
+
+// Conditional module imports
+#[cfg(feature = "postgres")]
+use crate::postgres;
+#[cfg(feature = "sqlite")]
+use crate::sqlite;
+#[cfg(feature = "mssql")]
+use crate::mssql;
 
 /// Wrapper around a database connection for generic code
 /// 
-/// This enum allows code to handle either PostgreSQL or SQLite 
+/// This enum allows code to handle PostgreSQL, SQLite, or SQL Server
 /// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
     /// PostgreSQL client connection
+    #[cfg(feature = "postgres")]
     Postgres(&'a mut tokio_postgres::Client),
     /// SQLite database connection
+    #[cfg(feature = "sqlite")]
     Sqlite(&'a mut SqliteConnectionType),
+    /// SQL Server client connection
+    #[cfg(feature = "mssql")]
+    Mssql(&'a mut TiberiusClient<Compat<TcpStream>>),
 }
 
 /// A query and its parameters bundled together
@@ -104,21 +136,45 @@ impl RowValues {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, ValueEnum)]
 pub enum DatabaseType {
     /// PostgreSQL database
+    #[cfg(feature = "postgres")]
     Postgres,
     /// SQLite database
+    #[cfg(feature = "sqlite")]
     Sqlite,
+    /// SQL Server database
+    #[cfg(feature = "mssql")]
+    Mssql,
 }
 
 /// Connection pool for database access
 ///
 /// This enum wraps the different connection pool types for the
 /// supported database engines.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum MiddlewarePool {
     /// PostgreSQL connection pool
+    #[cfg(feature = "postgres")]
     Postgres(DeadpoolPostgresPool),
     /// SQLite connection pool
+    #[cfg(feature = "sqlite")]
     Sqlite(DeadpoolSqlitePool),
+    /// SQL Server connection pool
+    #[cfg(feature = "mssql")]
+    Mssql(TiberiusPool),
+}
+
+// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+impl std::fmt::Debug for MiddlewarePool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(pool) => f.debug_tuple("Postgres").field(pool).finish(),
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(pool) => f.debug_tuple("Sqlite").field(pool).finish(),
+            #[cfg(feature = "mssql")]
+            Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
+        }
+    }
 }
 
 /// Configuration and connection pool for a database
@@ -135,17 +191,33 @@ pub struct ConfigAndPool {
 
 #[derive(Debug, Error)]
 pub enum SqlMiddlewareDbError {
+    #[cfg(feature = "postgres")]
     #[error(transparent)]
     PostgresError(#[from] tokio_postgres::Error),
     
+    #[cfg(feature = "sqlite")]
     #[error(transparent)]
     SqliteError(#[from] rusqlite::Error),
     
+    #[cfg(feature = "mssql")]
+    #[error(transparent)]
+    MssqlError(#[from] tiberius::error::Error),
+    
+    #[cfg(feature = "postgres")]
     #[error(transparent)]
     PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
     
+    #[cfg(feature = "sqlite")]
     #[error(transparent)]
     PoolErrorSqlite(#[from] deadpool::managed::PoolError<rusqlite::Error>),
+    
+    #[cfg(feature = "mssql")]
+    #[error(transparent)]
+    PoolErrorMssql(#[from] deadpool::managed::PoolError<tiberius::error::Error>),
+    
+    #[cfg(feature = "mssql")]
+    #[error("SQL Server connection pool error: {0}")]
+    TiberiusPoolError(String),
     
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -270,6 +342,8 @@ pub struct ResultSet {
     pub results: Vec<CustomDbRow>,
     /// The number of rows affected (for DML statements)
     pub rows_affected: usize,
+    /// Column names shared by all rows (to avoid duplicating in each row)
+    column_names: Option<std::sync::Arc<Vec<String>>>,
 }
 
 impl ResultSet {
@@ -286,15 +360,71 @@ impl ResultSet {
         ResultSet {
             results: Vec::with_capacity(capacity),
             rows_affected: 0,
+            column_names: None,
         }
+    }
+    
+    /// Set the column names for this result set (to be shared by all rows)
+    pub fn set_column_names(&mut self, column_names: std::sync::Arc<Vec<String>>) {
+        self.column_names = Some(column_names);
+    }
+    
+    /// Get the column names for this result set
+    pub fn get_column_names(&self) -> Option<&std::sync::Arc<Vec<String>>> {
+        self.column_names.as_ref()
     }
     
     /// Add a row to the result set
     ///
     /// # Arguments
     ///
+    /// * `row_values` - The values for this row
+    pub fn add_row_values(&mut self, row_values: Vec<RowValues>) {
+        if let Some(column_names) = &self.column_names {
+            // Build a cache of column name to index for faster lookups
+            // We only need to build this cache once and reuse it
+            lazy_static::lazy_static! {
+                static ref CACHE_MAP: std::sync::Mutex<std::collections::HashMap<usize, std::sync::Arc<std::collections::HashMap<String, usize>>>> = std::sync::Mutex::new(std::collections::HashMap::new());
+            }
+            
+            // Use the pointer to column_names as a key for the cache
+            let ptr = column_names.as_ref().as_ptr() as usize;
+            let cache = {
+                let mut cache_map = CACHE_MAP.lock().unwrap();
+                let cache_entry = cache_map.entry(ptr).or_insert_with(|| {
+                    std::sync::Arc::new(
+                        column_names
+                            .iter()
+                            .enumerate()
+                            .map(|(i, name)| (name.to_string(), i))
+                            .collect::<std::collections::HashMap<_, _>>()
+                    )
+                });
+                cache_entry.clone()
+            };
+            
+            let row = CustomDbRow {
+                column_names: column_names.clone(),
+                rows: row_values,
+                column_index_cache: cache,
+            };
+            
+            self.results.push(row);
+            self.rows_affected += 1;
+        }
+    }
+    
+    /// Add a row to the result set (legacy method, less efficient)
+    ///
+    /// # Arguments
+    ///
     /// * `row` - The row to add
     pub fn add_row(&mut self, row: CustomDbRow) {
+        // If column names haven't been set yet, use the ones from this row
+        if self.column_names.is_none() {
+            self.column_names = Some(row.column_names.clone());
+        }
+        
         self.results.push(row);
         self.rows_affected += 1;
     }
@@ -309,6 +439,7 @@ impl MiddlewarePool {
         pool: &MiddlewarePool,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         match pool {
+            #[cfg(feature = "postgres")]
             MiddlewarePool::Postgres(pool) => {
                 let conn: PostgresObject = pool
                     .get()
@@ -316,6 +447,7 @@ impl MiddlewarePool {
                     .map_err(SqlMiddlewareDbError::PoolErrorPostgres)?;
                 Ok(MiddlewarePoolConnection::Postgres(conn))
             }
+            #[cfg(feature = "sqlite")]
             MiddlewarePool::Sqlite(pool) => {
                 let conn: SqliteObject = pool
                     .get()
@@ -323,17 +455,47 @@ impl MiddlewarePool {
                     .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
                 Ok(MiddlewarePoolConnection::Sqlite(conn))
             }
+            #[cfg(feature = "mssql")]
+            MiddlewarePool::Mssql(pool) => {
+                let conn = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
+                Ok(MiddlewarePoolConnection::Mssql(conn))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "This database type is not enabled in the current build".to_string()
+            )),
         }
     }
 }
 
-#[derive(Debug)]
 pub enum MiddlewarePoolConnection {
+    #[cfg(feature = "postgres")]
     Postgres(PostgresObject),
+    #[cfg(feature = "sqlite")]
     Sqlite(SqliteObject),
+    #[cfg(feature = "mssql")]
+    Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
+}
+
+// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+impl std::fmt::Debug for MiddlewarePoolConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(conn) => f.debug_tuple("Postgres").field(conn).finish(),
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(conn) => f.debug_tuple("Sqlite").field(conn).finish(),
+            #[cfg(feature = "mssql")]
+            Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusConnection>").finish(),
+        }
+    }
 }
 
 impl MiddlewarePoolConnection {
+    #[allow(unused_variables)]
     pub async fn interact_async<F, Fut>(
         &mut self,
         func: F,
@@ -343,25 +505,39 @@ impl MiddlewarePoolConnection {
         Fut: std::future::Future<Output = Result<(), SqlMiddlewareDbError>> + Send + 'static,
     {
         match self {
+            #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres(pg_obj) => {
                 // Assuming PostgresObject dereferences to tokio_postgres::Client
                 let client: &mut tokio_postgres::Client = pg_obj.as_mut();
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql(mssql_obj) => {
+                // Get client from Object
+                let client = mssql_obj.deref_mut();
+                Ok(func(AnyConnWrapper::Mssql(client)).await)
+            }
+            #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite(_) => {
                 Err(SqlMiddlewareDbError::Unimplemented(
                     "interact_async is not supported for SQLite; use interact_sync instead".to_string()
                 ))
             }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "interact_async is not implemented for this database type".to_string()
+            )),
         }
     }
 
+    #[allow(unused_variables)]
     pub async fn interact_sync<F, R>(&self, f: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(AnyConnWrapper) -> R + Send + 'static,
         R: Send + 'static,
     {
         match self {
+            #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite(sqlite_obj) => {
                 // Use `deadpool_sqlite`'s `interact` method
                 sqlite_obj
@@ -371,11 +547,22 @@ impl MiddlewarePoolConnection {
                     })
                     .await?
             }
+            #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres(_) => {
                 Err(SqlMiddlewareDbError::Unimplemented(
                     "interact_sync is not supported for Postgres; use interact_async instead".to_string()
                 ))
             }
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql(_) => {
+                Err(SqlMiddlewareDbError::Unimplemented(
+                    "interact_sync is not supported for SQL Server; use interact_async instead".to_string()
+                ))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "interact_sync is not implemented for this database type".to_string()
+            )),
         }
     }
 }
@@ -383,29 +570,7 @@ impl MiddlewarePoolConnection {
 // ----------------------------------------
 // Common impl blocks for DbError
 // ----------------------------------------
-// We don't need this anymore as thiserror already generates a Display implementation
 // The #[error] attributes on the enum variants define the format for each variant
-// This is commented out to show what was here originally
-/*
-impl fmt::Display for SqlMiddlewareDbError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SqlMiddlewareDbError::PostgresError(e) => write!(f, "PostgresError: {}", e),
-            SqlMiddlewareDbError::SqliteError(e) => write!(f, "SqliteError: {}", e),
-            SqlMiddlewareDbError::ConfigError(msg) => write!(f, "ConfigError: {}", msg),
-            SqlMiddlewareDbError::ConnectionError(msg) => write!(f, "ConnectionError: {}", msg),
-            SqlMiddlewareDbError::ParameterError(msg) => write!(f, "ParameterError: {}", msg),
-            SqlMiddlewareDbError::ExecutionError(msg) => write!(f, "ExecutionError: {}", msg),
-            SqlMiddlewareDbError::Unimplemented(msg) => write!(f, "Unimplemented: {}", msg),
-            SqlMiddlewareDbError::Other(msg) => write!(f, "Other: {}", msg),
-            SqlMiddlewareDbError::PoolErrorSqlite(e) => write!(f, "PoolError: {:?}", e),
-            SqlMiddlewareDbError::PoolErrorPostgres(pool_error) => {
-                write!(f, "PoolErrorPostgres: {:?}", pool_error)
-            }
-        }
-    }
-}
-*/
 
 // ----------------------------------------
 // Impl for RowValues that is DB-agnostic
@@ -442,7 +607,7 @@ impl RowValues {
 
     pub fn as_timestamp(&self) -> Option<chrono::NaiveDateTime> {
         if let RowValues::Timestamp(value) = self {
-            return Some(value.clone());
+            return Some(*value); // Use dereferencing instead of clone for Copy types
         } else if let Some(s) = self.as_text() {
             // Try "YYYY-MM-DD HH:MM:SS"
             if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
@@ -498,12 +663,22 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
     /// Executes a batch of SQL queries within a transaction by delegating to the specific database module.
     async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
         match self {
+            #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_batch(pg_client, query).await
             }
+            #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_batch(sqlite_client, query).await
             }
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql(mssql_client) => {
+                mssql::execute_batch(mssql_client, query).await
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "This database type is not enabled in the current build".to_string()
+            )),
         }
     }
     async fn execute_select(
@@ -512,12 +687,22 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
         match self {
+            #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres(pg_client) => {
                 postgres::execute_select(pg_client, query, params).await
             }
+            #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_select(sqlite_client, query, params).await
             }
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql(mssql_client) => {
+                mssql::execute_select(mssql_client, query, params).await
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "This database type is not enabled in the current build".to_string()
+            )),
         }
     }
     async fn execute_dml(
@@ -526,12 +711,22 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
         match self {
+            #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres(pg_client) => {
-                postgres::execute_dml(pg_client, query, &params).await
+                postgres::execute_dml(pg_client, query, params).await
             }
+            #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite(sqlite_client) => {
                 sqlite::execute_dml(sqlite_client, query, params).await
             }
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql(mssql_client) => {
+                mssql::execute_dml(mssql_client, query, params).await
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "This database type is not enabled in the current build".to_string()
+            )),
         }
     }
 }

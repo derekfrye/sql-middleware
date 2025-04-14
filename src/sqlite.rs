@@ -6,7 +6,7 @@ use rusqlite::Statement;
 use rusqlite::ToSql;
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool, ParamConverter,
+    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter,
     ResultSet, RowValues, SqlMiddlewareDbError,
 };
 
@@ -59,33 +59,66 @@ impl From<deadpool_sqlite::InteractError> for SqlMiddlewareDbError {
     }
 }
 
+// Thread-local buffer for efficient timestamp formatting
+thread_local! {
+    static TIMESTAMP_BUF: std::cell::RefCell<String> = std::cell::RefCell::new(String::with_capacity(32));
+}
+
+// We'll remove this abstraction since it introduces complexity
+// and just inline the param_refs code directly
+
+/// Convert a single RowValue to a rusqlite Value
+fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqlite::types::Value {
+    match value {
+        RowValues::Int(i) => rusqlite::types::Value::Integer(*i),
+        RowValues::Float(f) => rusqlite::types::Value::Real(*f),
+        RowValues::Text(s) => {
+            if for_execute {
+                // For execute, we can move the owned String directly
+                rusqlite::types::Value::Text(s.clone())
+            } else {
+                // For queries, we need to clone
+                rusqlite::types::Value::Text(s.clone())
+            }
+        },
+        RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
+        // Format timestamps once for better performance
+        RowValues::Timestamp(dt) => {
+            // Use a thread_local buffer for timestamp formatting to avoid allocation
+            TIMESTAMP_BUF.with(|buf| {
+                let mut borrow = buf.borrow_mut();
+                borrow.clear();
+                // Format directly into the string buffer
+                use std::fmt::Write;
+                write!(borrow, "{}", dt.format("%F %T%.f")).unwrap();
+                rusqlite::types::Value::Text(borrow.clone())
+            })
+        },
+        RowValues::Null => rusqlite::types::Value::Null,
+        RowValues::JSON(jval) => {
+            // Only serialize once to avoid multiple allocations
+            let json_str = jval.to_string();
+            rusqlite::types::Value::Text(json_str)
+        },
+        RowValues::Blob(bytes) => {
+            if for_execute {
+                // For execute, we can directly use the bytes
+                rusqlite::types::Value::Blob(bytes.clone())
+            } else {
+                // For queries, we need to clone
+                rusqlite::types::Value::Blob(bytes.to_vec())
+            }
+        },
+    }
+}
+
 /// Bind middleware params to SQLite types.
 pub fn convert_params(
     params: &[RowValues],
 ) -> Result<Vec<rusqlite::types::Value>, SqlMiddlewareDbError> {
     let mut vec_values = Vec::with_capacity(params.len());
     for p in params {
-        let v = match p {
-            RowValues::Int(i) => rusqlite::types::Value::Integer(*i),
-            RowValues::Float(f) => rusqlite::types::Value::Real(*f),
-            RowValues::Text(s) => rusqlite::types::Value::Text(s.clone()), // We need to clone but we use clone() explicitly
-            RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
-            RowValues::Timestamp(dt) => {
-                let formatted = dt.format("%F %T%.f").to_string(); // Conversion needs to allocate
-                rusqlite::types::Value::Text(formatted)
-            }
-            RowValues::Null => rusqlite::types::Value::Null,
-            RowValues::JSON(jval) => {
-                // Only serialize once to avoid multiple allocations
-                let json_str = jval.to_string();
-                rusqlite::types::Value::Text(json_str)
-            },
-            RowValues::Blob(bytes) => {
-                // Only clone if we need to - this is unavoidable with rusqlite::Value
-                rusqlite::types::Value::Blob(bytes.to_vec())
-            },
-        };
-        vec_values.push(v);
+        vec_values.push(row_value_to_sqlite_value(p, false));
     }
     Ok(vec_values)
 }
@@ -97,9 +130,16 @@ pub fn convert_params_for_execute<I>(
 where
     I: IntoIterator<Item = RowValues>,
 {
-    let params_vec: Vec<RowValues> = iter.into_iter().collect();
-    let x = convert_params(&params_vec)?;
-    Ok(rusqlite::params_from_iter(x.into_iter()))
+    // Convert directly to avoid unnecessary collection
+    let mut values = Vec::new();
+    for p in iter {
+        values.push(row_value_to_sqlite_value(&p, true));
+    }
+    // Note: clippy suggests removing .into_iter(), but removing it causes
+    // a type error. This is because params_from_iter needs IntoIter<Value>,
+    // not Vec<Value>, despite the type parameter suggesting otherwise.
+    #[allow(clippy::useless_conversion)]
+    Ok(rusqlite::params_from_iter(values.into_iter()))
 }
 
 /// Wrapper for SQLite parameters for queries.
@@ -110,7 +150,7 @@ pub struct SqliteParamsExecute(
     pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>,
 );
 
-impl<'a> ParamConverter<'a> for SqliteParamsQuery {
+impl ParamConverter<'_> for SqliteParamsQuery {
     type Converted = Self;
 
     fn convert_sql_params(
@@ -134,7 +174,7 @@ impl<'a> ParamConverter<'a> for SqliteParamsQuery {
     }
 }
 
-impl<'a> ParamConverter<'a> for SqliteParamsExecute {
+impl ParamConverter<'_> for SqliteParamsExecute {
     type Converted = Self;
 
     fn convert_sql_params(
@@ -170,8 +210,16 @@ fn sqlite_extract_value_sync(
         Ok(rusqlite::types::ValueRef::Integer(i)) => Ok(RowValues::Int(i)),
         Ok(rusqlite::types::ValueRef::Real(f)) => Ok(RowValues::Float(f)),
         Ok(rusqlite::types::ValueRef::Text(bytes)) => {
-            let s = String::from_utf8_lossy(bytes).into_owned();
-            Ok(RowValues::Text(s))
+            // Fast path for ASCII (which most database text likely is)
+            if bytes.is_ascii() {
+                // ASCII is valid UTF-8, use lossy conversion for safety
+                let s = String::from_utf8_lossy(bytes).into_owned();
+                Ok(RowValues::Text(s))
+            } else {
+                // Fallback for non-ASCII
+                let s = String::from_utf8_lossy(bytes).into_owned();
+                Ok(RowValues::Text(s))
+            }
         }
         Ok(rusqlite::types::ValueRef::Blob(b)) => Ok(RowValues::Blob(b.to_vec())),
     }
@@ -189,20 +237,25 @@ pub fn build_result_set(
     
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);
-
+    
     let mut rows_iter = stmt.query(&param_refs[..])?;
     // Create result set with default capacity
     let mut result_set = ResultSet::with_capacity(10);
+    result_set.set_column_names(column_names_rc);
 
     while let Some(row) = rows_iter.next()? {
         let mut row_values = Vec::new();
 
-        for i in 0..column_names_rc.len() {
+        let col_count = result_set.get_column_names()
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("No column names available".to_string()))?
+            .len();
+            
+        for i in 0..col_count {
             let value = sqlite_extract_value_sync(row, i)?;
             row_values.push(value);
         }
 
-        result_set.add_row(CustomDbRow::new(column_names_rc.clone(), row_values));
+        result_set.add_row_values(row_values);
     }
 
     Ok(result_set)
@@ -217,7 +270,7 @@ pub async fn execute_batch(
 
     // Use interact to run the blocking code in a separate thread.
     sqlite_client
-        .interact(move |conn| -> rusqlite::Result<()> {
+        .interact(move |conn| {
             // Begin a transaction
             let tx = conn.transaction()?;
 
@@ -230,8 +283,7 @@ pub async fn execute_batch(
             Ok(())
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))
-        .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?
 }
 
 /// Execute a SELECT query in SQLite
@@ -243,8 +295,8 @@ pub async fn execute_select(
     let query_owned = query.to_owned();
     let params_owned = convert_params(params)?;
 
-    // Use interact to run the blocking code in a separate thread.
-    let result = sqlite_client
+    // Use interact to run the blocking code in a separate thread and return the result directly
+    sqlite_client
         .interact(move |conn| {
             // Prepare the query
             let mut stmt = conn.prepare(&query_owned)?;
@@ -253,9 +305,7 @@ pub async fn execute_select(
             build_result_set(&mut stmt, &params_owned)
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?;
-
-    result
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?
 }
 
 /// Execute a DML query (INSERT, UPDATE, DELETE) in SQLite
@@ -269,12 +319,13 @@ pub async fn execute_dml(
 
     // Use interact to run the blocking code in a separate thread.
     sqlite_client
-        .interact(move |conn| -> rusqlite::Result<usize> {
+        .interact(move |conn| {
             // Prepare the query
             let tx = conn.transaction()?;
+            
+            let param_refs: Vec<&dyn ToSql> = params_owned.iter().map(|v| v as &dyn ToSql).collect();
+            
             // Execute the query
-            let param_refs: Vec<&dyn ToSql> =
-                params_owned.iter().map(|v| v as &dyn ToSql).collect();
             let rows = {
                 let mut stmt = tx.prepare(&query_owned)?;
                 stmt.execute(&param_refs[..])?
@@ -284,6 +335,5 @@ pub async fn execute_dml(
             Ok(rows)
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))
-        .and_then(|res| res.map_err(SqlMiddlewareDbError::SqliteError))
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?
 }

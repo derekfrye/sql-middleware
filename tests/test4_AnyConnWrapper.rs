@@ -1,8 +1,9 @@
 // use rusty_golf::controller::score;
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
-use common::postgres::{setup_postgres_container, stop_postgres_container};
 // use deadpool_sqlite::rusqlite::{ self, params };
+#[cfg(feature = "test-utils")]
+use sql_middleware::test_utils::testing_postgres::{setup_postgres_container, stop_postgres_container};
 use sql_middleware::{
     convert_sql_params,
     middleware::{
@@ -13,9 +14,6 @@ use sql_middleware::{
     SqliteParamsExecute, SqliteParamsQuery,
 };
 use tokio::runtime::Runtime;
-mod common {
-    pub mod postgres;
-}
 
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
@@ -102,6 +100,14 @@ async fn run_test_logic(
             include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
             include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
         ],
+        DatabaseType::Mssql => vec![
+            // Use SQLite scripts for MSSQL in test
+            include_str!("../tests/sqlite/test4/00_event.sql"),
+            include_str!("../tests/sqlite/test4/02_golfer.sql"),
+            include_str!("../tests/sqlite/test4/03_bettor.sql"),
+            include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
+            include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
+        ],
     };
 
     let ddl_query = ddl.join("\n");
@@ -117,6 +123,7 @@ async fn run_test_logic(
     let parameterized_query = match db_type {
         DatabaseType::Postgres => "INSERT INTO test (id, name) VALUES ($1, $2);",
         DatabaseType::Sqlite => "INSERT INTO test (id, name) VALUES (?1, ?2);",
+        DatabaseType::Mssql => "INSERT INTO test (id, name) VALUES (@p1, @p2);",
     };
 
     // generate 100 params
@@ -187,6 +194,13 @@ async fn run_test_logic(
                 })
                 .await?;
             res?;
+        }
+        DatabaseType::Mssql => {
+            // For this test, skip the MSSQL implementation
+            // Simply insert the data using the middleware connection
+            for param in params {
+                conn.execute_dml(&parameterized_query, &param).await?;
+            }
         }
     }
 
@@ -277,6 +291,12 @@ async fn run_test_logic(
                 .await?;
             res?;
         }
+        DatabaseType::Mssql => {
+            // For MS SQL, insert data using the middleware connection
+            for param in params {
+                conn.execute_dml(&parameterized_query, &param).await?;
+            }
+        }
     }
 
     let query = "select count(*) as cnt from test;";
@@ -312,6 +332,11 @@ async fn run_test_logic(
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
+        MiddlewarePoolConnection::Mssql(_) => {
+            // For MSSQL, just execute the query using the middleware
+            conn.execute_dml(&query_and_params.query, &query_and_params.params).await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
+        },
         MiddlewarePoolConnection::Sqlite(xx) => {
             let xx = &mut *xx;
             xx.interact(move |xxx| {
