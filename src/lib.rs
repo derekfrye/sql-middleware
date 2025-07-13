@@ -220,8 +220,7 @@ pub fn convert_sql_params<'a, T: ParamConverter<'a>>(
     // Check if the converter supports this mode
     if !T::supports_mode(mode) {
         return Err(SqlMiddlewareDbError::ParameterError(format!(
-            "Converter doesn't support mode: {:?}",
-            mode
+            "Converter doesn't support mode: {mode:?}"
         )));
     }
     T::convert_sql_params(params, mode)

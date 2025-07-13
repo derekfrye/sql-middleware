@@ -12,7 +12,7 @@ impl ConfigAndPool {
 
         // Create the pool
         let pool = cfg.create_pool(Runtime::Tokio1).map_err(|e| {
-            SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQLite pool: {}", e))
+            SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQLite pool: {e}"))
         })?;
 
         // Initialize the database (e.g., create tables)
@@ -43,6 +43,6 @@ impl ConfigAndPool {
 /// Convert InteractError to a more specific SqlMiddlewareDbError
 impl From<deadpool_sqlite::InteractError> for SqlMiddlewareDbError {
     fn from(err: deadpool_sqlite::InteractError) -> Self {
-        SqlMiddlewareDbError::ConnectionError(format!("SQLite Interact Error: {}", err))
+        SqlMiddlewareDbError::ConnectionError(format!("SQLite Interact Error: {err}"))
     }
 }

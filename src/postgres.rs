@@ -54,8 +54,7 @@ impl ConfigAndPool {
             .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
             .map_err(|e| {
                 SqlMiddlewareDbError::ConnectionError(format!(
-                    "Failed to create Postgres pool: {}",
-                    e
+                    "Failed to create Postgres pool: {e}"
                 ))
             })?;
 

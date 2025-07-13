@@ -27,7 +27,7 @@ pub async fn execute_batch(
             Ok(())
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {e}")))?
 }
 
 /// Execute a SELECT query in SQLite
@@ -49,7 +49,7 @@ pub async fn execute_select(
             build_result_set(&mut stmt, &params_owned)
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {e}")))?
 }
 
 /// Execute a DML query (INSERT, UPDATE, DELETE) in SQLite
@@ -80,5 +80,5 @@ pub async fn execute_dml(
             Ok(rows)
         })
         .await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {}", e)))?
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {e}")))?
 }

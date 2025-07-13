@@ -51,8 +51,7 @@ impl ConfigAndPool {
         // Create pool
         let pool = manager.max_size(20).create_pool().map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!(
-                "Failed to create SQL Server pool: {}",
-                e
+                "Failed to create SQL Server pool: {e}"
             ))
         })?;
 
@@ -122,16 +121,16 @@ impl ToSql for RowValues {
                 }
 
                 // Format the timestamp efficiently
-                let formatted = BUF.with(|buf| {
+                
+
+                BUF.with(|buf| {
                     let mut s = buf.borrow_mut();
                     s.clear();
                     use std::fmt::Write;
                     // ISO-8601 format
                     write!(s, "{}", dt.format("%Y-%m-%dT%H:%M:%S%.f")).unwrap();
                     ColumnData::String(Some(Cow::from(s.clone())))
-                });
-
-                formatted
+                })
             }
             RowValues::Null => ColumnData::String(None),
             RowValues::JSON(jsval) => ColumnData::String(Some(Cow::from(jsval.to_string()))),
@@ -151,12 +150,12 @@ pub async fn build_result_set(
 
     // Execute the query
     let mut stream = query_builder.query(client).await.map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("SQL Server query error: {}", e))
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server query error: {e}"))
     })?;
 
     // Get column information
     let columns_opt = stream.columns().await.map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("SQL Server column fetch error: {}", e))
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server column fetch error: {e}"))
     })?;
 
     let columns = columns_opt.ok_or_else(|| {
@@ -174,7 +173,7 @@ pub async fn build_result_set(
     // Process the stream
     let mut rows_stream = stream.into_row_stream();
     while let Some(row_result) = rows_stream.try_next().await.map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {}", e))
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {e}"))
     })? {
         let col_count = result_set
             .get_column_names()
@@ -271,7 +270,7 @@ pub async fn execute_batch(
     // Execute the batch of queries
     let query_builder = tiberius::Query::new(query);
     query_builder.execute(client).await.map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("SQL Server batch execution error: {}", e))
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server batch execution error: {e}"))
     })?;
 
     Ok(())
@@ -332,7 +331,7 @@ pub async fn execute_dml(
 
     // Execute the query
     let exec_result = query_builder.execute(client).await.map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("SQL Server DML execution error: {}", e))
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server DML execution error: {e}"))
     })?;
 
     // Get rows affected
@@ -370,17 +369,17 @@ pub async fn create_mssql_client(
 
     // Try to resolve the socket address
     let addr_iter = (server, port_val).to_socket_addrs().map_err(|e| {
-        SqlMiddlewareDbError::ConnectionError(format!("Failed to resolve server address: {}", e))
+        SqlMiddlewareDbError::ConnectionError(format!("Failed to resolve server address: {e}"))
     })?;
 
     // Find the first valid address
     let server_addr = addr_iter.into_iter().next().ok_or_else(|| {
-        SqlMiddlewareDbError::ConnectionError(format!("No valid address found for {}", server))
+        SqlMiddlewareDbError::ConnectionError(format!("No valid address found for {server}"))
     })?;
 
     // Connect to the resolved socket address
     let tcp = TcpStream::connect(server_addr).await.map_err(|e| {
-        SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {}", e))
+        SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {e}"))
     })?;
 
     // Make compatible with Tiberius
@@ -388,6 +387,6 @@ pub async fn create_mssql_client(
 
     // Connect with Tiberius
     Client::connect(config, tcp).await.map_err(|e| {
-        SqlMiddlewareDbError::ConnectionError(format!("SQL Server connection error: {}", e))
+        SqlMiddlewareDbError::ConnectionError(format!("SQL Server connection error: {e}"))
     })
 }
