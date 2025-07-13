@@ -141,6 +141,12 @@ pub mod prelude {
 }
 
 // Core modules
+pub mod error;
+pub mod types;
+pub mod query;
+pub mod results;
+pub mod pool;
+pub mod executor;
 pub mod middleware;
 
 // Private database-specific modules
