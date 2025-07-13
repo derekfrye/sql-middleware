@@ -1,6 +1,6 @@
 use deadpool_sqlite::rusqlite;
-use rusqlite::{Statement, ToSql};
 use rusqlite::types::Value;
+use rusqlite::{Statement, ToSql};
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 

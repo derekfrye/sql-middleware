@@ -1,10 +1,8 @@
-use deadpool_sqlite::rusqlite::ParamsFromIter;
 use deadpool_sqlite::rusqlite;
+use deadpool_sqlite::rusqlite::ParamsFromIter;
 use rusqlite::types::Value;
 
-use crate::middleware::{
-    ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError,
-};
+use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
 
 // Thread-local buffer for efficient timestamp formatting
 thread_local! {

@@ -1,8 +1,6 @@
 use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
 
-use crate::middleware::{
-    ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError,
-};
+use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 impl ConfigAndPool {
     /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite

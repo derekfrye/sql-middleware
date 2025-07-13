@@ -7,11 +7,11 @@
 // - executor: Database operation execution
 
 pub mod config;
+pub mod executor;
 pub mod params;
 pub mod query;
-pub mod executor;
 
 // Re-export the public API
-pub use params::{SqliteParamsQuery, SqliteParamsExecute};
+pub use executor::{execute_batch, execute_dml, execute_select};
+pub use params::{SqliteParamsExecute, SqliteParamsQuery};
 pub use query::build_result_set;
-pub use executor::{execute_batch, execute_select, execute_dml};

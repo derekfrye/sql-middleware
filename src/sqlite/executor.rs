@@ -1,9 +1,9 @@
 use deadpool_sqlite::Object;
 use deadpool_sqlite::rusqlite::ToSql;
 
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use super::params::convert_params;
 use super::query::build_result_set;
+use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Execute a batch of SQL statements for SQLite
 pub async fn execute_batch(

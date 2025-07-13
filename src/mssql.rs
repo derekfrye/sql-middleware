@@ -50,9 +50,7 @@ impl ConfigAndPool {
 
         // Create pool
         let pool = manager.max_size(20).create_pool().map_err(|e| {
-            SqlMiddlewareDbError::ConnectionError(format!(
-                "Failed to create SQL Server pool: {e}"
-            ))
+            SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQL Server pool: {e}"))
         })?;
 
         Ok(ConfigAndPool {
@@ -121,7 +119,6 @@ impl ToSql for RowValues {
                 }
 
                 // Format the timestamp efficiently
-                
 
                 BUF.with(|buf| {
                     let mut s = buf.borrow_mut();
@@ -378,9 +375,9 @@ pub async fn create_mssql_client(
     })?;
 
     // Connect to the resolved socket address
-    let tcp = TcpStream::connect(server_addr).await.map_err(|e| {
-        SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {e}"))
-    })?;
+    let tcp = TcpStream::connect(server_addr)
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {e}")))?;
 
     // Make compatible with Tiberius
     let tcp = tcp.compat_write();
