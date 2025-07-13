@@ -33,16 +33,16 @@ impl CustomDbRow {
                 .iter()
                 .enumerate()
                 .map(|(i, name)| (name.clone(), i))
-                .collect::<std::collections::HashMap<_, _>>()
+                .collect::<std::collections::HashMap<_, _>>(),
         );
-        
-        Self { 
-            column_names, 
+
+        Self {
+            column_names,
             rows,
             column_index_cache: cache,
         }
     }
-    
+
     /// Get the index of a column by name
     ///
     /// # Arguments
@@ -57,7 +57,7 @@ impl CustomDbRow {
         if let Some(&idx) = self.column_index_cache.get(column_name) {
             return Some(idx);
         }
-        
+
         // Fall back to linear search
         self.column_names.iter().position(|col| col == column_name)
     }
@@ -79,7 +79,7 @@ impl CustomDbRow {
             None
         }
     }
-    
+
     /// Get a value from the row by column index
     ///
     /// # Arguments
@@ -125,17 +125,17 @@ impl ResultSet {
             column_names: None,
         }
     }
-    
+
     /// Set the column names for this result set (to be shared by all rows)
     pub fn set_column_names(&mut self, column_names: std::sync::Arc<Vec<String>>) {
         self.column_names = Some(column_names);
     }
-    
+
     /// Get the column names for this result set
     pub fn get_column_names(&self) -> Option<&std::sync::Arc<Vec<String>>> {
         self.column_names.as_ref()
     }
-    
+
     /// Add a row to the result set
     ///
     /// # Arguments
@@ -148,7 +148,7 @@ impl ResultSet {
             lazy_static::lazy_static! {
                 static ref CACHE_MAP: std::sync::Mutex<std::collections::HashMap<usize, std::sync::Arc<std::collections::HashMap<String, usize>>>> = std::sync::Mutex::new(std::collections::HashMap::new());
             }
-            
+
             // Use the pointer to column_names as a key for the cache
             let ptr = column_names.as_ref().as_ptr() as usize;
             let cache = {
@@ -159,23 +159,23 @@ impl ResultSet {
                             .iter()
                             .enumerate()
                             .map(|(i, name)| (name.to_string(), i))
-                            .collect::<std::collections::HashMap<_, _>>()
+                            .collect::<std::collections::HashMap<_, _>>(),
                     )
                 });
                 cache_entry.clone()
             };
-            
+
             let row = CustomDbRow {
                 column_names: column_names.clone(),
                 rows: row_values,
                 column_index_cache: cache,
             };
-            
+
             self.results.push(row);
             self.rows_affected += 1;
         }
     }
-    
+
     /// Add a row to the result set (legacy method, less efficient)
     ///
     /// # Arguments
@@ -186,7 +186,7 @@ impl ResultSet {
         if self.column_names.is_none() {
             self.column_names = Some(row.column_names.clone());
         }
-        
+
         self.results.push(row);
         self.rows_affected += 1;
     }

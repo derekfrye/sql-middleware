@@ -5,21 +5,16 @@ use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
-    ConfigAndPool,
-    ConversionMode,
-    MiddlewarePool,
-    MiddlewarePoolConnection,
-    QueryAndParams,
+    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams,
     RowValues,
 };
-use sql_middleware::{
-    convert_sql_params,
-    postgres_build_result_set,
-    PostgresParams,
-    SqlMiddlewareDbError,
-};
 #[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::testing_postgres::{setup_postgres_container, stop_postgres_container};
+use sql_middleware::test_utils::testing_postgres::{
+    setup_postgres_container, stop_postgres_container,
+};
+use sql_middleware::{
+    PostgresParams, SqlMiddlewareDbError, convert_sql_params, postgres_build_result_set,
+};
 
 use std::vec;
 use tokio::runtime::Runtime;
@@ -46,8 +41,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
     rt.block_on(async {
         // env::var("DB_USER") = Ok("postgres".to_string());
 
-        let stmt =
-            "CREATE TABLE IF NOT EXISTS -- drop table event cascade
+        let stmt = "CREATE TABLE IF NOT EXISTS -- drop table event cascade
                     test (
                     event_id BIGSERIAL NOT NULL PRIMARY KEY,
                     espn_id BIGINT NOT NULL,
@@ -69,7 +63,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
                 panic!("Only postgres is supported in this test");
-            },
+            }
             MiddlewarePoolConnection::Mssql(_) => {
                 panic!("Only postgres is supported in this test");
             }
@@ -101,20 +95,22 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             params: vec![
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
-                RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?
-                )
+                RowValues::Timestamp(NaiveDateTime::parse_from_str(
+                    "2021-08-06 16:00:00",
+                    "%Y-%m-%d %H:%M:%S",
+                )?),
             ],
         };
 
         let converted_params = convert_sql_params::<PostgresParams>(
             &query_and_params.params,
-            ConversionMode::Execute
+            ConversionMode::Execute,
         )?;
 
         let tx = pgconn.transaction().await?;
         tx.prepare(query_and_params.query.as_str()).await?;
-        tx.execute(query_and_params.query.as_str(), &converted_params.as_refs()).await?;
+        tx.execute(query_and_params.query.as_str(), &converted_params.as_refs())
+            .await?;
         tx.commit().await?;
 
         let query = "select * FROM test;";
@@ -134,25 +130,24 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                 "event_id".to_string(),
                 "espn_id".to_string(),
                 "name".to_string(),
-                "ins_ts".to_string()
+                "ins_ts".to_string(),
             ],
             vec![
                 RowValues::Int(1),
                 RowValues::Int(123456),
                 RowValues::Text("test name".to_string()),
                 RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str(
-                        "2021-08-06 16:00:00",
-                        "%Y-%m-%d %H:%M:%S"
-                    ).unwrap()
-                )
-            ]
+                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
+                        .unwrap(),
+                ),
+            ],
         )];
 
         let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
 
         for (index, row) in result.results.iter().enumerate() {
-            let left: Vec<RowValues> = row.column_names
+            let left: Vec<RowValues> = row
+                .column_names
                 .iter()
                 .zip(&row.rows) // Pair column names with corresponding row values
                 .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
@@ -160,7 +155,8 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                 .collect();
 
             // Get column names and row values from the expected result
-            let right: Vec<RowValues> = expected_result[index].column_names
+            let right: Vec<RowValues> = expected_result[index]
+                .column_names
                 .iter()
                 .zip(&expected_result[index].rows) // Pair column names with corresponding row values
                 .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))

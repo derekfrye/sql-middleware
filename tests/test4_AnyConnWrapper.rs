@@ -3,15 +3,17 @@
 
 // use deadpool_sqlite::rusqlite::{ self, params };
 #[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::testing_postgres::{setup_postgres_container, stop_postgres_container};
+use sql_middleware::test_utils::testing_postgres::{
+    setup_postgres_container, stop_postgres_container,
+};
 use sql_middleware::{
+    PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery,
     convert_sql_params,
     middleware::{
         AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, ConversionMode,
         DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
-    postgres_build_result_set, sqlite_build_result_set, PostgresParams, SqlMiddlewareDbError,
-    SqliteParamsExecute, SqliteParamsQuery,
+    postgres_build_result_set, sqlite_build_result_set,
 };
 use tokio::runtime::Runtime;
 
@@ -334,9 +336,10 @@ async fn run_test_logic(
         }
         MiddlewarePoolConnection::Mssql(_) => {
             // For MSSQL, just execute the query using the middleware
-            conn.execute_dml(&query_and_params.query, &query_and_params.params).await?;
+            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+                .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
-        },
+        }
         MiddlewarePoolConnection::Sqlite(xx) => {
             let xx = &mut *xx;
             xx.interact(move |xxx| {

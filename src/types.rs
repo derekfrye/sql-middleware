@@ -130,12 +130,12 @@ pub trait ParamConverter<'a> {
         params: &'a [RowValues],
         mode: ConversionMode,
     ) -> Result<Self::Converted, SqlMiddlewareDbError>;
-    
+
     /// Check if this converter supports the given mode
-    /// 
+    ///
     /// # Arguments
     /// * `mode` - The conversion mode to check
-    /// 
+    ///
     /// # Returns
     /// * `bool` - Whether this converter supports the mode
     fn supports_mode(_mode: ConversionMode) -> bool {

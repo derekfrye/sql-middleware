@@ -1,16 +1,16 @@
 use async_trait::async_trait;
 
 use crate::error::SqlMiddlewareDbError;
-use crate::types::RowValues;
-use crate::results::ResultSet;
 use crate::pool::MiddlewarePoolConnection;
+use crate::results::ResultSet;
+use crate::types::RowValues;
 
+#[cfg(feature = "mssql")]
+use crate::mssql;
 #[cfg(feature = "postgres")]
 use crate::postgres;
 #[cfg(feature = "sqlite")]
 use crate::sqlite;
-#[cfg(feature = "mssql")]
-use crate::mssql;
 
 #[async_trait]
 pub trait AsyncDatabaseExecutor {
@@ -51,11 +51,11 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "This database type is not enabled in the current build".to_string()
+                "This database type is not enabled in the current build".to_string(),
             )),
         }
     }
-    
+
     async fn execute_select(
         &mut self,
         query: &str,
@@ -76,11 +76,11 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "This database type is not enabled in the current build".to_string()
+                "This database type is not enabled in the current build".to_string(),
             )),
         }
     }
-    
+
     async fn execute_dml(
         &mut self,
         query: &str,
@@ -101,7 +101,7 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "This database type is not enabled in the current build".to_string()
+                "This database type is not enabled in the current build".to_string(),
             )),
         }
     }

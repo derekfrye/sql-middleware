@@ -1,13 +1,13 @@
 // mssql.rs - SQL Server support via Tiberius and deadpool-tiberius
 //! SQL Server (MSSQL) connection and query handling via Tiberius
-//! 
+//!
 //! This module provides the implementation of the middleware for Microsoft SQL Server.
 //! It uses the Tiberius crate for connecting to and querying SQL Server databases,
 //! with connection pooling provided by deadpool.
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter,
-    ResultSet, RowValues, SqlMiddlewareDbError,
+    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter, ResultSet,
+    RowValues, SqlMiddlewareDbError,
 };
 use chrono::NaiveDateTime;
 use deadpool::managed::Object;
@@ -42,17 +42,19 @@ impl ConfigAndPool {
             .database(&database)
             .basic_authentication(&user, &password)
             .trust_cert();
-            
+
         // Add instance name if provided
         if let Some(instance) = &instance_name {
             manager = manager.instance_name(instance);
         }
-        
+
         // Create pool
-        let pool = manager
-            .max_size(20)
-            .create_pool()
-            .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQL Server pool: {}", e)))?;
+        let pool = manager.max_size(20).create_pool().map_err(|e| {
+            SqlMiddlewareDbError::ConnectionError(format!(
+                "Failed to create SQL Server pool: {}",
+                e
+            ))
+        })?;
 
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Mssql(pool),
@@ -71,7 +73,7 @@ impl<'a> Params<'a> {
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         // Pre-allocate space for performance
         let mut references = Vec::with_capacity(params.len());
-        
+
         // Avoid iterator.collect() allocation overhead
         for p in params {
             references.push(p as &(dyn ToSql + Sync));
@@ -95,7 +97,7 @@ impl<'a> ParamConverter<'a> for Params<'a> {
     ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         Self::convert(params)
     }
-    
+
     // SQL Server params support both query and execution modes
     fn supports_mode(_mode: ConversionMode) -> bool {
         true
@@ -118,7 +120,7 @@ impl ToSql for RowValues {
                 thread_local! {
                     static BUF: std::cell::RefCell<String> = std::cell::RefCell::new(String::with_capacity(32));
                 }
-                
+
                 // Format the timestamp efficiently
                 let formatted = BUF.with(|buf| {
                     let mut s = buf.borrow_mut();
@@ -128,9 +130,9 @@ impl ToSql for RowValues {
                     write!(s, "{}", dt.format("%Y-%m-%dT%H:%M:%S%.f")).unwrap();
                     ColumnData::String(Some(Cow::from(s.clone())))
                 });
-                
+
                 formatted
-            },
+            }
             RowValues::Null => ColumnData::String(None),
             RowValues::JSON(jsval) => ColumnData::String(Some(Cow::from(jsval.to_string()))),
             RowValues::Blob(bytes) => ColumnData::Binary(Some(Cow::from(bytes.as_slice()))),
@@ -148,20 +150,20 @@ pub async fn build_result_set(
     let query_builder = bind_query_params(query, params);
 
     // Execute the query
-    let mut stream = query_builder.query(client).await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server query error: {}", e)))?;
+    let mut stream = query_builder.query(client).await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server query error: {}", e))
+    })?;
 
     // Get column information
-    let columns_opt = stream.columns().await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server column fetch error: {}", e)))?;
-    
-    let columns = columns_opt.ok_or_else(|| 
-        SqlMiddlewareDbError::ExecutionError("No columns returned from query".to_string()))?;
-    
-    let column_names: Vec<String> = columns
-        .iter()
-        .map(|col| col.name().to_string())
-        .collect();
+    let columns_opt = stream.columns().await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server column fetch error: {}", e))
+    })?;
+
+    let columns = columns_opt.ok_or_else(|| {
+        SqlMiddlewareDbError::ExecutionError("No columns returned from query".to_string())
+    })?;
+
+    let column_names: Vec<String> = columns.iter().map(|col| col.name().to_string()).collect();
 
     // Preallocate capacity if we can estimate the number of rows
     let mut result_set = ResultSet::with_capacity(10);
@@ -171,15 +173,18 @@ pub async fn build_result_set(
 
     // Process the stream
     let mut rows_stream = stream.into_row_stream();
-    while let Some(row_result) = rows_stream.try_next().await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {}", e)))?
-    {
-        let col_count = result_set.get_column_names()
-            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("No column names available".to_string()))?
+    while let Some(row_result) = rows_stream.try_next().await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {}", e))
+    })? {
+        let col_count = result_set
+            .get_column_names()
+            .ok_or_else(|| {
+                SqlMiddlewareDbError::ExecutionError("No column names available".to_string())
+            })?
             .len();
-            
+
         let mut row_values = Vec::with_capacity(col_count);
-            
+
         for i in 0..col_count {
             // Extract values from the row
             if let Some(value) = extract_value(&row_result, i)? {
@@ -202,30 +207,30 @@ fn extract_value(
 ) -> Result<Option<RowValues>, SqlMiddlewareDbError> {
     // Since Tiberius Row API is a bit complex and varies by version,
     // we'll use a simple approach by trying different value types
-    
+
     // Try integer
     if let Ok(Some(val)) = row.try_get::<i32, _>(idx) {
         return Ok(Some(RowValues::Int(val as i64)));
     }
-    
+
     if let Ok(Some(val)) = row.try_get::<i64, _>(idx) {
         return Ok(Some(RowValues::Int(val)));
     }
-    
+
     // Try floating point
     if let Ok(Some(val)) = row.try_get::<f32, _>(idx) {
         return Ok(Some(RowValues::Float(val as f64)));
     }
-    
+
     if let Ok(Some(val)) = row.try_get::<f64, _>(idx) {
         return Ok(Some(RowValues::Float(val)));
     }
-    
+
     // Try boolean
     if let Ok(Some(val)) = row.try_get::<bool, _>(idx) {
         return Ok(Some(RowValues::Bool(val)));
     }
-    
+
     // Try string (most values can be represented as strings)
     if let Ok(Some(val)) = row.try_get::<&str, _>(idx) {
         // If it looks like a date/time, try to parse it
@@ -236,21 +241,21 @@ fn extract_value(
                 return Ok(Some(RowValues::Timestamp(dt)));
             }
         }
-        
+
         // Otherwise, just return as text
         return Ok(Some(RowValues::Text(val.to_string())));
     }
-    
+
     // Try bytes (binary data)
     if let Ok(Some(val)) = row.try_get::<&[u8], _>(idx) {
         return Ok(Some(RowValues::Blob(val.to_vec())));
     }
-    
+
     // Check if the value is NULL
     if let Ok(None) = row.try_get::<&str, _>(idx) {
         return Ok(None);
     }
-    
+
     // If none of the above worked, return NULL
     Ok(None)
 }
@@ -265,8 +270,9 @@ pub async fn execute_batch(
 
     // Execute the batch of queries
     let query_builder = tiberius::Query::new(query);
-    query_builder.execute(client).await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server batch execution error: {}", e)))?;
+    query_builder.execute(client).await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server batch execution error: {}", e))
+    })?;
 
     Ok(())
 }
@@ -279,20 +285,17 @@ pub async fn execute_select(
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Get a client from the object
     let client = mssql_client.deref_mut();
-    
+
     // Use the build_result_set function to handle parameters and execution
     build_result_set(client, query, params).await
 }
 
 /// Bind parameters directly to the query for SQL Server
 /// Return a query builder with parameters already bound
-fn bind_query_params<'a>(
-    query: &'a str,
-    params: &[RowValues],
-) -> tiberius::Query<'a> {
+fn bind_query_params<'a>(query: &'a str, params: &[RowValues]) -> tiberius::Query<'a> {
     // Create the query builder
     let mut query_builder = tiberius::Query::new(query);
-    
+
     // Bind parameters directly - not using OwnedParam as intermediary
     // since tiberius Query will own the data
     for param in params {
@@ -305,13 +308,13 @@ fn bind_query_params<'a>(
                 // Format timestamps efficiently
                 let formatted = dt.format("%Y-%m-%dT%H:%M:%S%.f").to_string();
                 query_builder.bind(formatted);
-            },
+            }
             RowValues::Null => query_builder.bind(Option::<String>::None),
             RowValues::JSON(jsval) => query_builder.bind(jsval.to_string()),
             RowValues::Blob(bytes) => query_builder.bind(bytes.clone()),
         }
     }
-    
+
     query_builder
 }
 
@@ -328,8 +331,9 @@ pub async fn execute_dml(
     let query_builder = bind_query_params(query, params);
 
     // Execute the query
-    let exec_result = query_builder.execute(client).await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("SQL Server DML execution error: {}", e)))?;
+    let exec_result = query_builder.execute(client).await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server DML execution error: {}", e))
+    })?;
 
     // Get rows affected
     let rows_affected: u64 = exec_result.rows_affected().iter().sum();
@@ -347,40 +351,43 @@ pub async fn create_mssql_client(
     instance_name: Option<&str>,
 ) -> Result<MssqlClient, SqlMiddlewareDbError> {
     let mut config = tiberius::Config::new();
-    
+
     config.host(server);
     config.database(database);
     config.authentication(tiberius::AuthMethod::sql_server(user, password));
-    
+
     let port_val = port.unwrap_or(1433);
     config.port(port_val);
-    
+
     if let Some(instance) = instance_name {
         config.instance_name(instance);
     }
-    
+
     config.trust_cert(); // For testing/development
 
     // Create TCP stream using proper socket address
     use std::net::ToSocketAddrs;
-    
+
     // Try to resolve the socket address
-    let addr_iter = (server, port_val).to_socket_addrs()
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to resolve server address: {}", e)))?;
-    
+    let addr_iter = (server, port_val).to_socket_addrs().map_err(|e| {
+        SqlMiddlewareDbError::ConnectionError(format!("Failed to resolve server address: {}", e))
+    })?;
+
     // Find the first valid address
-    let server_addr = addr_iter.into_iter()
-        .next()
-        .ok_or_else(|| SqlMiddlewareDbError::ConnectionError(format!("No valid address found for {}", server)))?;
-    
+    let server_addr = addr_iter.into_iter().next().ok_or_else(|| {
+        SqlMiddlewareDbError::ConnectionError(format!("No valid address found for {}", server))
+    })?;
+
     // Connect to the resolved socket address
-    let tcp = TcpStream::connect(server_addr).await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {}", e)))?;
-    
+    let tcp = TcpStream::connect(server_addr).await.map_err(|e| {
+        SqlMiddlewareDbError::ConnectionError(format!("TCP connection error: {}", e))
+    })?;
+
     // Make compatible with Tiberius
     let tcp = tcp.compat_write();
-    
+
     // Connect with Tiberius
-    Client::connect(config, tcp).await
-        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("SQL Server connection error: {}", e)))
+    Client::connect(config, tcp).await.map_err(|e| {
+        SqlMiddlewareDbError::ConnectionError(format!("SQL Server connection error: {}", e))
+    })
 }

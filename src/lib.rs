@@ -1,23 +1,23 @@
 /*!
  * SQL Middleware - A unified interface for SQL databases
- * 
+ *
  * This crate provides a middleware layer for SQL database access,
- * currently supporting SQLite, PostgreSQL, and SQL Server backends. The main goal is to 
+ * currently supporting SQLite, PostgreSQL, and SQL Server backends. The main goal is to
  * provide a unified, async-compatible API that works across different database systems.
- * 
+ *
  * # Features
- * 
+ *
  * - Asynchronous database access with deadpool connection pooling
  * - Support for SQLite, PostgreSQL, and SQL Server backends
  * - Unified parameter conversion system
  * - Consistent result handling across database engines
  * - Transaction support
- * 
+ *
  * # Example
- * 
+ *
  * ```rust,no_run
  * use sql_middleware::prelude::*;
- * 
+ *
  * async fn sqlite_example() -> Result<(), SqlMiddlewareDbError> {
  *     // Create a SQLite connection pool
  *     let config = ConfigAndPool::new_sqlite("my_database.db".to_string()).await?;
@@ -39,7 +39,7 @@
  *     
  *     Ok(())
  * }
- * 
+ *
  * async fn postgres_example() -> Result<(), SqlMiddlewareDbError> {
  *     // Create a PostgreSQL connection pool
  *     let mut pg_config = deadpool_postgres::Config::new();
@@ -62,7 +62,7 @@
  *     
  *     Ok(())
  * }
- * 
+ *
  * async fn sqlserver_example() -> Result<(), SqlMiddlewareDbError> {
  *     // Create an SQL Server connection pool
  *     let config = ConfigAndPool::new_mssql(
@@ -88,7 +88,7 @@
  * ```
  */
 
- #![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 // Test utilities module - only compiled with test-utils feature
 #[cfg(feature = "test-utils")]
@@ -97,81 +97,62 @@ pub mod test_utils;
 // Re-export everything that should be part of the public API
 pub mod prelude {
     //! Convenient imports for common functionality.
-    //! 
+    //!
     //! This module re-exports the most commonly used types and functions
     //! to make it easier to get started with the library.
-    
+
     pub use crate::middleware::{
-        ConfigAndPool, 
-        MiddlewarePool, 
-        MiddlewarePoolConnection,
-        AsyncDatabaseExecutor,
-        ResultSet, 
-        CustomDbRow,
-        RowValues,
-        SqlMiddlewareDbError,
-        DatabaseType,
-        ConversionMode,
-        QueryAndParams,
-        AnyConnWrapper,
+        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, CustomDbRow,
+        DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, ResultSet,
+        RowValues, SqlMiddlewareDbError,
     };
-    
+
     pub use crate::convert_sql_params;
-    
-    #[cfg(feature = "postgres")]
-    pub use crate::postgres_build_result_set;
+
     #[cfg(feature = "postgres")]
     pub use crate::PostgresParams;
-    
-    #[cfg(feature = "sqlite")]
-    pub use crate::sqlite_build_result_set;
+    #[cfg(feature = "postgres")]
+    pub use crate::postgres_build_result_set;
+
     #[cfg(feature = "sqlite")]
     pub use crate::SqliteParamsExecute;
     #[cfg(feature = "sqlite")]
     pub use crate::SqliteParamsQuery;
-    
-    #[cfg(feature = "mssql")]
-    pub use crate::mssql_build_result_set;
-    #[cfg(feature = "mssql")]
-    pub use crate::MssqlParams;
+    #[cfg(feature = "sqlite")]
+    pub use crate::sqlite_build_result_set;
+
     #[cfg(feature = "mssql")]
     pub use crate::MssqlClient;
     #[cfg(feature = "mssql")]
+    pub use crate::MssqlParams;
+    #[cfg(feature = "mssql")]
     pub use crate::create_mssql_client;
+    #[cfg(feature = "mssql")]
+    pub use crate::mssql_build_result_set;
 }
 
 // Core modules
 pub mod error;
-pub mod types;
-pub mod query;
-pub mod results;
-pub mod pool;
 pub mod executor;
 pub mod middleware;
+pub mod pool;
+pub mod query;
+pub mod results;
+pub mod types;
 
 // Private database-specific modules
+#[cfg(feature = "mssql")]
+mod mssql;
 #[cfg(feature = "postgres")]
 mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
-#[cfg(feature = "mssql")]
-mod mssql;
 
 // Direct exports of frequently used types and functions for simplicity
 pub use middleware::{
-    ConfigAndPool, 
-    MiddlewarePool, 
-    MiddlewarePoolConnection,
-    AsyncDatabaseExecutor,
-    ResultSet, 
-    CustomDbRow,
-    RowValues,
-    SqlMiddlewareDbError,
-    DatabaseType,
-    ConversionMode,
-    QueryAndParams,
-    AnyConnWrapper,
-    ParamConverter,
+    AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, CustomDbRow,
+    DatabaseType, MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams,
+    ResultSet, RowValues, SqlMiddlewareDbError,
 };
 
 #[cfg(feature = "postgres")]
@@ -180,26 +161,26 @@ pub use postgres::Params as PostgresParams;
 pub use postgres::build_result_set as postgres_build_result_set;
 
 #[cfg(feature = "sqlite")]
-pub use sqlite::build_result_set as sqlite_build_result_set;
-#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteParamsExecute;
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteParamsQuery;
+#[cfg(feature = "sqlite")]
+pub use sqlite::build_result_set as sqlite_build_result_set;
 
+#[cfg(feature = "mssql")]
+pub use mssql::MssqlClient;
 #[cfg(feature = "mssql")]
 pub use mssql::Params as MssqlParams;
 #[cfg(feature = "mssql")]
 pub use mssql::build_result_set as mssql_build_result_set;
 #[cfg(feature = "mssql")]
 pub use mssql::create_mssql_client;
-#[cfg(feature = "mssql")]
-pub use mssql::MssqlClient;
 
 // Module to help with testing - needed for existing tests
 pub mod test_helpers {
-    use std::sync::Arc;
     use crate::middleware::{CustomDbRow, RowValues};
-    
+    use std::sync::Arc;
+
     pub fn create_test_row(column_names: Vec<String>, values: Vec<RowValues>) -> CustomDbRow {
         CustomDbRow::new(Arc::new(column_names), values)
     }
@@ -238,9 +219,10 @@ pub fn convert_sql_params<'a, T: ParamConverter<'a>>(
 ) -> Result<T::Converted, SqlMiddlewareDbError> {
     // Check if the converter supports this mode
     if !T::supports_mode(mode) {
-        return Err(SqlMiddlewareDbError::ParameterError(
-            format!("Converter doesn't support mode: {:?}", mode)
-        ));
+        return Err(SqlMiddlewareDbError::ParameterError(format!(
+            "Converter doesn't support mode: {:?}",
+            mode
+        )));
     }
     T::convert_sql_params(params, mode)
 }

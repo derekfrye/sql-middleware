@@ -14,8 +14,8 @@ pub type SqliteWritePool = DeadpoolSqlitePool;
 use deadpool_tiberius::Pool as TiberiusPool;
 
 use crate::error::SqlMiddlewareDbError;
-use crate::types::DatabaseType;
 use crate::query::AnyConnWrapper;
+use crate::types::DatabaseType;
 
 /// Connection pool for database access
 ///
@@ -65,7 +65,7 @@ impl MiddlewarePool {
     pub async fn get(&self) -> Result<&MiddlewarePool, SqlMiddlewareDbError> {
         Ok(self)
     }
-    
+
     pub async fn get_connection(
         pool: &MiddlewarePool,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
@@ -96,7 +96,7 @@ impl MiddlewarePool {
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "This database type is not enabled in the current build".to_string()
+                "This database type is not enabled in the current build".to_string(),
             )),
         }
     }
@@ -120,7 +120,10 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
             #[cfg(feature = "sqlite")]
             Self::Sqlite(conn) => f.debug_tuple("Sqlite").field(conn).finish(),
             #[cfg(feature = "mssql")]
-            Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusConnection>").finish(),
+            Self::Mssql(_) => f
+                .debug_tuple("Mssql")
+                .field(&"<TiberiusConnection>")
+                .finish(),
         }
     }
 }
@@ -149,14 +152,12 @@ impl MiddlewarePoolConnection {
                 Ok(func(AnyConnWrapper::Mssql(client)).await)
             }
             #[cfg(feature = "sqlite")]
-            MiddlewarePoolConnection::Sqlite(_) => {
-                Err(SqlMiddlewareDbError::Unimplemented(
-                    "interact_async is not supported for SQLite; use interact_sync instead".to_string()
-                ))
-            }
+            MiddlewarePoolConnection::Sqlite(_) => Err(SqlMiddlewareDbError::Unimplemented(
+                "interact_async is not supported for SQLite; use interact_sync instead".to_string(),
+            )),
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "interact_async is not implemented for this database type".to_string()
+                "interact_async is not implemented for this database type".to_string(),
             )),
         }
     }
@@ -179,20 +180,18 @@ impl MiddlewarePoolConnection {
                     .await?
             }
             #[cfg(feature = "postgres")]
-            MiddlewarePoolConnection::Postgres(_) => {
-                Err(SqlMiddlewareDbError::Unimplemented(
-                    "interact_sync is not supported for Postgres; use interact_async instead".to_string()
-                ))
-            }
+            MiddlewarePoolConnection::Postgres(_) => Err(SqlMiddlewareDbError::Unimplemented(
+                "interact_sync is not supported for Postgres; use interact_async instead"
+                    .to_string(),
+            )),
             #[cfg(feature = "mssql")]
-            MiddlewarePoolConnection::Mssql(_) => {
-                Err(SqlMiddlewareDbError::Unimplemented(
-                    "interact_sync is not supported for SQL Server; use interact_async instead".to_string()
-                ))
-            }
+            MiddlewarePoolConnection::Mssql(_) => Err(SqlMiddlewareDbError::Unimplemented(
+                "interact_sync is not supported for SQL Server; use interact_async instead"
+                    .to_string(),
+            )),
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "interact_sync is not implemented for this database type".to_string()
+                "interact_sync is not implemented for this database type".to_string(),
             )),
         }
     }

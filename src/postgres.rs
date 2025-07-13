@@ -2,16 +2,16 @@
 use std::error::Error;
 
 use crate::middleware::{
-    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter,
-    ResultSet, RowValues, SqlMiddlewareDbError,
+    ConfigAndPool, ConversionMode, DatabaseType, MiddlewarePool, ParamConverter, ResultSet,
+    RowValues, SqlMiddlewareDbError,
 };
 use chrono::NaiveDateTime;
 use deadpool_postgres::Transaction;
 use deadpool_postgres::{Config as PgConfig, Object};
 use serde_json::Value;
 use tokio_postgres::{
-    types::{to_sql_checked, IsNull, ToSql, Type},
     NoTls, Statement,
+    types::{IsNull, ToSql, Type, to_sql_checked},
 };
 use tokio_util::bytes;
 
@@ -23,27 +23,42 @@ impl ConfigAndPool {
     pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
         // Validate all required config fields are present
         if pg_config.dbname.is_none() {
-            return Err(SqlMiddlewareDbError::ConfigError("dbname is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError(
+                "dbname is required".to_string(),
+            ));
         }
 
         if pg_config.host.is_none() {
-            return Err(SqlMiddlewareDbError::ConfigError("host is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError(
+                "host is required".to_string(),
+            ));
         }
         if pg_config.port.is_none() {
-            return Err(SqlMiddlewareDbError::ConfigError("port is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError(
+                "port is required".to_string(),
+            ));
         }
         if pg_config.user.is_none() {
-            return Err(SqlMiddlewareDbError::ConfigError("user is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError(
+                "user is required".to_string(),
+            ));
         }
         if pg_config.password.is_none() {
-            return Err(SqlMiddlewareDbError::ConfigError("password is required".to_string()));
+            return Err(SqlMiddlewareDbError::ConfigError(
+                "password is required".to_string(),
+            ));
         }
 
         // Attempt to create connection pool
         let pg_pool = pg_config
             .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
-            .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to create Postgres pool: {}", e)))?;
-            
+            .map_err(|e| {
+                SqlMiddlewareDbError::ConnectionError(format!(
+                    "Failed to create Postgres pool: {}",
+                    e
+                ))
+            })?;
+
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Postgres(pg_pool),
             db_type: DatabaseType::Postgres,
@@ -71,7 +86,7 @@ impl<'a> Params<'a> {
     ) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
         // Pre-allocate capacity for better performance
         let mut references = Vec::with_capacity(params.len());
-        
+
         // Avoid collect() and just push directly
         for p in params {
             references.push(p as &(dyn ToSql + Sync));
@@ -96,7 +111,7 @@ impl<'a> ParamConverter<'a> for Params<'a> {
         // Simply delegate to your existing conversion:
         Self::convert(params)
     }
-    
+
     // PostgresParams supports both query and execution modes
     fn supports_mode(_mode: ConversionMode) -> bool {
         true
@@ -153,9 +168,7 @@ pub async fn build_result_set(
     transaction: &Transaction<'_>,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Execute the query
-    let rows = transaction
-        .query(stmt, params)
-        .await?;
+    let rows = transaction.query(stmt, params).await?;
 
     let column_names: Vec<String> = stmt
         .columns()
@@ -173,10 +186,13 @@ pub async fn build_result_set(
     for row in rows {
         let mut row_values = Vec::new();
 
-        let col_count = result_set.get_column_names()
-            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("No column names available".to_string()))?
+        let col_count = result_set
+            .get_column_names()
+            .ok_or_else(|| {
+                SqlMiddlewareDbError::ExecutionError("No column names available".to_string())
+            })?
             .len();
-            
+
         for i in 0..col_count {
             let value = postgres_extract_value(&row, i)?;
             row_values.push(value);
@@ -199,40 +215,32 @@ fn postgres_extract_value(
     // Match on the type based on PostgreSQL type OIDs or names
     // For simplicity, we'll handle common types. You may need to expand this.
     if type_info.name() == "int4" || type_info.name() == "int8" {
-        let val: Option<i64> = row
-            .try_get(idx)?;
+        let val: Option<i64> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))
     } else if type_info.name() == "float4" || type_info.name() == "float8" {
-        let val: Option<f64> = row
-            .try_get(idx)?;
+        let val: Option<f64> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Float))
     } else if type_info.name() == "bool" {
-        let val: Option<bool> = row
-            .try_get(idx)?;
+        let val: Option<bool> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Bool))
     } else if type_info.name() == "timestamp" || type_info.name() == "timestamptz" {
-        let val: Option<NaiveDateTime> = row
-            .try_get(idx)?;
+        let val: Option<NaiveDateTime> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Timestamp))
     } else if type_info.name() == "json" || type_info.name() == "jsonb" {
-        let val: Option<Value> = row
-            .try_get(idx)?;
+        let val: Option<Value> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::JSON))
     } else if type_info.name() == "bytea" {
-        let val: Option<Vec<u8>> = row
-            .try_get(idx)?;
+        let val: Option<Vec<u8>> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Blob))
     } else if type_info.name() == "text"
         || type_info.name() == "varchar"
         || type_info.name() == "char"
     {
-        let val: Option<String> = row
-            .try_get(idx)?;
+        let val: Option<String> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     } else {
         // For other types, attempt to get as string
-        let val: Option<String> = row
-            .try_get(idx)?;
+        let val: Option<String> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
 }

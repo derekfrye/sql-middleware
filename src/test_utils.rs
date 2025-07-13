@@ -1,5 +1,5 @@
-use regex::Regex;
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
+use regex::Regex;
 use std::net::TcpStream;
 use std::{
     net::TcpListener,
@@ -103,7 +103,7 @@ pub mod testing_postgres {
                         MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
                         MiddlewarePoolConnection::Sqlite(_) => {
                             panic!("Only postgres is supported for this test");
-                        },
+                        }
                         MiddlewarePoolConnection::Mssql(_) => {
                             panic!("Only postgres is supported for this test");
                         }

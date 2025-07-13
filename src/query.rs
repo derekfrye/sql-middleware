@@ -1,9 +1,9 @@
 #[cfg(feature = "mssql")]
+use tiberius::Client as TiberiusClient;
+#[cfg(feature = "mssql")]
 use tokio::net::TcpStream;
 #[cfg(feature = "mssql")]
 use tokio_util::compat::Compat;
-#[cfg(feature = "mssql")]
-use tiberius::Client as TiberiusClient;
 
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::rusqlite::Connection as SqliteConnectionType;
@@ -11,7 +11,7 @@ use deadpool_sqlite::rusqlite::Connection as SqliteConnectionType;
 use crate::types::RowValues;
 
 /// Wrapper around a database connection for generic code
-/// 
+///
 /// This enum allows code to handle PostgreSQL, SQLite, or SQL Server
 /// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
@@ -27,7 +27,7 @@ pub enum AnyConnWrapper<'a> {
 }
 
 /// A query and its parameters bundled together
-/// 
+///
 /// This type makes it easier to pass around a SQL query and its
 /// parameters as a single unit.
 #[derive(Debug, Clone)]
@@ -55,7 +55,7 @@ impl QueryAndParams {
             params,
         }
     }
-    
+
     /// Create a new QueryAndParams with no parameters
     ///
     /// # Arguments
