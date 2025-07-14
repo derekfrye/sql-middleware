@@ -1,5 +1,5 @@
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
-use deadpool_postgres::{Config as PgConfig};
+use deadpool_postgres::Config as PgConfig;
 use tokio_postgres::NoTls;
 
 impl ConfigAndPool {

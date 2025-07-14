@@ -1,7 +1,7 @@
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
-use deadpool_postgres::Object;
 use super::params::Params;
 use super::query::build_result_set;
+use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use deadpool_postgres::Object;
 
 /// Execute a batch of SQL statements for Postgres
 pub async fn execute_batch(
