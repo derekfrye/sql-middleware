@@ -144,7 +144,7 @@ pub mod types;
 #[cfg(feature = "mssql")]
 mod mssql;
 #[cfg(feature = "postgres")]
-mod postgres;
+pub mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
