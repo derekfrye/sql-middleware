@@ -1,9 +1,7 @@
 use std::borrow::Cow;
 use tiberius::{ColumnData, ToSql};
 
-use crate::middleware::{
-    ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError,
-};
+use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
 
 /// Container for SQL Server parameters with lifetime tracking
 pub struct Params<'a> {

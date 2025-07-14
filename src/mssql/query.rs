@@ -2,8 +2,8 @@ use chrono::NaiveDateTime;
 use futures_util::TryStreamExt;
 use tiberius::Query;
 
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use super::config::MssqlClient;
+use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Build a result set from a SQL Server query execution
 pub async fn build_result_set(

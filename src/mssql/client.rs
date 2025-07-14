@@ -3,8 +3,8 @@ use tiberius::Client;
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
-use crate::middleware::SqlMiddlewareDbError;
 use super::config::MssqlClient;
+use crate::middleware::SqlMiddlewareDbError;
 
 /// Helper function to create a new MSSQL connection
 pub async fn create_mssql_client(

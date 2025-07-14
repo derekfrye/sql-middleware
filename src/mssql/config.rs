@@ -3,9 +3,7 @@ use tiberius::Client;
 use tokio::net::TcpStream;
 use tokio_util::compat::Compat;
 
-use crate::middleware::{
-    ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError,
-};
+use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 /// Type alias for SQL Server client
 pub type MssqlClient = Client<Compat<TcpStream>>;

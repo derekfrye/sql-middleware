@@ -1,9 +1,9 @@
 use deadpool::managed::Object;
 use std::ops::DerefMut;
 
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use super::config::MssqlManager;
-use super::query::{build_result_set, bind_query_params};
+use super::query::{bind_query_params, build_result_set};
+use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Execute a batch of SQL statements for SQL Server
 pub async fn execute_batch(

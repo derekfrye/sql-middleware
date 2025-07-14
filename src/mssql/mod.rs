@@ -7,15 +7,15 @@
 // - executor: Database operation execution
 // - client: Raw client creation utilities
 
+pub mod client;
 pub mod config;
+pub mod executor;
 pub mod params;
 pub mod query;
-pub mod executor;
-pub mod client;
 
 // Re-export the public API
+pub use client::create_mssql_client;
 pub use config::MssqlClient;
+pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
 pub use query::build_result_set;
-pub use executor::{execute_batch, execute_select, execute_dml};
-pub use client::create_mssql_client;
