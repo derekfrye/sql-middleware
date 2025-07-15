@@ -1,22 +1,18 @@
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 use std::net::TcpStream;
-use std::{
-    net::TcpListener,
-    thread,
-    time::Duration,
-};
+use std::{net::TcpListener, thread, time::Duration};
 use tokio::runtime::Runtime;
 
 /// Test utilities for PostgreSQL testing and benchmarking
 pub mod testing_postgres {
     use super::*;
-    
-    #[cfg(feature = "test-utils")]
-    use pg_embed::postgres::{PgEmbed, PgSettings};
+
     #[cfg(feature = "test-utils")]
     use pg_embed::pg_enums::PgAuthMethod;
     #[cfg(feature = "test-utils")]
     use pg_embed::pg_fetch::PgFetchSettings;
+    #[cfg(feature = "test-utils")]
+    use pg_embed::postgres::{PgEmbed, PgSettings};
     #[cfg(feature = "test-utils")]
     use std::path::PathBuf;
 
@@ -36,7 +32,7 @@ pub mod testing_postgres {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let port = find_available_port(9050);
-            
+
             let pg_settings = PgSettings {
                 port,
                 user: cfg.user.as_ref().unwrap().clone(),
@@ -49,14 +45,14 @@ pub mod testing_postgres {
             };
 
             let pg_fetch_settings = PgFetchSettings::default();
-            
+
             let mut pg_embed = PgEmbed::new(pg_settings, pg_fetch_settings).await
                 .map_err(|e| format!("Failed to initialize embedded PostgreSQL: {}. This might be due to network connectivity or platform compatibility issues. Consider installing PostgreSQL locally for testing.", e))?;
-            
+
             // Setup and start PostgreSQL
             pg_embed.setup().await?;
             pg_embed.start_db().await?;
-            
+
             // Give PostgreSQL time to start up
             thread::sleep(Duration::from_millis(3000));
 
@@ -66,7 +62,7 @@ pub mod testing_postgres {
             println!("PostgreSQL started on port {}", port);
             println!("Base URI: {}", pg_base_uri);
             println!("Database URL: {}", database_url);
-            
+
             // Wait for postgres to be ready by attempting connections
             let mut success = false;
             let mut attempt = 0;
@@ -77,7 +73,7 @@ pub mod testing_postgres {
             postgres_cfg.port = Some(port);
             postgres_cfg.host = Some("localhost".to_string());
             postgres_cfg.dbname = Some("postgres".to_string());
-            
+
             println!("Connecting to postgres database to create test database...");
             match ConfigAndPool::new_postgres(postgres_cfg.clone()).await {
                 Ok(config_and_pool) => {
@@ -110,7 +106,7 @@ pub mod testing_postgres {
             while !success && attempt < max_attempts {
                 attempt += 1;
                 println!("Attempt {} to connect to test database...", attempt);
-                
+
                 match ConfigAndPool::new_postgres(test_cfg.clone()).await {
                     Ok(config_and_pool) => {
                         match config_and_pool.pool.get().await {
