@@ -108,6 +108,9 @@ pub enum DatabaseType {
     /// SQL Server database
     #[cfg(feature = "mssql")]
     Mssql,
+    /// Limbo/Turso database
+    #[cfg(feature = "limbo")]
+    Limbo,
 }
 
 /// The conversion "mode".

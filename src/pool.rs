@@ -13,6 +13,9 @@ pub type SqliteWritePool = DeadpoolSqlitePool;
 #[cfg(feature = "mssql")]
 use deadpool_tiberius::Pool as TiberiusPool;
 
+#[cfg(feature = "limbo")]
+use crate::limbo::config::TursoPool;
+
 use crate::error::SqlMiddlewareDbError;
 use crate::query::AnyConnWrapper;
 use crate::types::DatabaseType;
@@ -32,6 +35,9 @@ pub enum MiddlewarePool {
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
     Mssql(TiberiusPool),
+    /// Limbo/Turso connection pool
+    #[cfg(feature = "limbo")]
+    Limbo(TursoPool),
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -44,6 +50,8 @@ impl std::fmt::Debug for MiddlewarePool {
             Self::Sqlite(pool) => f.debug_tuple("Sqlite").field(pool).finish(),
             #[cfg(feature = "mssql")]
             Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
+            #[cfg(feature = "limbo")]
+            Self::Limbo(pool) => f.debug_tuple("Limbo").field(pool).finish(),
         }
     }
 }
@@ -94,6 +102,14 @@ impl MiddlewarePool {
                     .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
                 Ok(MiddlewarePoolConnection::Mssql(conn))
             }
+            #[cfg(feature = "limbo")]
+            MiddlewarePool::Limbo(pool) => {
+                let conn = pool
+                    .get()
+                    .await
+                    .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Limbo pool error: {e}")))?;
+                Ok(MiddlewarePoolConnection::Limbo(conn))
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
@@ -109,6 +125,8 @@ pub enum MiddlewarePoolConnection {
     Sqlite(SqliteObject),
     #[cfg(feature = "mssql")]
     Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
+    #[cfg(feature = "limbo")]
+    Limbo(deadpool::managed::Object<crate::limbo::config::TursoManager>),
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -123,6 +141,11 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
             Self::Mssql(_) => f
                 .debug_tuple("Mssql")
                 .field(&"<TiberiusConnection>")
+                .finish(),
+            #[cfg(feature = "limbo")]
+            Self::Limbo(_) => f
+                .debug_tuple("Limbo")
+                .field(&"<TursoConnection>")
                 .finish(),
         }
     }
@@ -155,6 +178,11 @@ impl MiddlewarePoolConnection {
             MiddlewarePoolConnection::Sqlite(_) => Err(SqlMiddlewareDbError::Unimplemented(
                 "interact_async is not supported for SQLite; use interact_sync instead".to_string(),
             )),
+            #[cfg(feature = "limbo")]
+            MiddlewarePoolConnection::Limbo(limbo_obj) => {
+                let conn = limbo_obj.as_ref();
+                Ok(func(AnyConnWrapper::Limbo(conn)).await)
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "interact_async is not implemented for this database type".to_string(),
