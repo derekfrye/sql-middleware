@@ -1,5 +1,4 @@
 #![doc = include_str!("../docs.md")]
-
 #![forbid(unsafe_code)]
 
 // Test utilities module - only compiled with test-utils feature

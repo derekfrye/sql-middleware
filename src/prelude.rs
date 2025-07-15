@@ -5,8 +5,8 @@
 
 pub use crate::middleware::{
     AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, CustomDbRow,
-    DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, ResultSet,
-    RowValues, SqlMiddlewareDbError,
+    DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, ResultSet, RowValues,
+    SqlMiddlewareDbError,
 };
 
 pub use crate::conversion::convert_sql_params;
