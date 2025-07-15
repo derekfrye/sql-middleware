@@ -1,9 +1,7 @@
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
-use regex::Regex;
 use std::net::TcpStream;
 use std::{
     net::TcpListener,
-    process::{Command, Stdio},
     thread,
     time::Duration,
 };
@@ -46,33 +44,72 @@ pub mod testing_postgres {
                 persistent: false,
                 database_dir: PathBuf::from(&format!("/tmp/pg_embed_test_{}", port)),
                 auth_method: PgAuthMethod::Plain,
-                timeout: None,
+                timeout: Some(std::time::Duration::from_secs(30)),
                 migration_dir: None,
             };
 
             let pg_fetch_settings = PgFetchSettings::default();
-            let mut pg_embed = PgEmbed::new(pg_settings, pg_fetch_settings).await?;
+            
+            let mut pg_embed = PgEmbed::new(pg_settings, pg_fetch_settings).await
+                .map_err(|e| format!("Failed to initialize embedded PostgreSQL: {}. This might be due to network connectivity or platform compatibility issues. Consider installing PostgreSQL locally for testing.", e))?;
             
             // Setup and start PostgreSQL
             pg_embed.setup().await?;
             pg_embed.start_db().await?;
             
-            // Create the database
-            pg_embed.create_database(cfg.dbname.as_ref().unwrap()).await?;
+            // Give PostgreSQL time to start up
+            thread::sleep(Duration::from_millis(3000));
 
+            // Get the base URI and test database URI
+            let pg_base_uri = &pg_embed.db_uri;
             let database_url = pg_embed.full_db_uri(cfg.dbname.as_ref().unwrap());
+            println!("PostgreSQL started on port {}", port);
+            println!("Base URI: {}", pg_base_uri);
+            println!("Database URL: {}", database_url);
             
             // Wait for postgres to be ready by attempting connections
             let mut success = false;
             let mut attempt = 0;
             let max_attempts = 30;
 
+            // First connect to postgres database to create our test database
+            let mut postgres_cfg = cfg.clone();
+            postgres_cfg.port = Some(port);
+            postgres_cfg.host = Some("localhost".to_string());
+            postgres_cfg.dbname = Some("postgres".to_string());
+            
+            println!("Connecting to postgres database to create test database...");
+            match ConfigAndPool::new_postgres(postgres_cfg.clone()).await {
+                Ok(config_and_pool) => {
+                    match config_and_pool.pool.get().await {
+                        Ok(pool) => {
+                            match MiddlewarePool::get_connection(&pool).await {
+                                Ok(conn) => {
+                                    if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
+                                        let create_db_sql = format!("CREATE DATABASE \"{}\"", cfg.dbname.as_ref().unwrap());
+                                        match pgconn.execute(&create_db_sql, &[]).await {
+                                            Ok(_) => println!("Successfully created database {}", cfg.dbname.as_ref().unwrap()),
+                                            Err(e) => println!("Database creation failed (might already exist): {}", e),
+                                        }
+                                    }
+                                }
+                                Err(e) => println!("Failed to get connection to postgres db: {}", e),
+                            }
+                        }
+                        Err(e) => println!("Failed to get pool for postgres db: {}", e),
+                    }
+                }
+                Err(e) => println!("Failed to create config for postgres db: {}", e),
+            }
+
+            // Now try to connect to our test database
             let mut test_cfg = cfg.clone();
             test_cfg.port = Some(port);
             test_cfg.host = Some("localhost".to_string());
 
             while !success && attempt < max_attempts {
                 attempt += 1;
+                println!("Attempt {} to connect to test database...", attempt);
                 
                 match ConfigAndPool::new_postgres(test_cfg.clone()).await {
                     Ok(config_and_pool) => {
@@ -82,26 +119,35 @@ pub mod testing_postgres {
                                     Ok(conn) => {
                                         if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
                                             match pgconn.execute("SELECT 1", &[]).await {
-                                                Ok(rows) if rows == 1 => {
+                                                Ok(1) => {
+                                                    println!("Successfully connected to test database!");
                                                     success = true;
                                                 }
-                                                _ => {
+                                                Ok(rows) => {
+                                                    println!("Query returned {} rows instead of 1", rows);
+                                                    thread::sleep(Duration::from_millis(100));
+                                                }
+                                                Err(e) => {
+                                                    println!("Query failed: {}", e);
                                                     thread::sleep(Duration::from_millis(100));
                                                 }
                                             }
                                         }
                                     }
-                                    Err(_) => {
+                                    Err(e) => {
+                                        println!("Connection failed: {}", e);
                                         thread::sleep(Duration::from_millis(100));
                                     }
                                 }
                             }
-                            Err(_) => {
+                            Err(e) => {
+                                println!("Pool get failed: {}", e);
                                 thread::sleep(Duration::from_millis(100));
                             }
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        println!("Config creation failed: {}", e);
                         thread::sleep(Duration::from_millis(100));
                     }
                 }
