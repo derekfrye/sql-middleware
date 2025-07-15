@@ -16,7 +16,6 @@ default = ["sqlite", "postgres", "mssql"]
 sqlite = ["deadpool-sqlite"]
 postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
-limbo = ["turso"]
 test-utils = ["dep:pg-embed"]
 
 [dependencies]
@@ -39,7 +38,6 @@ deadpool-tiberius = { git = "https://github.com/ingrese1nombre/deadpool-tiberius
 futures-util = { version = "0", optional = true }
 lazy_static = "1"
 pg-embed = { git = "https://github.com/faokunega/pg-embed", tag = "v0.9.0", default-features = false, features = ["rt_tokio"], optional = true }
-turso = { git = "https://github.com/tursodatabase/turso", optional = true }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--deny", "unsafe_code"]

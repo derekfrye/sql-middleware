@@ -31,10 +31,3 @@ pub use crate::exports::MssqlParams;
 pub use crate::exports::create_mssql_client;
 #[cfg(feature = "mssql")]
 pub use crate::exports::mssql_build_result_set;
-
-#[cfg(feature = "limbo")]
-pub use crate::exports::LimboParams;
-#[cfg(feature = "limbo")]
-pub use crate::exports::LimboParamsExecute;
-#[cfg(feature = "limbo")]
-pub use crate::exports::limbo_build_result_set;

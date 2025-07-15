@@ -26,11 +26,3 @@ pub use crate::mssql::Params as MssqlParams;
 pub use crate::mssql::build_result_set as mssql_build_result_set;
 #[cfg(feature = "mssql")]
 pub use crate::mssql::create_mssql_client;
-
-// Limbo/Turso exports
-#[cfg(feature = "limbo")]
-pub use crate::limbo::LimboParams;
-#[cfg(feature = "limbo")]
-pub use crate::limbo::LimboParamsExecute;
-#[cfg(feature = "limbo")]
-pub use crate::limbo::build_result_set as limbo_build_result_set;

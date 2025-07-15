@@ -6,8 +6,6 @@ use deadpool_sqlite::rusqlite;
 use tiberius;
 #[cfg(feature = "postgres")]
 use tokio_postgres;
-#[cfg(feature = "limbo")]
-use turso;
 
 #[derive(Debug, Error)]
 pub enum SqlMiddlewareDbError {
@@ -22,10 +20,6 @@ pub enum SqlMiddlewareDbError {
     #[cfg(feature = "mssql")]
     #[error(transparent)]
     MssqlError(#[from] tiberius::error::Error),
-
-    #[cfg(feature = "limbo")]
-    #[error(transparent)]
-    LimboError(#[from] turso::Error),
 
     #[cfg(feature = "postgres")]
     #[error(transparent)]

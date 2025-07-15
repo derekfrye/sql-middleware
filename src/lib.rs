@@ -27,8 +27,6 @@ mod mssql;
 pub mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
-#[cfg(feature = "limbo")]
-mod limbo;
 
 // Direct exports for frequently used types
 pub use middleware::{
