@@ -1,15 +1,17 @@
-use criterion::{ criterion_group, criterion_main, Criterion, BenchmarkId };
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use rand::Rng;
 use serde_json::json;
-use sql_middleware::{
-    middleware::{ ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection },
-    SqlMiddlewareDbError,
-};
 #[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::testing_postgres::{ setup_postgres_container, stop_postgres_container };
-use std::{ path::Path, fs };
+use sql_middleware::test_utils::testing_postgres::{
+    setup_postgres_container, stop_postgres_container,
+};
+use sql_middleware::{
+    SqlMiddlewareDbError,
+    middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection},
+};
+use std::{fs, path::Path};
 use tokio::runtime::Runtime;
 
 // Reviewed; Function to generate a deterministic set of SQL insert statements
@@ -53,20 +55,19 @@ fn generate_insert_statements(num_rows: usize) -> String {
             .collect::<String>();
 
         // Generate a random JSON object
-        let json_value =
-            json!({
+        let json_value = json!({
             "id": i,
             "value": rng.random_range(1..100),
             "tags": [
                 format!("tag-{}", rng.random_range(1..10)),
                 format!("tag-{}", rng.random_range(1..10))
             ]
-        }).to_string();
+        })
+        .to_string();
 
         // Generate additional text fields
-        let additional_texts: Vec<String> = (0..9)
-            .map(|j| format!("text-field-{}-{}", i, j))
-            .collect();
+        let additional_texts: Vec<String> =
+            (0..9).map(|j| format!("text-field-{}-{}", i, j)).collect();
 
         // Append the SQL statement
         let insert = format!(
@@ -75,11 +76,7 @@ fn generate_insert_statements(num_rows: usize) -> String {
             b,
             timestamp,
             d,
-            if e {
-                1
-            } else {
-                0
-            },
+            if e { 1 } else { 0 },
             blob_hex,
             json_value,
             additional_texts[0],
@@ -109,8 +106,7 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     let config_and_pool = ConfigAndPool::new_sqlite(db_path.to_string()).await?;
 
     // Create the test table
-    let ddl =
-        "CREATE TABLE IF NOT EXISTS test (
+    let ddl = "CREATE TABLE IF NOT EXISTS test (
         recid INTEGER PRIMARY KEY AUTOINCREMENT,
         a int,
         b text,
@@ -126,12 +122,14 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     let sqlite_conn = MiddlewarePool::get_connection(&pool).await?;
 
     if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
-        sconn.interact(move |conn| {
-            let tx = conn.transaction()?;
-            tx.execute_batch(ddl)?;
-            tx.commit()?;
-            Ok::<_, SqlMiddlewareDbError>(())
-        }).await??;
+        sconn
+            .interact(move |conn| {
+                let tx = conn.transaction()?;
+                tx.execute_batch(ddl)?;
+                tx.commit()?;
+                Ok::<_, SqlMiddlewareDbError>(())
+            })
+            .await??;
     } else {
         panic!("Expected SQLite connection");
     }
@@ -142,8 +140,14 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
 async fn setup_postgres_db(
     db_user: &str,
     db_pass: &str,
-    db_name: &str
-) -> Result<(ConfigAndPool, sql_middleware::test_utils::testing_postgres::PostgresContainer), Box<dyn std::error::Error>> {
+    db_name: &str,
+) -> Result<
+    (
+        ConfigAndPool,
+        sql_middleware::test_utils::testing_postgres::PostgresContainer,
+    ),
+    Box<dyn std::error::Error>,
+> {
     let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());
@@ -156,8 +160,7 @@ async fn setup_postgres_db(
     let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
 
     // Create the test table
-    let ddl =
-        "CREATE TABLE IF NOT EXISTS test (
+    let ddl = "CREATE TABLE IF NOT EXISTS test (
         recid SERIAL PRIMARY KEY,
         a int,
         b text,
@@ -212,7 +215,8 @@ fn benchmark_sqlite(c: &mut Criterion) {
                         tx.execute_batch(&insert_statements_copy)?;
                         tx.commit()?;
                         Ok::<_, SqlMiddlewareDbError>(())
-                    }).await
+                    })
+                    .await
                     .unwrap()
                     .unwrap();
             }
@@ -247,11 +251,8 @@ fn benchmark_postgres(c: &mut Criterion) {
             let db_name = "test_db";
 
             // Setup PostgreSQL database
-            let (config_and_pool, postgres_stuff) = setup_postgres_db(
-                db_user,
-                db_pass,
-                db_name
-            ).await.unwrap();
+            let (config_and_pool, postgres_stuff) =
+                setup_postgres_db(db_user, db_pass, db_name).await.unwrap();
 
             // Get connection from pool
             let pool = config_and_pool.pool.get().await.unwrap();

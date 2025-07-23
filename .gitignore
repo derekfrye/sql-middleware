@@ -3,3 +3,4 @@ target/
 xxx
 xxx-shm
 xxx-wal
+.gemini/

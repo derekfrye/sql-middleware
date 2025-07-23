@@ -1,12 +1,12 @@
 use chrono::NaiveDateTime;
 use serde_json::json;
 use sql_middleware::{
-    convert_sql_params,
+    SqlMiddlewareDbError, SqliteParamsQuery, convert_sql_params,
     middleware::{
         ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams,
         RowValues,
     },
-    sqlite_build_result_set, SqlMiddlewareDbError, SqliteParamsQuery,
+    sqlite_build_result_set,
 };
 use std::vec;
 use tokio::runtime::Runtime;
@@ -20,7 +20,7 @@ fn sqlite_multiple_column_test() -> Result<(), Box<dyn std::error::Error>> {
         let config_and_pool = ConfigAndPool::new_sqlite(x).await?;
         let pool = config_and_pool.pool.get().await?;
         let sqlite_conn = MiddlewarePool::get_connection(&pool).await?;
-        
+
         let sconn = match &sqlite_conn {
             MiddlewarePoolConnection::Sqlite(sconn) => sconn,
             _ => panic!("Only sqlite is supported "),

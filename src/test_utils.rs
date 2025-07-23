@@ -1,144 +1,187 @@
-use regex::Regex;
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 use std::net::TcpStream;
-use std::{
-    net::TcpListener,
-    process::{Command, Stdio},
-    thread,
-    time::Duration,
-};
+use std::{net::TcpListener, thread, time::Duration};
 use tokio::runtime::Runtime;
 
 /// Test utilities for PostgreSQL testing and benchmarking
 pub mod testing_postgres {
     use super::*;
 
-    /// Represents a running PostgreSQL container
-    pub struct PostgresContainer {
-        pub container_id: String,
+    #[cfg(feature = "test-utils")]
+    use pg_embed::pg_enums::PgAuthMethod;
+    #[cfg(feature = "test-utils")]
+    use pg_embed::pg_fetch::PgFetchSettings;
+    #[cfg(feature = "test-utils")]
+    use pg_embed::postgres::{PgEmbed, PgSettings};
+    #[cfg(feature = "test-utils")]
+    use std::path::PathBuf;
+
+    /// Represents a running embedded PostgreSQL instance
+    #[cfg(feature = "test-utils")]
+    pub struct EmbeddedPostgres {
+        pub pg_embed: PgEmbed,
         pub port: u16,
+        pub database_url: String,
     }
 
-    /// Set up a PostgreSQL container for testing or benchmarking
-    pub fn setup_postgres_container(
+    /// Set up an embedded PostgreSQL instance for testing or benchmarking
+    #[cfg(feature = "test-utils")]
+    pub fn setup_postgres_embedded(
         cfg: &deadpool_postgres::Config,
-    ) -> Result<PostgresContainer, Box<dyn std::error::Error>> {
-        let mut cfg = cfg.clone();
-        // 1. Find a free TCP port (starting from start_port, increment if taken)
-        let start_port = 9050;
-        let port = find_available_port(start_port);
-        cfg.port = Some(port);
-        // println!("Using port: {}", port);
-
-        // 2. Start the Podman container
-        //    In this example, we're running in detached mode (-d) and removing
-        //    automatically when the container stops (--rm).
-        let output = Command::new("podman")
-            .args(&[
-                "run",
-                "--rm",
-                "-d",
-                "-p",
-                &format!("{}:5432", port),
-                "-e",
-                &format!("POSTGRES_USER={}", &cfg.user.as_ref().unwrap()),
-                "-e",
-                &format!("POSTGRES_PASSWORD={}", cfg.password.as_ref().unwrap()),
-                "-e",
-                &format!("POSTGRES_DB={}", cfg.dbname.as_ref().unwrap()),
-                "postgres:latest",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .expect("Failed to start Podman Postgres container");
-
-        // Ensure Podman started successfully
-        assert!(
-            output.status.success(),
-            "Failed to run podman command: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        // Grab the container ID from stdout
-        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        // println!("Started container ID: {}", container_id);
-
-        // 3. Wait 100ms to ensure Postgres inside the container is up; poll the DB until successful
-        let mut success = false;
-        let mut attempt = 0;
-
-        // let mut cfg = deadpool_postgres::Config::new();
-        // cfg.dbname = Some(db_name.to_string());
-        // cfg.host = Some("localhost".to_string());
-        // cfg.port = Some(port);
-        // cfg.user = Some(db_user.to_string());
-        // cfg.password = Some(db_pass.to_string());
-
+    ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            // let cfg = cfg.clone();
-            let config_and_pool = ConfigAndPool::new_postgres(cfg.clone()).await?;
-            let pool = config_and_pool.pool.get().await?;
-            while !success && attempt < 10 {
-                attempt += 1;
-                // println!("Attempting to connect to Postgres. Attempt: {}", attempt);
+            let port = find_available_port(9050);
 
-                loop {
-                    let podman_logs = Command::new("podman")
-                        .args(&["logs", &container_id])
-                        .output()
-                        .expect("Failed to get logs from container");
-                    let re = Regex::new(r"listening on IPv6 address [^,]+, port 5432").unwrap();
-                    let podman_logs_str = String::from_utf8_lossy(&podman_logs.stderr);
-                    if re.is_match(&podman_logs_str) {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(100));
-                }
+            let pg_settings = PgSettings {
+                port,
+                user: cfg.user.as_ref().unwrap().clone(),
+                password: cfg.password.as_ref().unwrap().clone(),
+                persistent: false,
+                database_dir: PathBuf::from(&format!("/tmp/pg_embed_test_{}", port)),
+                auth_method: PgAuthMethod::Plain,
+                timeout: Some(std::time::Duration::from_secs(30)),
+                migration_dir: None,
+            };
 
-                let conn = MiddlewarePool::get_connection(&pool).await;
-                if conn.is_ok() {
-                    let pgconn = match conn? {
-                        MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
-                        MiddlewarePoolConnection::Sqlite(_) => {
-                            panic!("Only postgres is supported for this test");
-                        },
-                        MiddlewarePoolConnection::Mssql(_) => {
-                            panic!("Only postgres is supported for this test");
+            let pg_fetch_settings = PgFetchSettings::default();
+
+            let mut pg_embed = PgEmbed::new(pg_settings, pg_fetch_settings).await
+                .map_err(|e| format!("Failed to initialize embedded PostgreSQL: {}. This might be due to network connectivity or platform compatibility issues. Consider installing PostgreSQL locally for testing.", e))?;
+
+            // Setup and start PostgreSQL
+            pg_embed.setup().await?;
+            pg_embed.start_db().await?;
+
+            // Give PostgreSQL time to start up
+            thread::sleep(Duration::from_millis(3000));
+
+            // Get the base URI and test database URI
+            let pg_base_uri = &pg_embed.db_uri;
+            let database_url = pg_embed.full_db_uri(cfg.dbname.as_ref().unwrap());
+            println!("PostgreSQL started on port {}", port);
+            println!("Base URI: {}", pg_base_uri);
+            println!("Database URL: {}", database_url);
+
+            // Wait for postgres to be ready by attempting connections
+            let mut success = false;
+            let mut attempt = 0;
+            let max_attempts = 30;
+
+            // First connect to postgres database to create our test database
+            let mut postgres_cfg = cfg.clone();
+            postgres_cfg.port = Some(port);
+            postgres_cfg.host = Some("localhost".to_string());
+            postgres_cfg.dbname = Some("postgres".to_string());
+
+            println!("Connecting to postgres database to create test database...");
+            match ConfigAndPool::new_postgres(postgres_cfg.clone()).await {
+                Ok(config_and_pool) => {
+                    match config_and_pool.pool.get().await {
+                        Ok(pool) => {
+                            match MiddlewarePool::get_connection(&pool).await {
+                                Ok(conn) => {
+                                    if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
+                                        let create_db_sql = format!("CREATE DATABASE \"{}\"", cfg.dbname.as_ref().unwrap());
+                                        match pgconn.execute(&create_db_sql, &[]).await {
+                                            Ok(_) => println!("Successfully created database {}", cfg.dbname.as_ref().unwrap()),
+                                            Err(e) => println!("Database creation failed (might already exist): {}", e),
+                                        }
+                                    }
+                                }
+                                Err(e) => println!("Failed to get connection to postgres db: {}", e),
+                            }
                         }
-                    };
-
-                    let res = pgconn.execute("SELECT 1", &[]).await;
-                    if res.is_ok() && res? == 1 {
-                        success = true;
-                        // println!("Successfully connected to Postgres!");
+                        Err(e) => println!("Failed to get pool for postgres db: {}", e),
                     }
-                } else {
-                    // println!("Failed to connect to Postgres. Retrying...");
-                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => println!("Failed to create config for postgres db: {}", e),
+            }
+
+            // Now try to connect to our test database
+            let mut test_cfg = cfg.clone();
+            test_cfg.port = Some(port);
+            test_cfg.host = Some("localhost".to_string());
+
+            while !success && attempt < max_attempts {
+                attempt += 1;
+                println!("Attempt {} to connect to test database...", attempt);
+
+                match ConfigAndPool::new_postgres(test_cfg.clone()).await {
+                    Ok(config_and_pool) => {
+                        match config_and_pool.pool.get().await {
+                            Ok(pool) => {
+                                match MiddlewarePool::get_connection(&pool).await {
+                                    Ok(conn) => {
+                                        if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
+                                            match pgconn.execute("SELECT 1", &[]).await {
+                                                Ok(1) => {
+                                                    println!("Successfully connected to test database!");
+                                                    success = true;
+                                                }
+                                                Ok(rows) => {
+                                                    println!("Query returned {} rows instead of 1", rows);
+                                                    thread::sleep(Duration::from_millis(100));
+                                                }
+                                                Err(e) => {
+                                                    println!("Query failed: {}", e);
+                                                    thread::sleep(Duration::from_millis(100));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("Connection failed: {}", e);
+                                        thread::sleep(Duration::from_millis(100));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("Pool get failed: {}", e);
+                                thread::sleep(Duration::from_millis(100));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Config creation failed: {}", e);
+                        thread::sleep(Duration::from_millis(100));
+                    }
                 }
             }
 
-            Ok::<(), Box<dyn std::error::Error>>(())
-        })?;
+            if !success {
+                return Err("Failed to connect to embedded PostgreSQL after multiple attempts".into());
+            }
 
-        Ok(PostgresContainer { container_id, port })
+            Ok(EmbeddedPostgres {
+                pg_embed,
+                port,
+                database_url,
+            })
+        })
     }
 
-    /// Stop a previously started PostgreSQL container
-    pub fn stop_postgres_container(container: PostgresContainer) {
-        let output = Command::new("podman")
-            .args(&["stop", &container.container_id])
-            .output()
-            .expect("Failed to stop Podman Postgres container");
+    /// Stop a previously started embedded PostgreSQL instance
+    #[cfg(feature = "test-utils")]
+    pub fn stop_postgres_embedded(mut postgres: EmbeddedPostgres) {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let _ = postgres.pg_embed.stop_db().await;
+        });
+    }
 
-        // Ensure Podman stopped successfully
-        assert!(
-            output.status.success(),
-            "Failed to stop podman container: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    // Legacy function name for backward compatibility
+    #[cfg(feature = "test-utils")]
+    pub fn setup_postgres_container(
+        cfg: &deadpool_postgres::Config,
+    ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
+        setup_postgres_embedded(cfg)
+    }
+
+    // Legacy function name for backward compatibility
+    #[cfg(feature = "test-utils")]
+    pub fn stop_postgres_container(postgres: EmbeddedPostgres) {
+        stop_postgres_embedded(postgres);
     }
 }
 
