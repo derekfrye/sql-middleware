@@ -108,6 +108,9 @@ pub enum DatabaseType {
     /// SQL Server database
     #[cfg(feature = "mssql")]
     Mssql,
+    /// LibSQL database
+    #[cfg(feature = "libsql")]
+    Libsql,
 }
 
 /// The conversion "mode".

@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+#[cfg(feature = "libsql")]
+use deadpool_libsql;
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::rusqlite;
 #[cfg(feature = "mssql")]
@@ -32,6 +34,14 @@ pub enum SqlMiddlewareDbError {
     #[cfg(feature = "mssql")]
     #[error(transparent)]
     PoolErrorMssql(#[from] deadpool::managed::PoolError<tiberius::error::Error>),
+
+    #[cfg(feature = "libsql")]
+    #[error(transparent)]
+    LibsqlError(#[from] deadpool_libsql::libsql::Error),
+
+    #[cfg(feature = "libsql")]
+    #[error(transparent)]
+    PoolErrorLibsql(#[from] deadpool_libsql::PoolError),
 
     #[cfg(feature = "mssql")]
     #[error("SQL Server connection pool error: {0}")]

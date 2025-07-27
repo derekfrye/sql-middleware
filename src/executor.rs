@@ -5,6 +5,8 @@ use crate::pool::MiddlewarePoolConnection;
 use crate::results::ResultSet;
 use crate::types::RowValues;
 
+#[cfg(feature = "libsql")]
+use crate::libsql;
 #[cfg(feature = "mssql")]
 use crate::mssql;
 #[cfg(feature = "postgres")]
@@ -49,6 +51,10 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Mssql(mssql_client) => {
                 mssql::execute_batch(mssql_client, query).await
             }
+            #[cfg(feature = "libsql")]
+            MiddlewarePoolConnection::Libsql(libsql_client) => {
+                libsql::execute_batch(libsql_client, query).await
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
@@ -74,6 +80,10 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Mssql(mssql_client) => {
                 mssql::execute_select(mssql_client, query, params).await
             }
+            #[cfg(feature = "libsql")]
+            MiddlewarePoolConnection::Libsql(libsql_client) => {
+                libsql::execute_select(libsql_client, query, params).await
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
@@ -98,6 +108,10 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             #[cfg(feature = "mssql")]
             MiddlewarePoolConnection::Mssql(mssql_client) => {
                 mssql::execute_dml(mssql_client, query, params).await
+            }
+            #[cfg(feature = "libsql")]
+            MiddlewarePoolConnection::Libsql(libsql_client) => {
+                libsql::execute_dml(libsql_client, query, params).await
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(

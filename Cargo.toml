@@ -12,10 +12,11 @@ keywords = ["sql", "sqlx", "sqlite", "postgres", "sqlserver"]
 documentation = "https://docs.rs/sql-middleware"
 
 [features]
-default = ["sqlite", "postgres", "mssql"]
+default = ["sqlite", "postgres", "mssql", "libsql"]
 sqlite = ["deadpool-sqlite"]
 postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
+libsql = ["deadpool-libsql"]
 test-utils = ["dep:pg-embed"]
 
 [dependencies]
@@ -29,6 +30,7 @@ deadpool-postgres = { version = "0", optional = true }
 regex = "1"
 clap = { version = "4", features = ["derive"] }
 deadpool-sqlite = { version = "0", features = ["rt_tokio_1"], optional = true }
+deadpool-libsql = { git = "https://github.com/bikeshedder/deadpool", rev = "1c131386e16d98d155a749c671078a1aaa15db06", optional = true }
 deadpool = "0"
 thiserror = "2"
 async-trait = "0"

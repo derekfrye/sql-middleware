@@ -13,6 +13,9 @@ pub type SqliteWritePool = DeadpoolSqlitePool;
 #[cfg(feature = "mssql")]
 use deadpool_tiberius::Pool as TiberiusPool;
 
+#[cfg(feature = "libsql")]
+use deadpool_libsql::{Object as LibsqlObject, Pool as DeadpoolLibsqlPool};
+
 use crate::error::SqlMiddlewareDbError;
 use crate::query::AnyConnWrapper;
 use crate::types::DatabaseType;
@@ -32,6 +35,9 @@ pub enum MiddlewarePool {
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
     Mssql(TiberiusPool),
+    /// LibSQL connection pool
+    #[cfg(feature = "libsql")]
+    Libsql(DeadpoolLibsqlPool),
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -44,6 +50,8 @@ impl std::fmt::Debug for MiddlewarePool {
             Self::Sqlite(pool) => f.debug_tuple("Sqlite").field(pool).finish(),
             #[cfg(feature = "mssql")]
             Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
+            #[cfg(feature = "libsql")]
+            Self::Libsql(pool) => f.debug_tuple("Libsql").field(pool).finish(),
         }
     }
 }
@@ -94,6 +102,14 @@ impl MiddlewarePool {
                     .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
                 Ok(MiddlewarePoolConnection::Mssql(conn))
             }
+            #[cfg(feature = "libsql")]
+            MiddlewarePool::Libsql(pool) => {
+                let conn: LibsqlObject = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorLibsql)?;
+                Ok(MiddlewarePoolConnection::Libsql(conn))
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
@@ -109,6 +125,8 @@ pub enum MiddlewarePoolConnection {
     Sqlite(SqliteObject),
     #[cfg(feature = "mssql")]
     Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
+    #[cfg(feature = "libsql")]
+    Libsql(LibsqlObject),
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -124,6 +142,8 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
                 .debug_tuple("Mssql")
                 .field(&"<TiberiusConnection>")
                 .finish(),
+            #[cfg(feature = "libsql")]
+            Self::Libsql(conn) => f.debug_tuple("Libsql").field(conn).finish(),
         }
     }
 }
@@ -150,6 +170,10 @@ impl MiddlewarePoolConnection {
                 // Get client from Object
                 let client = mssql_obj.deref_mut();
                 Ok(func(AnyConnWrapper::Mssql(client)).await)
+            }
+            #[cfg(feature = "libsql")]
+            MiddlewarePoolConnection::Libsql(libsql_obj) => {
+                Ok(func(AnyConnWrapper::Libsql(libsql_obj)).await)
             }
             #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite(_) => Err(SqlMiddlewareDbError::Unimplemented(

@@ -12,7 +12,7 @@ use crate::types::RowValues;
 
 /// Wrapper around a database connection for generic code
 ///
-/// This enum allows code to handle PostgreSQL, SQLite, or SQL Server
+/// This enum allows code to handle PostgreSQL, SQLite, SQL Server, or LibSQL
 /// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
     /// PostgreSQL client connection
@@ -24,6 +24,9 @@ pub enum AnyConnWrapper<'a> {
     /// SQL Server client connection
     #[cfg(feature = "mssql")]
     Mssql(&'a mut TiberiusClient<Compat<TcpStream>>),
+    /// LibSQL database connection
+    #[cfg(feature = "libsql")]
+    Libsql(&'a deadpool_libsql::Object),
 }
 
 /// A query and its parameters bundled together

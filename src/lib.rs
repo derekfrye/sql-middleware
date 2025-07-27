@@ -21,6 +21,8 @@ pub mod results;
 pub mod types;
 
 // Private database-specific modules
+#[cfg(feature = "libsql")]
+pub mod libsql;
 #[cfg(feature = "mssql")]
 mod mssql;
 #[cfg(feature = "postgres")]
