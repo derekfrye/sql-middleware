@@ -70,5 +70,5 @@ pub async fn execute_dml(
         SqlMiddlewareDbError::ExecutionError(format!("Failed to commit transaction: {e}"))
     })?;
 
-    Ok(rows_affected as usize)
+    Ok(usize::try_from(rows_affected).unwrap_or(usize::MAX))
 }

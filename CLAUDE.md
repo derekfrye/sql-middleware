@@ -2,7 +2,7 @@
 
 ## Build & Test Commands
 - Build: `cargo build`
-- Check: `cargo clippy`
+- Check: `cargo clippy -- -W clippy::pedantic`
 - Format: `cargo fmt`
 - Test all: `cargo test`
 - Test single: `cargo test test_name` (e.g. `cargo test test2_postgres`)

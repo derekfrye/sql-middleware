@@ -5,19 +5,25 @@
 
 use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
 
-/// Convert a slice of generic RowValues into database-specific parameters.
+/// Convert a slice of generic `RowValues` into database-specific parameters.
 ///
-/// This function uses the ParamConverter trait to convert a set of parameters
+/// This function uses the `ParamConverter` trait to convert a set of parameters
 /// into the format required by a specific database backend.
 ///
 /// # Arguments
 ///
-/// * `params` - The slice of RowValues to convert
+/// * `params` - The slice of `RowValues` to convert
 /// * `mode` - Whether the parameters will be used for a query or execution
 ///
 /// # Returns
 ///
 /// The converted parameters, or an error if conversion fails
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` if:
+/// - The parameter converter doesn't support the specified mode
+/// - Parameter conversion fails for any of the provided values
 ///
 /// # Example
 ///

@@ -99,16 +99,16 @@ impl RowValues {
 /// The database type supported by this middleware
 #[derive(Debug, Clone, PartialEq, Eq, Hash, ValueEnum)]
 pub enum DatabaseType {
-    /// PostgreSQL database
+    /// `PostgreSQL` database
     #[cfg(feature = "postgres")]
     Postgres,
-    /// SQLite database
+    /// `SQLite` database
     #[cfg(feature = "sqlite")]
     Sqlite,
     /// SQL Server database
     #[cfg(feature = "mssql")]
     Mssql,
-    /// LibSQL database
+    /// `LibSQL` database
     #[cfg(feature = "libsql")]
     Libsql,
 }
@@ -122,13 +122,17 @@ pub enum ConversionMode {
     Execute,
 }
 
-/// Convert a slice of RowValues into database-specific parameters.
-/// This trait provides a unified interface for converting generic RowValues
+/// Convert a slice of `RowValues` into database-specific parameters.
+/// This trait provides a unified interface for converting generic `RowValues`
 /// to database-specific parameter types.
 pub trait ParamConverter<'a> {
     type Converted;
 
-    /// Convert a slice of RowValues into the backend's parameter type.
+    /// Convert a slice of `RowValues` into the backend's parameter type.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if the conversion fails for any parameter.
     fn convert_sql_params(
         params: &'a [RowValues],
         mode: ConversionMode,

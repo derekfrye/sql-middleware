@@ -110,6 +110,15 @@ async fn run_test_logic(
             include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
             include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
         ],
+        #[cfg(feature = "libsql")]
+        DatabaseType::Libsql => vec![
+            // Use SQLite scripts for LibSQL in test (LibSQL is SQLite-compatible)
+            include_str!("../tests/sqlite/test4/00_event.sql"),
+            include_str!("../tests/sqlite/test4/02_golfer.sql"),
+            include_str!("../tests/sqlite/test4/03_bettor.sql"),
+            include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
+            include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
+        ],
     };
 
     let ddl_query = ddl.join("\n");
@@ -126,6 +135,8 @@ async fn run_test_logic(
         DatabaseType::Postgres => "INSERT INTO test (id, name) VALUES ($1, $2);",
         DatabaseType::Sqlite => "INSERT INTO test (id, name) VALUES (?1, ?2);",
         DatabaseType::Mssql => "INSERT INTO test (id, name) VALUES (@p1, @p2);",
+        #[cfg(feature = "libsql")]
+        DatabaseType::Libsql => "INSERT INTO test (id, name) VALUES (?1, ?2);",
     };
 
     // generate 100 params
@@ -200,6 +211,13 @@ async fn run_test_logic(
         DatabaseType::Mssql => {
             // For this test, skip the MSSQL implementation
             // Simply insert the data using the middleware connection
+            for param in params {
+                conn.execute_dml(&parameterized_query, &param).await?;
+            }
+        }
+        #[cfg(feature = "libsql")]
+        DatabaseType::Libsql => {
+            // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
                 conn.execute_dml(&parameterized_query, &param).await?;
             }
@@ -299,6 +317,13 @@ async fn run_test_logic(
                 conn.execute_dml(&parameterized_query, &param).await?;
             }
         }
+        #[cfg(feature = "libsql")]
+        DatabaseType::Libsql => {
+            // LibSQL is SQLite-compatible, use middleware connection
+            for param in params {
+                conn.execute_dml(&parameterized_query, &param).await?;
+            }
+        }
     }
 
     let query = "select count(*) as cnt from test;";
@@ -388,6 +413,13 @@ async fn run_test_logic(
                 Ok::<_, SqlMiddlewareDbError>(result_set)
             })
             .await?
+        }
+        #[cfg(feature = "libsql")]
+        MiddlewarePoolConnection::Libsql(_) => {
+            // For LibSQL, just execute the query using the middleware
+            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+                .await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
         }
     })?;
 

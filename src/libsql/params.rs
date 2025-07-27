@@ -13,7 +13,7 @@ impl Params {
                 RowValues::Int(i) => deadpool_libsql::libsql::Value::Integer(*i),
                 RowValues::Float(f) => deadpool_libsql::libsql::Value::Real(*f),
                 RowValues::Text(s) => deadpool_libsql::libsql::Value::Text(s.clone()),
-                RowValues::Bool(b) => deadpool_libsql::libsql::Value::Integer(*b as i64),
+                RowValues::Bool(b) => deadpool_libsql::libsql::Value::Integer(i64::from(*b)),
                 RowValues::Timestamp(dt) => {
                     deadpool_libsql::libsql::Value::Text(dt.format("%F %T%.f").to_string())
                 }

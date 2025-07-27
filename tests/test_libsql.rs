@@ -1,13 +1,9 @@
 #[cfg(feature = "libsql")]
 mod libsql_tests {
-    use chrono::NaiveDateTime;
     use serde_json::json;
-    use sql_middleware::{
-        SqlMiddlewareDbError,
-        middleware::{
-            AsyncDatabaseExecutor, ConfigAndPool, DatabaseType, MiddlewarePool,
-            MiddlewarePoolConnection, RowValues,
-        },
+    use sql_middleware::middleware::{
+        AsyncDatabaseExecutor, ConfigAndPool, DatabaseType, MiddlewarePool,
+        MiddlewarePoolConnection, RowValues,
     };
     use tokio::runtime::Runtime;
 
@@ -75,13 +71,13 @@ mod libsql_tests {
             // Test SELECT operations
             let select_sql = "SELECT * FROM test_table WHERE id = ?";
             let select_params = vec![RowValues::Int(1)];
-            
+
             let result_set = libsql_conn.execute_select(select_sql, &select_params).await?;
-            
+
             // Verify results
             assert_eq!(result_set.results.len(), 1);
             let row = &result_set.results[0];
-            
+
             assert_eq!(*row.get("id").unwrap().as_int().unwrap(), 1);
             assert_eq!(row.get("name").unwrap().as_text().unwrap(), "Alice");
             assert_eq!(row.get("value").unwrap().as_float().unwrap(), 42.5);
@@ -91,7 +87,7 @@ mod libsql_tests {
             // Test SELECT with multiple results
             let select_all_sql = "SELECT id, name, value FROM test_table ORDER BY id";
             let all_results = libsql_conn.execute_select(select_all_sql, &[]).await?;
-            
+
             assert_eq!(all_results.results.len(), 2);
             assert_eq!(*all_results.results[0].get("id").unwrap().as_int().unwrap(), 1);
             assert_eq!(all_results.results[0].get("name").unwrap().as_text().unwrap(), "Alice");

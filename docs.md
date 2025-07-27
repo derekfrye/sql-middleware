@@ -1,13 +1,13 @@
 # SQL Middleware - A unified interface for SQL databases
 
 This crate provides a middleware layer for SQL database access,
-currently supporting SQLite, PostgreSQL, and SQL Server backends. The main goal is to
+currently supporting `SQLite`, `PostgreSQL`, and SQL Server backends. The main goal is to
 provide a unified, async-compatible API that works across different database systems.
 
 ## Features
 
 - Asynchronous database access with deadpool connection pooling
-- Support for SQLite, PostgreSQL, and SQL Server backends
+- Support for `SQLite`, `PostgreSQL`, and SQL Server backends
 - Unified parameter conversion system
 - Consistent result handling across database engines
 - Transaction support

@@ -1,5 +1,3 @@
-#[cfg(feature = "mssql")]
-use std::ops::DerefMut;
 
 #[cfg(feature = "postgres")]
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
@@ -168,7 +166,7 @@ impl MiddlewarePoolConnection {
             #[cfg(feature = "mssql")]
             MiddlewarePoolConnection::Mssql(mssql_obj) => {
                 // Get client from Object
-                let client = mssql_obj.deref_mut();
+                let client = &mut **mssql_obj;
                 Ok(func(AnyConnWrapper::Mssql(client)).await)
             }
             #[cfg(feature = "libsql")]
