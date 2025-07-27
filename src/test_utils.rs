@@ -185,9 +185,14 @@ pub mod testing_postgres {
     }
 }
 
+// Port allocation lock to prevent race conditions when tests run in parallel
+static PORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 // A small helper function to find an available port by trying to bind
 // starting from `start_port`, then incrementing until a bind succeeds.
+// Uses a mutex to prevent race conditions when multiple tests run in parallel.
 fn find_available_port(start_port: u16) -> u16 {
+    let _lock = PORT_LOCK.lock().unwrap();
     let mut port = start_port;
     loop {
         if TcpListener::bind(("127.0.0.1", port)).is_ok() && !is_port_in_use(port) {
