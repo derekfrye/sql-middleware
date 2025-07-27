@@ -1,4 +1,3 @@
-
 #[cfg(feature = "postgres")]
 use deadpool_postgres::{Object as PostgresObject, Pool as DeadpoolPostgresPool};
 

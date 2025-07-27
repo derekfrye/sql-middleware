@@ -1,5 +1,4 @@
 use deadpool::managed::Object;
-use std::ops::DerefMut;
 
 use super::config::MssqlManager;
 use super::query::{bind_query_params, build_result_set};
@@ -11,7 +10,7 @@ pub async fn execute_batch(
     query: &str,
 ) -> Result<(), SqlMiddlewareDbError> {
     // Get a client from the object
-    let client = mssql_client.deref_mut();
+    let client = &mut **mssql_client;
 
     // Execute the batch of queries
     let query_builder = tiberius::Query::new(query);
@@ -29,7 +28,7 @@ pub async fn execute_select(
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Get a client from the object
-    let client = mssql_client.deref_mut();
+    let client = &mut **mssql_client;
 
     // Use the build_result_set function to handle parameters and execution
     build_result_set(client, query, params).await
@@ -42,7 +41,7 @@ pub async fn execute_dml(
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
     // Get a client from the object
-    let client = mssql_client.deref_mut();
+    let client = &mut **mssql_client;
 
     // Prepare and bind the query
     let query_builder = bind_query_params(query, params);
@@ -55,5 +54,7 @@ pub async fn execute_dml(
     // Get rows affected
     let rows_affected: u64 = exec_result.rows_affected().iter().sum();
 
-    Ok(rows_affected as usize)
+    usize::try_from(rows_affected).map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
+    })
 }

@@ -47,5 +47,7 @@ pub async fn execute_dml(
     let rows = tx.execute(&stmt, params.as_refs()).await?;
     tx.commit().await?;
 
-    Ok(rows as usize)
+    usize::try_from(rows).map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
+    })
 }

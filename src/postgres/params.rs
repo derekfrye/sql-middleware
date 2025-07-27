@@ -34,6 +34,7 @@ impl<'a> Params<'a> {
     }
 
     /// Get a reference to the underlying parameter array
+    #[must_use]
     pub fn as_refs(&self) -> &[&(dyn ToSql + Sync)] {
         &self.references
     }

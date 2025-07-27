@@ -30,10 +30,12 @@ pub enum RowValues {
 
 impl RowValues {
     /// Check if this value is NULL
+    #[must_use]
     pub fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
 
+    #[must_use]
     pub fn as_int(&self) -> Option<&i64> {
         if let RowValues::Int(value) = self {
             Some(value)
@@ -42,6 +44,7 @@ impl RowValues {
         }
     }
 
+    #[must_use]
     pub fn as_text(&self) -> Option<&str> {
         if let RowValues::Text(value) = self {
             Some(value)
@@ -50,6 +53,7 @@ impl RowValues {
         }
     }
 
+    #[must_use]
     pub fn as_bool(&self) -> Option<&bool> {
         if let RowValues::Bool(value) = self {
             return Some(value);
@@ -63,6 +67,7 @@ impl RowValues {
         None
     }
 
+    #[must_use]
     pub fn as_timestamp(&self) -> Option<chrono::NaiveDateTime> {
         if let RowValues::Timestamp(value) = self {
             return Some(*value);
@@ -79,6 +84,7 @@ impl RowValues {
         None
     }
 
+    #[must_use]
     pub fn as_float(&self) -> Option<f64> {
         if let RowValues::Float(value) = self {
             Some(*value)
@@ -87,6 +93,7 @@ impl RowValues {
         }
     }
 
+    #[must_use]
     pub fn as_blob(&self) -> Option<&[u8]> {
         if let RowValues::Blob(bytes) = self {
             Some(bytes)
@@ -145,6 +152,7 @@ pub trait ParamConverter<'a> {
     ///
     /// # Returns
     /// * `bool` - Whether this converter supports the mode
+    #[must_use]
     fn supports_mode(_mode: ConversionMode) -> bool {
         true // By default, support both modes
     }

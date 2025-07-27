@@ -7,6 +7,7 @@ use std::sync::Arc;
 ///
 /// This is a utility function to help with testing by creating
 /// `CustomDbRow` instances with the specified data.
+#[must_use]
 pub fn create_test_row(column_names: Vec<String>, values: Vec<RowValues>) -> CustomDbRow {
     CustomDbRow::new(Arc::new(column_names), values)
 }

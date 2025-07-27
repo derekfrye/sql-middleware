@@ -6,7 +6,10 @@ pub async fn build_result_set(
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Get column count to build column names
     let column_count = rows.column_count();
-    let mut column_names = Vec::with_capacity(column_count as usize);
+    let mut column_names =
+        Vec::with_capacity(usize::try_from(column_count).map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Invalid column count: {e}"))
+        })?);
 
     for i in 0..column_count {
         if let Some(name) = rows.column_name(i) {
@@ -37,7 +40,12 @@ pub async fn build_result_set(
             .len();
 
         for i in 0..col_count {
-            let value = libsql_extract_value(&row, i as i32)?;
+            let value = libsql_extract_value(
+                &row,
+                i32::try_from(i).map_err(|e| {
+                    SqlMiddlewareDbError::ExecutionError(format!("Invalid column index: {e}"))
+                })?,
+            )?;
             row_values.push(value);
         }
 

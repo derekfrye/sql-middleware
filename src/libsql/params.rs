@@ -28,11 +28,13 @@ impl Params {
     }
 
     /// Get a reference to the underlying parameter array
+    #[must_use]
     pub fn as_slice(&self) -> &[deadpool_libsql::libsql::Value] {
         &self.0
     }
 
     /// Convert to owned vector for use with libsql API
+    #[must_use]
     pub fn into_vec(self) -> Vec<deadpool_libsql::libsql::Value> {
         self.0
     }

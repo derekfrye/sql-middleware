@@ -26,6 +26,7 @@ impl CustomDbRow {
     /// # Returns
     ///
     /// A new CustomDbRow instance
+    #[must_use]
     pub fn new(column_names: std::sync::Arc<Vec<String>>, rows: Vec<RowValues>) -> Self {
         // Build a cache of column name to index for faster lookups
         let cache = std::sync::Arc::new(
@@ -52,6 +53,7 @@ impl CustomDbRow {
     /// # Returns
     ///
     /// The index of the column, or None if not found
+    #[must_use]
     pub fn get_column_index(&self, column_name: &str) -> Option<usize> {
         // First check the cache
         if let Some(&idx) = self.column_index_cache.get(column_name) {
@@ -71,6 +73,7 @@ impl CustomDbRow {
     /// # Returns
     ///
     /// The value at the column, or None if the column wasn't found
+    #[must_use]
     pub fn get(&self, column_name: &str) -> Option<&RowValues> {
         let index_opt = self.get_column_index(column_name);
         if let Some(idx) = index_opt {
@@ -89,6 +92,7 @@ impl CustomDbRow {
     /// # Returns
     ///
     /// The value at the index, or None if the index is out of bounds
+    #[must_use]
     pub fn get_by_index(&self, index: usize) -> Option<&RowValues> {
         self.rows.get(index)
     }
@@ -118,6 +122,7 @@ impl ResultSet {
     /// # Returns
     ///
     /// A new ResultSet instance with preallocated capacity
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> ResultSet {
         ResultSet {
             results: Vec::with_capacity(capacity),
@@ -132,6 +137,7 @@ impl ResultSet {
     }
 
     /// Get the column names for this result set
+    #[must_use]
     pub fn get_column_names(&self) -> Option<&std::sync::Arc<Vec<String>>> {
         self.column_names.as_ref()
     }
@@ -145,9 +151,16 @@ impl ResultSet {
         if let Some(column_names) = &self.column_names {
             // Build a cache of column name to index for faster lookups
             // We only need to build this cache once and reuse it
-            lazy_static::lazy_static! {
-                static ref CACHE_MAP: std::sync::Mutex<std::collections::HashMap<usize, std::sync::Arc<std::collections::HashMap<String, usize>>>> = std::sync::Mutex::new(std::collections::HashMap::new());
-            }
+            static CACHE_MAP: std::sync::LazyLock<
+                std::sync::Mutex<
+                    std::collections::HashMap<
+                        usize,
+                        std::sync::Arc<std::collections::HashMap<String, usize>>,
+                    >,
+                >,
+            > = std::sync::LazyLock::new(
+                || std::sync::Mutex::new(std::collections::HashMap::new()),
+            );
 
             // Use the pointer to column_names as a key for the cache
             let ptr = column_names.as_ref().as_ptr() as usize;
