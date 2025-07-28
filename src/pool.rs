@@ -23,16 +23,16 @@ use crate::types::DatabaseType;
 /// supported database engines.
 #[derive(Clone)]
 pub enum MiddlewarePool {
-    /// PostgreSQL connection pool
+    /// `PostgreSQL` connection pool
     #[cfg(feature = "postgres")]
     Postgres(DeadpoolPostgresPool),
-    /// SQLite connection pool
+    /// `SQLite` connection pool
     #[cfg(feature = "sqlite")]
     Sqlite(DeadpoolSqlitePool),
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
     Mssql(TiberiusPool),
-    /// LibSQL connection pool
+    /// `LibSQL` connection pool
     #[cfg(feature = "libsql")]
     Libsql(DeadpoolLibsqlPool),
 }
