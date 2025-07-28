@@ -4,9 +4,9 @@
 - Build: `cargo build`
 - Check: `cargo clippy -- -W clippy::pedantic`
 - Format: `cargo fmt`
-- Test all: `cargo test`
-- Test single: `cargo test test_name` (e.g. `cargo test test2_postgres`)
-- Verbose test: `cargo test -- --nocapture`
+- Test all: `cargo nextest run`
+- Test single: `cargo nextest test_name` (e.g. `cargo test test2_postgres`)
+- Verbose test: `cargo nextest run -- --nocapture`
 
 ## Code Style
 
