@@ -52,7 +52,7 @@ pub async fn build_result_set(
 
         for i in 0..col_count {
             // Extract values from the row
-            if let Some(value) = extract_value(&row_result, i)? {
+            if let Some(value) = extract_value(&row_result, i) {
                 row_values.push(value);
             } else {
                 row_values.push(RowValues::Null);
@@ -69,31 +69,31 @@ pub async fn build_result_set(
 fn extract_value(
     row: &tiberius::Row,
     idx: usize,
-) -> Result<Option<RowValues>, SqlMiddlewareDbError> {
+) -> Option<RowValues> {
     // Since Tiberius Row API is a bit complex and varies by version,
     // we'll use a simple approach by trying different value types
 
     // Try integer
     if let Ok(Some(val)) = row.try_get::<i32, _>(idx) {
-        return Ok(Some(RowValues::Int(i64::from(val))));
+        return Some(RowValues::Int(i64::from(val)));
     }
 
     if let Ok(Some(val)) = row.try_get::<i64, _>(idx) {
-        return Ok(Some(RowValues::Int(val)));
+        return Some(RowValues::Int(val));
     }
 
     // Try floating point
     if let Ok(Some(val)) = row.try_get::<f32, _>(idx) {
-        return Ok(Some(RowValues::Float(f64::from(val))));
+        return Some(RowValues::Float(f64::from(val)));
     }
 
     if let Ok(Some(val)) = row.try_get::<f64, _>(idx) {
-        return Ok(Some(RowValues::Float(val)));
+        return Some(RowValues::Float(val));
     }
 
     // Try boolean
     if let Ok(Some(val)) = row.try_get::<bool, _>(idx) {
-        return Ok(Some(RowValues::Bool(val)));
+        return Some(RowValues::Bool(val));
     }
 
     // Try string (most values can be represented as strings)
@@ -101,28 +101,28 @@ fn extract_value(
         // If it looks like a date/time, try to parse it
         if val.contains('-') && (val.contains(':') || val.contains(' ')) {
             if let Ok(dt) = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S%.f") {
-                return Ok(Some(RowValues::Timestamp(dt)));
+                return Some(RowValues::Timestamp(dt));
             } else if let Ok(dt) = NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S") {
-                return Ok(Some(RowValues::Timestamp(dt)));
+                return Some(RowValues::Timestamp(dt));
             }
         }
 
         // Otherwise, just return as text
-        return Ok(Some(RowValues::Text(val.to_string())));
+        return Some(RowValues::Text(val.to_string()));
     }
 
     // Try bytes (binary data)
     if let Ok(Some(val)) = row.try_get::<&[u8], _>(idx) {
-        return Ok(Some(RowValues::Blob(val.to_vec())));
+        return Some(RowValues::Blob(val.to_vec()));
     }
 
     // Check if the value is NULL
     if let Ok(None) = row.try_get::<&str, _>(idx) {
-        return Ok(None);
+        return None;
     }
 
     // If none of the above worked, return NULL
-    Ok(None)
+    None
 }
 
 /// Bind parameters directly to the query for SQL Server

@@ -37,7 +37,7 @@ pub async fn execute_select(
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let query_owned = query.to_owned();
-    let params_owned = convert_params(params)?;
+    let params_owned = convert_params(params);
 
     // Use interact to run the blocking code in a separate thread and return the result directly
     sqlite_client
@@ -59,7 +59,7 @@ pub async fn execute_dml(
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
     let query_owned = query.to_owned();
-    let params_owned = convert_params(params)?;
+    let params_owned = convert_params(params);
 
     // Use interact to run the blocking code in a separate thread.
     sqlite_client
