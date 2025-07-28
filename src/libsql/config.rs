@@ -4,6 +4,9 @@ use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewa
 
 impl ConfigAndPool {
     /// Asynchronous initializer for `ConfigAndPool` with libsql using `deadpool_libsql`
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if database creation, pool creation, or connection test fails.
     pub async fn new_libsql(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
         // Create libsql database connection
         let db = deadpool_libsql::libsql::Builder::new_local(db_path.clone())
@@ -38,6 +41,9 @@ impl ConfigAndPool {
     }
 
     /// Create libsql connection from remote URL (Turso)
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if remote database creation, pool creation, or connection test fails.
     pub async fn new_libsql_remote(
         url: String,
         auth_token: Option<String>,

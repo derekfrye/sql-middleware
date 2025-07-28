@@ -4,6 +4,9 @@ use tokio_postgres::NoTls;
 
 impl ConfigAndPool {
     /// Asynchronous initializer for `ConfigAndPool` with Postgres
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConfigError` if required config fields are missing or `SqlMiddlewareDbError::ConnectionError` if pool creation fails.
     #[allow(clippy::unused_async)]
     pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
         // Validate all required config fields are present

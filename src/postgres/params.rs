@@ -11,6 +11,9 @@ pub struct Params<'a> {
 
 impl<'a> Params<'a> {
     /// Convert from a slice of `RowValues` to Postgres parameters
+    ///
+    /// # Errors
+    /// Currently never returns an error but maintains Result for API consistency.
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         let references: Vec<&(dyn ToSql + Sync)> =
             params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
@@ -19,6 +22,9 @@ impl<'a> Params<'a> {
     }
 
     /// Convert a slice of `RowValues` for batch operations
+    ///
+    /// # Errors
+    /// Currently never returns an error but maintains Result for API consistency.
     pub fn convert_for_batch(
         params: &'a [RowValues],
     ) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {
@@ -78,20 +84,14 @@ impl ToSql for RowValues {
     fn accepts(ty: &Type) -> bool {
         // Only accept types we can properly handle
         match *ty {
-            // Integer types
-            Type::INT2 | Type::INT4 | Type::INT8 => true,
-            // Floating point types
-            Type::FLOAT4 | Type::FLOAT8 => true,
-            // Text types
-            Type::TEXT | Type::VARCHAR | Type::CHAR | Type::NAME => true,
-            // Boolean type
-            Type::BOOL => true,
-            // Date/time types
-            Type::TIMESTAMP | Type::TIMESTAMPTZ | Type::DATE => true,
-            // JSON types
-            Type::JSON | Type::JSONB => true,
-            // Binary data
-            Type::BYTEA => true,
+            // All supported types
+            Type::INT2 | Type::INT4 | Type::INT8 |                    // Integer types
+            Type::FLOAT4 | Type::FLOAT8 |                             // Floating point types
+            Type::TEXT | Type::VARCHAR | Type::CHAR | Type::NAME |    // Text types
+            Type::BOOL |                                              // Boolean type
+            Type::TIMESTAMP | Type::TIMESTAMPTZ | Type::DATE |        // Date/time types
+            Type::JSON | Type::JSONB |                                // JSON types
+            Type::BYTEA => true,                                      // Binary data
             // For any other type, we don't accept
             _ => false,
         }

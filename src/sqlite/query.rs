@@ -34,12 +34,15 @@ pub fn sqlite_extract_value_sync(
 /// Build a result set from a `SQLite` query
 /// Only SELECT queries return rows affected. If a DML is sent, it does run it.
 /// If there's more than one query in the statement, idk which statement will be run.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if query execution or result processing fails.
 pub fn build_result_set(
     stmt: &mut Statement,
     params: &[Value],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    let column_names: Vec<String> = stmt.column_names().iter().map(std::string::ToString::to_string).collect();
 
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);

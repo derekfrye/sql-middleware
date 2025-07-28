@@ -5,6 +5,9 @@ use serde_json::Value;
 use tokio_postgres::{Statement, types::ToSql};
 
 /// Build a result set from a Postgres query execution
+///
+/// # Errors
+/// Returns errors from query execution or result processing.
 pub async fn build_result_set(
     stmt: &Statement,
     params: &[&(dyn ToSql + Sync)],

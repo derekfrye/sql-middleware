@@ -7,6 +7,9 @@ use super::config::MssqlClient;
 use crate::middleware::SqlMiddlewareDbError;
 
 /// Helper function to create a new MSSQL connection
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ConnectionError` if the MSSQL connection fails.
 pub async fn create_mssql_client(
     server: &str,
     database: &str,

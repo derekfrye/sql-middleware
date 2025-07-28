@@ -66,12 +66,19 @@ pub struct ConfigAndPool {
 }
 
 impl MiddlewarePool {
-    // Return a reference to self instead of cloning the entire pool  
+    /// Return a reference to self instead of cloning the entire pool
+    ///
+    /// # Errors
+    /// This function currently never returns an error but maintains Result for API consistency.
     #[allow(clippy::unused_async)]
     pub async fn get(&self) -> Result<&MiddlewarePool, SqlMiddlewareDbError> {
         Ok(self)
     }
 
+    /// Get a connection from the pool
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::PoolErrorPostgres` or `SqlMiddlewareDbError::PoolErrorSqlite` if the pool fails to provide a connection.
     pub async fn get_connection(
         pool: &MiddlewarePool,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
@@ -147,6 +154,10 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
 }
 
 impl MiddlewarePoolConnection {
+    /// Interact with the connection asynchronously
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::Unimplemented` for unsupported database types.
     #[allow(unused_variables)]
     pub async fn interact_async<F, Fut>(
         &mut self,
@@ -184,6 +195,10 @@ impl MiddlewarePoolConnection {
         }
     }
 
+    /// Interact with the connection synchronously
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::Unimplemented` for unsupported database types.
     #[allow(unused_variables)]
     pub async fn interact_sync<F, R>(&self, f: F) -> Result<R, SqlMiddlewareDbError>
     where

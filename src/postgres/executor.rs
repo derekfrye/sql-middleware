@@ -4,6 +4,9 @@ use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use deadpool_postgres::Object;
 
 /// Execute a batch of SQL statements for Postgres
+///
+/// # Errors
+/// Returns errors from transaction operations or batch execution.
 pub async fn execute_batch(
     pg_client: &mut Object,
     query: &str,
@@ -21,6 +24,9 @@ pub async fn execute_batch(
 }
 
 /// Execute a SELECT query with parameters
+///
+/// # Errors
+/// Returns errors from parameter conversion, transaction operations, query preparation, or result set building.
 pub async fn execute_select(
     pg_client: &mut Object,
     query: &str,
@@ -35,6 +41,9 @@ pub async fn execute_select(
 }
 
 /// Execute a DML query (INSERT, UPDATE, DELETE) with parameters
+///
+/// # Errors
+/// Returns errors from parameter conversion, transaction operations, or query execution.
 pub async fn execute_dml(
     pg_client: &mut Object,
     query: &str,

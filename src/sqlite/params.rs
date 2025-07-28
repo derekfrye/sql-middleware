@@ -1,6 +1,7 @@
 use deadpool_sqlite::rusqlite;
 use deadpool_sqlite::rusqlite::ParamsFromIter;
 use rusqlite::types::Value;
+use std::fmt::Write;
 
 use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
 
@@ -31,7 +32,6 @@ pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqli
                 let mut borrow = buf.borrow_mut();
                 borrow.clear();
                 // Format directly into the string buffer
-                use std::fmt::Write;
                 write!(borrow, "{}", dt.format("%F %T%.f")).unwrap();
                 rusqlite::types::Value::Text(borrow.clone())
             })
@@ -48,7 +48,7 @@ pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqli
                 rusqlite::types::Value::Blob(bytes.clone())
             } else {
                 // For queries, we need to clone
-                rusqlite::types::Value::Blob(bytes.to_vec())
+                rusqlite::types::Value::Blob(bytes.clone())
             }
         }
     }

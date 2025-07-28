@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Write;
 use tiberius::{ColumnData, ToSql};
 
 use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
@@ -10,6 +11,9 @@ pub struct Params<'a> {
 
 impl<'a> Params<'a> {
     /// Convert from a slice of `RowValues` to SQL Server parameters
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConversionError` if parameter conversion fails.
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         // Pre-allocate space for performance
         let mut references = Vec::with_capacity(params.len());
@@ -63,7 +67,6 @@ impl ToSql for RowValues {
                 BUF.with(|buf| {
                     let mut s = buf.borrow_mut();
                     s.clear();
-                    use std::fmt::Write;
                     // ISO-8601 format
                     write!(s, "{}", dt.format("%Y-%m-%dT%H:%M:%S%.f")).unwrap();
                     ColumnData::String(Some(Cow::from(s.clone())))

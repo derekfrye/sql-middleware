@@ -1,6 +1,9 @@
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Build a result set from a libsql query execution
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if column count conversion fails, row processing fails, or value extraction fails.
 pub async fn build_result_set(
     mut rows: deadpool_libsql::libsql::Rows,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {

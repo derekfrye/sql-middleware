@@ -6,6 +6,9 @@ use super::config::MssqlClient;
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Build a result set from a SQL Server query execution
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if query execution, parameter conversion, or result processing fails.
 pub async fn build_result_set(
     client: &mut MssqlClient,
     query: &str,

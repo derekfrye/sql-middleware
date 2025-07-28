@@ -167,7 +167,13 @@ impl ResultSet {
             // Use the pointer to column_names as a key for the cache
             let ptr = column_names.as_ref().as_ptr() as usize;
             let cache = {
-                let mut cache_map = CACHE_MAP.lock().unwrap();
+                let mut cache_map = match CACHE_MAP.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        // Clear the poison and continue with the recovered data
+                        poisoned.into_inner()
+                    }
+                };
                 let cache_entry = cache_map.entry(ptr).or_insert_with(|| {
                     std::sync::Arc::new(
                         column_names

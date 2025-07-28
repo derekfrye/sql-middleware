@@ -4,6 +4,9 @@ use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use deadpool_libsql::Object;
 
 /// Execute a batch of SQL statements for libsql
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if transaction begin, batch execution, or commit fails.
 pub async fn execute_batch(
     libsql_client: &Object,
     query: &str,
@@ -27,6 +30,9 @@ pub async fn execute_batch(
 }
 
 /// Execute a SELECT query with parameters
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if query execution fails, or errors from parameter conversion or result set building.
 pub async fn execute_select(
     libsql_client: &Object,
     query: &str,
@@ -47,6 +53,9 @@ pub async fn execute_select(
 }
 
 /// Execute a DML query (INSERT, UPDATE, DELETE) with parameters
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if transaction begin, DML execution, or commit fails, or errors from parameter conversion.
 pub async fn execute_dml(
     libsql_client: &Object,
     query: &str,

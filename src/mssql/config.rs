@@ -13,6 +13,9 @@ pub type MssqlManager = TiberiusManager;
 
 impl ConfigAndPool {
     /// Asynchronous initializer for `ConfigAndPool` with SQL Server (MSSQL)
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if MSSQL client creation or pool creation fails.
     #[allow(clippy::unused_async)]
     pub async fn new_mssql(
         server: String,
