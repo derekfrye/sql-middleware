@@ -2,7 +2,7 @@
 
 ![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
 
-Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
 
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
@@ -32,7 +32,8 @@ Available features:
 - `sqlite`: Enables SQLite support
 - `postgres`: Enables PostgreSQL support
 - `mssql`: Enables SQL Server support
-- `default`: Enables all database backends (sqlite, postgres, mssql)
+- `libsql`: Enables LibSQL support, for Turso (untested) and local LibSQL databases
+- `default`: Enables all database backends (sqlite, postgres, mssql, libsql)
 - `test-utils`: Enables test utilities for internal testing
 
 ## Examples
@@ -58,6 +59,9 @@ PostgreSQL
 </th>
 <th>
 SQLite
+</th>
+<th>
+LibSQL
 </th>
 </tr>
 <tr>
@@ -92,7 +96,8 @@ let conn = MiddlewarePool
 let cfg = 
     "file::memory:?cache=shared"
     .to_string();
-
+// Or file-based:
+// let cfg = "./data.db".to_string();
 
 
 
@@ -103,6 +108,30 @@ let cfg =
 // config items (no port, etc.)
 let c = ConfigAndPool::
     new_sqlite(cfg)
+    .await?;
+let conn = MiddlewarePool
+    ::get_connection(&c.pool)
+    .await?;
+
+```
+
+</td>
+<td>
+
+```rust
+let cfg = ":memory:".to_string();
+// Or file-based:
+// let cfg = "./data.db".to_string();
+
+// Remote libSQL (untested)
+// let c = ConfigAndPool::
+//     new_libsql_remote(
+//         "libsql://...".to_string(),
+//         "auth_token".to_string())
+//     .await?;
+
+let c = ConfigAndPool::
+    new_libsql(cfg)
     .await?;
 let conn = MiddlewarePool
     ::get_connection(&c.pool)
@@ -126,6 +155,9 @@ PostgreSQL
 <th>
 SQLite
 </th>
+<th>
+LibSQL
+</th>
 </tr>
 <tr>
 <td>
@@ -148,6 +180,15 @@ conn.execute_batch(&ddl_query).await?;
 ```
 
 </td>
+<td>
+
+```rust
+// same api
+let ddl_query = 
+    include_str!("/path/to/test1.sql");
+conn.execute_batch(&ddl_query).await?;
+```
+
 </td>
 </tr>
 </table>
@@ -163,6 +204,9 @@ PostgreSQL
 </th>
 <th>
 SQLite
+</th>
+<th>
+LibSQL
 </th>
 </tr>
 <tr>
@@ -234,13 +278,46 @@ conn.execute_dml(
 ```
 
 </td>
+<td>
+
+```rust
+// Create query with parameters
+// libsql uses ?-style params
+let q = QueryAndParams::new(
+    "INSERT INTO test (espn_id, name, ins_ts) 
+     VALUES (?, ?, ?)",
+    vec![
+        RowValues::Int(123456),
+        RowValues::Text("test name"
+            .to_string()),
+        RowValues::Timestamp(
+            NaiveDateTime::parse_from_str(
+                "2021-08-06 16:00:00"
+                , "%Y-%m-%d %H:%M:%S")?,
+        ),
+    ]);
+
+// Similar API for parameter conversion
+let converted_params = 
+    convert_sql_params::<LibsqlParams>(
+        &q.params,
+        ConversionMode::Execute
+    )?;
+
+// Execute the query
+conn.execute_dml(
+    &q.query, 
+    &converted_params)
+.await?;
+```
+
 </td>
 </tr>
 </table>
 
 ### Queries without parameters
 
-You can create queries without parameters using `new_without_params`, same whether using sqlite or postgres:
+You can create queries without parameters using `new_without_params`, same whether using sqlite, postgres, or libsql:
 
 ```rust
 let query = QueryAndParams::new_without_params(
@@ -260,6 +337,9 @@ PostgreSQL
 </th>
 <th>
 SQLite
+</th>
+<th>
+LibSQL
 </th>
 </tr>
 <tr>
@@ -351,6 +431,50 @@ let rows = sqlite_conn
 ```
 
 </td>
+<td>
+
+```rust
+// Get LibSQL-specific connection
+let libsql_conn = match &conn {
+    MiddlewarePoolConnection::Libsql(libsql) 
+        => libsql,
+    _ => panic!("Expected LibSQL connection"),
+};
+
+// Get client
+let libsql_client = &libsql_conn.client;
+
+let tx = libsql_client.transaction().await?;
+
+// could run custom logic anywhere between stmts
+
+// Convert parameters
+let converted_params = 
+    convert_sql_params::<LibsqlParams>(
+        &q.params,
+        ConversionMode::Execute
+    )?;
+
+// Execute query directly
+// For repeated queries, you could use:
+// let stmt = tx.prepare(&q.query).await?;
+// let rows = stmt.execute(converted_params.0).await?;
+let rows = tx.execute(
+    &q.query,
+    converted_params.0
+).await?;
+
+tx.commit().await?;
+
+
+
+
+
+
+
+```
+
+</td>
 </tr>
 </table>
 
@@ -359,7 +483,7 @@ let rows = sqlite_conn
 The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations:
 
 ```rust
-// This works for both PostgreSQL and SQLite connections
+// This works for PostgreSQL, SQLite, and LibSQL connections
 async fn insert_user<T: AsyncDatabaseExecutor>(
     conn: &T,
     user_id: i32,
@@ -367,7 +491,8 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
 ) -> Result<(), SqlMiddlewareDbError> {
     let query = QueryAndParams::new(
         // Use appropriate parameter syntax for your DB
-        // if you don't, it will probably fail
+        // PostgreSQL: "VALUES ($1, $2)"
+        // SQLite/LibSQL: "VALUES (?, ?)" or "VALUES (?1, ?2)"
         "INSERT INTO users (id, name) VALUES ($1, $2)",
         vec![
             RowValues::Int(user_id),
