@@ -17,7 +17,7 @@ sqlite = ["deadpool-sqlite"]
 postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
 libsql = ["deadpool-libsql"]
-test-utils = ["dep:pg-embed", "dep:postgresql_embedded"]
+test-utils = ["dep:postgresql_embedded"]
 
 [dependencies]
 # checked March 2025
@@ -40,7 +40,6 @@ tiberius = { version = "0", features = ["chrono", "sql-browser-tokio"], optional
 deadpool-tiberius = { version = "0.1.9", optional = true }
 futures-util = { version = "0", optional = true }
 lazy_static = "1"
-pg-embed = { git = "https://github.com/faokunega/pg-embed", tag = "v0.9.0", default-features = false, features = ["rt_tokio"], optional = true }
 postgresql_embedded = { version = "0", features = ["bundled"], optional = true }
 
 [package.metadata.docs.rs]
