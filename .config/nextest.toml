@@ -1,0 +1,6 @@
+[profile.default]
+
+# Run PostgreSQL tests serially to avoid embedded DB conflicts
+#[[profile.default.overrides]]
+#filter = 'test(test2_postgres) or test(test4_trait)'
+#threads-required = 'num-cpus'

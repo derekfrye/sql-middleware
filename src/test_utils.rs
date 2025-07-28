@@ -24,14 +24,20 @@ pub mod testing_postgres {
         pub database_url: String,
     }
 
+// Global lock to serialize all PostgreSQL test operations due to pg-embed's shared state
+static PG_STARTUP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Set up an embedded PostgreSQL instance for testing or benchmarking
     #[cfg(feature = "test-utils")]
     pub fn setup_postgres_embedded(
         cfg: &deadpool_postgres::Config,
     ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
+        // Hold lock for entire setup process to prevent nextest conflicts with pg-embed
+        let _lock = PG_STARTUP_LOCK.lock().unwrap();
+        
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let port = find_available_port(9050);
+            let port = find_available_port_locked(9050);
 
             let pg_settings = PgSettings {
                 port,
@@ -46,6 +52,7 @@ pub mod testing_postgres {
 
             let pg_fetch_settings = PgFetchSettings::default();
 
+            // pg-embed has global shared state that requires full serialization
             let mut pg_embed = PgEmbed::new(pg_settings, pg_fetch_settings).await
                 .map_err(|e| format!("Failed to initialize embedded PostgreSQL: {}. This might be due to network connectivity or platform compatibility issues. Consider installing PostgreSQL locally for testing.", e))?;
 
@@ -164,6 +171,9 @@ pub mod testing_postgres {
     /// Stop a previously started embedded PostgreSQL instance
     #[cfg(feature = "test-utils")]
     pub fn stop_postgres_embedded(mut postgres: EmbeddedPostgres) {
+        // Hold lock for entire stop process to prevent nextest conflicts with pg-embed
+        let _lock = PG_STARTUP_LOCK.lock().unwrap();
+        
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let _ = postgres.pg_embed.stop_db().await;
@@ -183,15 +193,140 @@ pub mod testing_postgres {
     pub fn stop_postgres_container(postgres: EmbeddedPostgres) {
         stop_postgres_embedded(postgres);
     }
+
+    #[cfg(all(test, feature = "test-utils"))]
+    mod threading_tests {
+        use super::*;
+        use std::thread;
+        use std::time::Instant;
+
+        #[test]
+        fn test_concurrent_pg_embed_initialization() {
+            println!("=== Starting concurrent pg_embed test ===");
+            
+            let handles: Vec<_> = (0..2)
+                .map(|i| {
+                    thread::spawn(move || {
+                        println!("Thread {} starting...", i);
+                        let start_time = Instant::now();
+                        
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        let result = rt.block_on(setup_single_pg_embed(i));
+                        
+                        let duration = start_time.elapsed();
+                        println!("Thread {} completed in {:?} with result: {:?}", 
+                               i, duration, result.is_ok());
+                        
+                        if let Err(ref e) = result {
+                            println!("Thread {} error: {}", i, e);
+                        }
+                        
+                        result
+                    })
+                })
+                .collect();
+
+            let mut results = Vec::new();
+            for (i, handle) in handles.into_iter().enumerate() {
+                match handle.join() {
+                    Ok(result) => {
+                        if let Ok(ref postgres) = result {
+                            println!("Thread {} succeeded, stopping instance on port {}", i, postgres.port);
+                        }
+                        if let Ok(postgres) = result {
+                            stop_postgres_embedded(postgres);
+                            results.push(Ok(()));
+                        } else {
+                            results.push(result.map(|_| ()));
+                        }
+                    },
+                    Err(_e) => {
+                        println!("Thread {} join error", i);
+                        results.push(Err("Join error".into()));
+                    }
+                }
+            }
+
+            println!("=== Test completed ===");
+            println!("Results: {} successes, {} failures", 
+                   results.iter().filter(|r| r.is_ok()).count(),
+                   results.iter().filter(|r| r.is_err()).count());
+        }
+
+        async fn setup_single_pg_embed(thread_id: usize) -> Result<EmbeddedPostgres, Box<dyn std::error::Error + Send + Sync>> {
+            println!("Thread {}: Starting pg_embed setup", thread_id);
+            
+            let port = find_available_port_locked(9100 + thread_id as u16 * 10);
+            println!("Thread {}: Allocated port {}", thread_id, port);
+
+            let pg_settings = PgSettings {
+                port,
+                user: "test_user".to_string(),
+                password: "test_pass".to_string(),
+                persistent: false,
+                database_dir: PathBuf::from(&format!("/tmp/pg_embed_thread_test_{}_{}", thread_id, port)),
+                auth_method: PgAuthMethod::Plain,
+                timeout: Some(std::time::Duration::from_secs(30)),
+                migration_dir: None,
+            };
+
+            let pg_fetch_settings = PgFetchSettings::default();
+            
+            println!("Thread {}: About to acquire PG_STARTUP_LOCK", thread_id);
+            
+            // Step 1: Create PgEmbed (test if this needs locking)
+            let mut pg_embed = {
+                println!("Thread {}: Creating PgEmbed without lock first", thread_id);
+                PgEmbed::new(pg_settings, pg_fetch_settings).await
+                    .map_err(|e| {
+                        println!("Thread {}: PgEmbed::new failed: {}", thread_id, e);
+                        format!("Thread {}: PgEmbed::new failed: {}", thread_id, e)
+                    })?
+            };
+            
+            // Step 2: Setup (test if this needs locking) 
+            {
+                let _lock = PG_STARTUP_LOCK.lock().unwrap();
+                println!("Thread {}: Acquired PG_STARTUP_LOCK, calling setup()", thread_id);
+                pg_embed.setup().await.map_err(|e| {
+                    println!("Thread {}: setup() failed: {}", thread_id, e);
+                    format!("Thread {}: setup() failed: {}", thread_id, e)
+                })?;
+                println!("Thread {}: setup() completed, releasing lock", thread_id);
+            }
+            
+            // Step 3: Start DB (test if this needs locking)
+            {
+                let _lock = PG_STARTUP_LOCK.lock().unwrap();
+                println!("Thread {}: Acquired PG_STARTUP_LOCK, calling start_db()", thread_id);
+                pg_embed.start_db().await.map_err(|e| {
+                    println!("Thread {}: start_db() failed: {}", thread_id, e);
+                    format!("Thread {}: start_db() failed: {}", thread_id, e)
+                })?;
+                println!("Thread {}: start_db() completed, releasing lock", thread_id);
+            }
+            
+            println!("Thread {}: Released PG_STARTUP_LOCK, sleeping 2s", thread_id);
+            thread::sleep(Duration::from_millis(2000));
+            
+            let database_url = pg_embed.full_db_uri("test_db");
+            println!("Thread {}: PostgreSQL ready on port {} with URL: {}", thread_id, port, database_url);
+
+            Ok(EmbeddedPostgres {
+                pg_embed,
+                port,
+                database_url,
+            })
+        }
+    }
 }
 
 // Port allocation lock to prevent race conditions when tests run in parallel
 static PORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-// A small helper function to find an available port by trying to bind
+// Helper function to find an available port by trying to bind
 // starting from `start_port`, then incrementing until a bind succeeds.
-// Uses a mutex to prevent race conditions when multiple tests run in parallel.
-fn find_available_port(start_port: u16) -> u16 {
+fn find_available_port_locked(start_port: u16) -> u16 {
     let _lock = PORT_LOCK.lock().unwrap();
     let mut port = start_port;
     loop {
