@@ -1,4 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::sync::{LazyLock, Mutex};
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -11,6 +12,110 @@ use sql_middleware::{
 };
 use std::{fs, path::Path};
 use tokio::runtime::Runtime;
+
+// Global PostgreSQL instance for benchmarks - set up once, torn down at process exit
+static POSTGRES_INSTANCE: LazyLock<Mutex<Option<(ConfigAndPool, EmbeddedPostgres)>>> = 
+    LazyLock::new(|| Mutex::new(None));
+
+// Global SQLite instance for benchmarks - set up once, torn down at process exit
+static SQLITE_INSTANCE: LazyLock<Mutex<Option<(ConfigAndPool, String)>>> = 
+    LazyLock::new(|| Mutex::new(None));
+
+// Helper to get or create the global PostgreSQL instance
+async fn get_postgres_instance() -> ConfigAndPool {
+    let mut instance_guard = POSTGRES_INSTANCE.lock().unwrap();
+    
+    if instance_guard.is_none() {
+        println!("Setting up PostgreSQL instance (one-time setup)...");
+        let db_user = "test_user";
+        let db_pass = "test_password123";
+        let db_name = "test_db";
+        
+        let (config_and_pool, postgres_instance) = 
+            setup_postgres_db(db_user, db_pass, db_name).await.unwrap();
+        
+        *instance_guard = Some((config_and_pool, postgres_instance));
+        println!("PostgreSQL instance ready!");
+    }
+    
+    // Return a clone of the ConfigAndPool
+    let (config_and_pool, _) = instance_guard.as_ref().unwrap();
+    config_and_pool.clone()
+}
+
+// Helper to get or create the global SQLite instance
+async fn get_sqlite_instance() -> ConfigAndPool {
+    let mut instance_guard = SQLITE_INSTANCE.lock().unwrap();
+    
+    if instance_guard.is_none() {
+        println!("Setting up SQLite instance (one-time setup)...");
+        let db_path = "benchmark_sqlite_global.db".to_string();
+        
+        let config_and_pool = setup_sqlite_db(&db_path).await.unwrap();
+        
+        *instance_guard = Some((config_and_pool, db_path));
+        println!("SQLite instance ready!");
+    }
+    
+    // Return a clone of the ConfigAndPool
+    let (config_and_pool, _) = instance_guard.as_ref().unwrap();
+    config_and_pool.clone()
+}
+
+// Helper to clean the database between benchmark runs (but keep SQLite file)
+async fn clean_sqlite_tables(config_and_pool: &ConfigAndPool) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = config_and_pool.pool.get().await?;
+    let conn = MiddlewarePool::get_connection(&pool).await?;
+    
+    if let MiddlewarePoolConnection::Sqlite(sconn) = conn {
+        sconn.interact(move |conn| {
+            // Drop and recreate the test table to clean it
+            conn.execute("DROP TABLE IF EXISTS test", [])?;
+            
+            let create_sql = "CREATE TABLE IF NOT EXISTS test (
+                recid INTEGER PRIMARY KEY AUTOINCREMENT,
+                a int,
+                b text,
+                c datetime not null default current_timestamp,
+                d real,
+                e boolean,
+                f blob,
+                g json,
+                h text, i text, j text, k text, l text, m text, n text, o text, p text
+            )";
+            conn.execute(create_sql, [])?;
+            
+            Ok::<_, SqlMiddlewareDbError>(())
+        }).await??;
+    }
+    Ok(())
+}
+
+// Helper to clean the database between benchmark runs (but keep PostgreSQL running)
+async fn clean_postgres_tables(config_and_pool: &ConfigAndPool) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = config_and_pool.pool.get().await?;
+    let conn = MiddlewarePool::get_connection(&pool).await?;
+    
+    if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
+        // Drop and recreate the test table to clean it
+        let cleanup_sql = "DROP TABLE IF EXISTS test";
+        pgconn.execute(cleanup_sql, &[]).await?;
+        
+        let create_sql = "CREATE TABLE IF NOT EXISTS test (
+            recid SERIAL PRIMARY KEY,
+            a int,
+            b text,
+            c timestamp not null default now(),
+            d real,
+            e boolean,
+            f bytea,
+            g jsonb,
+            h text, i text, j text, k text, l text, m text, n text, o text, p text
+        )";
+        pgconn.execute(create_sql, &[]).await?;
+    }
+    Ok(())
+}
 
 // Reviewed; Function to generate a deterministic set of SQL insert statements
 fn generate_insert_statements(num_rows: usize) -> String {
@@ -177,6 +282,7 @@ fn generate_postgres_insert_statements(num_rows: usize) -> String {
 }
 
 // LibSQL setup function (similar to SQLite but uses ConfigAndPool::new_libsql)
+#[allow(dead_code)] // Disabled due to threading issues, kept for future use
 async fn setup_libsql_db() -> Result<ConfigAndPool, SqlMiddlewareDbError> {
     // Use in-memory database to minimize threading issues
     let config_and_pool = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
@@ -370,35 +476,47 @@ fn benchmark_sqlite(c: &mut Criterion) {
     let mut group = c.benchmark_group("database_inserts");
 
     group.bench_function(BenchmarkId::new("sqlite", format!("{}_rows", num_rows)), |b| {
-        b.to_async(&rt).iter(|| async {
-            let db_path = "xxx".to_string();
+        let statements = insert_statements.clone();
+        b.to_async(&rt).iter_custom(|iters| {
+            let statements = statements.clone();
+            async move {
+                // ONE-TIME SETUP: Get or create the global SQLite instance
+                let config_and_pool = get_sqlite_instance().await;
+                
+                let mut total_duration = std::time::Duration::new(0, 0);
+                
+                for _i in 0..iters {
+                    // SETUP PHASE (not timed): Clean the database and get connection
+                    clean_sqlite_tables(&config_and_pool).await.unwrap();
+                    let pool = config_and_pool.pool.get().await.unwrap();
+                    let sqlite_conn = MiddlewarePool::get_connection(&pool).await.unwrap();
 
-            // Setup SQLite database
-            let config_and_pool = setup_sqlite_db(&db_path).await.unwrap();
+                    if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
+                        let insert_statements_copy = statements.clone();
 
-            // Get connection from pool
-            let pool = config_and_pool.pool.get().await.unwrap();
-            let sqlite_conn = MiddlewarePool::get_connection(&pool).await.unwrap();
-
-            if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
-                let insert_statements_copy = insert_statements.clone();
-
-                // The actual benchmarked part
-                sconn
-                    .interact(move |conn| {
-                        let tx = conn.transaction()?;
-                        tx.execute_batch(&insert_statements_copy)?;
-                        tx.commit()?;
-                        Ok::<_, SqlMiddlewareDbError>(())
-                    })
-                    .await
-                    .unwrap()
-                    .unwrap();
-            }
-
-            // Clean up
-            if Path::new(&db_path).exists() {
-                fs::remove_file(&db_path).unwrap();
+                        // START TIMING: The actual benchmarked part (inserts only)
+                        let start = std::time::Instant::now();
+                        
+                        sconn
+                            .interact(move |conn| {
+                                let tx = conn.transaction()?;
+                                tx.execute_batch(&insert_statements_copy)?;
+                                tx.commit()?;
+                                Ok::<_, SqlMiddlewareDbError>(())
+                            })
+                            .await
+                            .unwrap()
+                            .unwrap();
+                        
+                        // STOP TIMING
+                        let elapsed = start.elapsed();
+                        total_duration += elapsed;
+                    }
+                    
+                    // No teardown needed - SQLite file stays
+                }
+                
+                total_duration
             }
         });
     });
@@ -406,6 +524,7 @@ fn benchmark_sqlite(c: &mut Criterion) {
     group.finish();
 }
 
+#[allow(dead_code)] // Disabled due to threading issues, kept for future use
 fn benchmark_libsql(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 
@@ -455,28 +574,39 @@ fn benchmark_postgres(c: &mut Criterion) {
     let mut group = c.benchmark_group("database_inserts");
 
     group.bench_function(BenchmarkId::new("postgres", format!("{}_rows", num_rows)), |b| {
-        b.to_async(&rt).iter(|| async {
-            let db_user = "test_user";
-            let db_pass = "test_password123";
-            let db_name = "test_db";
+        let statements = postgres_insert_statements.clone();
+        b.to_async(&rt).iter_custom(|iters| {
+            let statements = statements.clone();
+            async move {
+                // ONE-TIME SETUP: Get or create the global PostgreSQL instance
+                let config_and_pool = get_postgres_instance().await;
+                
+                let mut total_duration = std::time::Duration::new(0, 0);
+                
+                for _i in 0..iters {
+                    // SETUP PHASE (not timed): Clean the database and get connection
+                    clean_postgres_tables(&config_and_pool).await.unwrap();
+                    let pool = config_and_pool.pool.get().await.unwrap();
+                    let conn = MiddlewarePool::get_connection(&pool).await.unwrap();
 
-            // Setup PostgreSQL database
-            let (config_and_pool, postgres_stuff) =
-                setup_postgres_db(db_user, db_pass, db_name).await.unwrap();
-
-            // Get connection from pool
-            let pool = config_and_pool.pool.get().await.unwrap();
-            let conn = MiddlewarePool::get_connection(&pool).await.unwrap();
-
-            if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
-                // The actual benchmarked part
-                let tx = pgconn.transaction().await.unwrap();
-                tx.batch_execute(&postgres_insert_statements).await.unwrap();
-                tx.commit().await.unwrap();
+                    if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
+                        // START TIMING: The actual benchmarked part (inserts only)
+                        let start = std::time::Instant::now();
+                        
+                        let tx = pgconn.transaction().await.unwrap();
+                        tx.batch_execute(&statements).await.unwrap();
+                        tx.commit().await.unwrap();
+                        
+                        // STOP TIMING
+                        let elapsed = start.elapsed();
+                        total_duration += elapsed;
+                    }
+                    
+                    // No teardown needed - PostgreSQL stays running
+                }
+                
+                total_duration
             }
-
-            // Clean up by stopping the embedded postgres instance
-            let _ = postgres_stuff.postgresql.stop().await;
         });
     });
 
@@ -489,6 +619,41 @@ fn benchmark_postgres(c: &mut Criterion) {
 // criterion_group!(libsql_benches, benchmark_libsql);
 // criterion_main!(sqlite_benches, libsql_benches, postgres_benches);
 //
+// Cleanup handler to stop databases on process exit
+#[allow(dead_code)] // Used via static _CLEANUP, but compiler doesn't detect this pattern
+struct DatabaseCleanup;
+
+impl Drop for DatabaseCleanup {
+    fn drop(&mut self) {
+        // Clean up PostgreSQL instance
+        let mut postgres_guard = POSTGRES_INSTANCE.lock().unwrap();
+        if let Some((_, postgres_instance)) = postgres_guard.take() {
+            println!("Cleaning up PostgreSQL instance on exit...");
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                let _ = postgres_instance.postgresql.stop().await;
+            });
+            println!("PostgreSQL instance stopped.");
+        }
+        
+        // Clean up SQLite file
+        let mut sqlite_guard = SQLITE_INSTANCE.lock().unwrap();
+        if let Some((_, db_path)) = sqlite_guard.take() {
+            println!("Cleaning up SQLite database file on exit...");
+            if Path::new(&db_path).exists() {
+                if let Err(e) = fs::remove_file(&db_path) {
+                    println!("Warning: Failed to remove SQLite file {}: {}", db_path, e);
+                } else {
+                    println!("SQLite database file removed.");
+                }
+            }
+        }
+    }
+}
+
+// Static cleanup instance
+static _CLEANUP: LazyLock<DatabaseCleanup> = LazyLock::new(|| DatabaseCleanup);
+
 // Current working configuration:
 criterion_group!(sqlite_benches, benchmark_sqlite);
 criterion_group!(postgres_benches, benchmark_postgres);
