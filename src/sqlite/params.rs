@@ -23,7 +23,7 @@ pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqli
                 rusqlite::types::Value::Text(s.clone())
             }
         }
-        RowValues::Bool(b) => rusqlite::types::Value::Integer(*b as i64),
+        RowValues::Bool(b) => rusqlite::types::Value::Integer(i64::from(*b)),
         // Format timestamps once for better performance
         RowValues::Timestamp(dt) => {
             // Use a thread_local buffer for timestamp formatting to avoid allocation

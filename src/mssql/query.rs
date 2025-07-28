@@ -75,7 +75,7 @@ fn extract_value(
 
     // Try integer
     if let Ok(Some(val)) = row.try_get::<i32, _>(idx) {
-        return Ok(Some(RowValues::Int(val as i64)));
+        return Ok(Some(RowValues::Int(i64::from(val))));
     }
 
     if let Ok(Some(val)) = row.try_get::<i64, _>(idx) {
@@ -84,7 +84,7 @@ fn extract_value(
 
     // Try floating point
     if let Ok(Some(val)) = row.try_get::<f32, _>(idx) {
-        return Ok(Some(RowValues::Float(val as f64)));
+        return Ok(Some(RowValues::Float(f64::from(val))));
     }
 
     if let Ok(Some(val)) = row.try_get::<f64, _>(idx) {

@@ -1,5 +1,14 @@
 use crate::types::RowValues;
 
+type ColumnCacheMap = std::sync::LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<
+            usize,
+            std::sync::Arc<std::collections::HashMap<String, usize>>,
+        >,
+    >,
+>;
+
 /// A row from a database query result
 ///
 /// This struct represents a single row from a database query result,
@@ -151,14 +160,7 @@ impl ResultSet {
         if let Some(column_names) = &self.column_names {
             // Build a cache of column name to index for faster lookups
             // We only need to build this cache once and reuse it
-            static CACHE_MAP: std::sync::LazyLock<
-                std::sync::Mutex<
-                    std::collections::HashMap<
-                        usize,
-                        std::sync::Arc<std::collections::HashMap<String, usize>>,
-                    >,
-                >,
-            > = std::sync::LazyLock::new(
+            static CACHE_MAP: ColumnCacheMap = std::sync::LazyLock::new(
                 || std::sync::Mutex::new(std::collections::HashMap::new()),
             );
 

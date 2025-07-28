@@ -1,5 +1,11 @@
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 use tokio::runtime::Runtime;
+use std::sync::LazyLock;
+
+/// Shared tokio runtime for test utilities to avoid creating multiple runtimes
+static SHARED_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
+    Runtime::new().expect("Failed to create tokio runtime for test utilities")
+});
 
 /// Test utilities for PostgreSQL testing and benchmarking
 pub mod testing_postgres {
@@ -24,8 +30,7 @@ pub mod testing_postgres {
     pub fn setup_postgres_embedded(
         cfg: &deadpool_postgres::Config,
     ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
+        SHARED_RUNTIME.block_on(async {
             let mut postgresql = PostgreSQL::default();
             
             // Setup PostgreSQL binaries (bundled, so no download conflicts)
@@ -117,8 +122,7 @@ pub mod testing_postgres {
     /// Stop a previously started embedded PostgreSQL instance
     #[cfg(feature = "test-utils")]
     pub fn stop_postgres_embedded(postgres: EmbeddedPostgres) {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
+        SHARED_RUNTIME.block_on(async {
             let _ = postgres.postgresql.stop().await;
         });
     }
@@ -149,14 +153,13 @@ pub mod testing_postgres {
         fn test_concurrent_postgresql_embedded_initialization() {
             println!("=== Starting concurrent postgresql-embedded test ===");
             
-            let handles: Vec<_> = (0..2)
+            let handles: Vec<_> = (0..8)
                 .map(|i| {
                     thread::spawn(move || {
                         println!("Thread {} starting postgresql-embedded...", i);
                         let start_time = Instant::now();
                         
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        let result = rt.block_on(setup_postgresql_embedded_instance(i));
+                        let result = SHARED_RUNTIME.block_on(setup_postgresql_embedded_instance(i));
                         
                         let duration = start_time.elapsed();
                         println!("Thread {} completed in {:?} with result: {:?}", 
@@ -222,7 +225,7 @@ pub mod testing_postgres {
         fn test_concurrent_embedded_postgres_setup_functions() {
             println!("=== Testing concurrent embedded postgres setup functions ===");
             
-            let handles: Vec<_> = (0..2)
+            let handles: Vec<_> = (0..8)
                 .map(|i| {
                     thread::spawn(move || {
                         println!("Thread {} starting embedded postgres setup functions...", i);
@@ -281,8 +284,8 @@ pub mod testing_postgres {
                    results.iter().filter(|r| r.is_ok()).count(),
                    results.iter().filter(|r| r.is_err()).count());
                    
-            // Assert that both threads succeeded
-            assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2);
+            // Assert that all 8 threads succeeded
+            assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 8);
         }
 
         async fn setup_postgresql_embedded_instance(thread_id: usize) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
