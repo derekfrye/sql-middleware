@@ -1,0 +1,90 @@
+#[cfg(feature = "postgres")]
+use deadpool_postgres::Object as PostgresObject;
+
+#[cfg(feature = "sqlite")]
+use deadpool_sqlite::Object as SqliteObject;
+
+#[cfg(feature = "libsql")]
+use deadpool_libsql::Object as LibsqlObject;
+
+use crate::error::SqlMiddlewareDbError;
+use super::types::MiddlewarePool;
+
+pub enum MiddlewarePoolConnection {
+    #[cfg(feature = "postgres")]
+    Postgres(PostgresObject),
+    #[cfg(feature = "sqlite")]
+    Sqlite(SqliteObject),
+    #[cfg(feature = "mssql")]
+    Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
+    #[cfg(feature = "libsql")]
+    Libsql(LibsqlObject),
+}
+
+// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+impl std::fmt::Debug for MiddlewarePoolConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(conn) => f.debug_tuple("Postgres").field(conn).finish(),
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(conn) => f.debug_tuple("Sqlite").field(conn).finish(),
+            #[cfg(feature = "mssql")]
+            Self::Mssql(_) => f
+                .debug_tuple("Mssql")
+                .field(&"<TiberiusConnection>")
+                .finish(),
+            #[cfg(feature = "libsql")]
+            Self::Libsql(conn) => f.debug_tuple("Libsql").field(conn).finish(),
+        }
+    }
+}
+
+impl MiddlewarePool {
+    /// Get a connection from the pool
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::PoolErrorPostgres` or `SqlMiddlewareDbError::PoolErrorSqlite` if the pool fails to provide a connection.
+    pub async fn get_connection(
+        pool: &MiddlewarePool,
+    ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
+        match pool {
+            #[cfg(feature = "postgres")]
+            MiddlewarePool::Postgres(pool) => {
+                let conn: PostgresObject = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorPostgres)?;
+                Ok(MiddlewarePoolConnection::Postgres(conn))
+            }
+            #[cfg(feature = "sqlite")]
+            MiddlewarePool::Sqlite(pool) => {
+                let conn: SqliteObject = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
+                Ok(MiddlewarePoolConnection::Sqlite(conn))
+            }
+            #[cfg(feature = "mssql")]
+            MiddlewarePool::Mssql(pool) => {
+                let conn = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
+                Ok(MiddlewarePoolConnection::Mssql(conn))
+            }
+            #[cfg(feature = "libsql")]
+            MiddlewarePool::Libsql(pool) => {
+                let conn: LibsqlObject = pool
+                    .get()
+                    .await
+                    .map_err(SqlMiddlewareDbError::PoolErrorLibsql)?;
+                Ok(MiddlewarePoolConnection::Libsql(conn))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "This database type is not enabled in the current build".to_string(),
+            )),
+        }
+    }
+}
