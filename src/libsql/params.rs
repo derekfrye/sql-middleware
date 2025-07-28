@@ -4,7 +4,7 @@ use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddleware
 pub struct Params(pub Vec<deadpool_libsql::libsql::Value>);
 
 impl Params {
-    /// Convert from a slice of RowValues to libsql parameters
+    /// Convert from a slice of `RowValues` to libsql parameters
     pub fn convert(params: &[RowValues]) -> Result<Params, SqlMiddlewareDbError> {
         let mut libsql_params = Vec::with_capacity(params.len());
 

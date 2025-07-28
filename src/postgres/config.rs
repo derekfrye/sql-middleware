@@ -3,7 +3,8 @@ use deadpool_postgres::Config as PgConfig;
 use tokio_postgres::NoTls;
 
 impl ConfigAndPool {
-    /// Asynchronous initializer for ConfigAndPool with Postgres
+    /// Asynchronous initializer for `ConfigAndPool` with Postgres
+    #[allow(clippy::unused_async)]
     pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
         // Validate all required config fields are present
         if pg_config.dbname.is_none() {

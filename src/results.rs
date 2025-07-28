@@ -34,7 +34,7 @@ impl CustomDbRow {
     ///
     /// # Returns
     ///
-    /// A new CustomDbRow instance
+    /// A new `CustomDbRow` instance
     #[must_use]
     pub fn new(column_names: std::sync::Arc<Vec<String>>, rows: Vec<RowValues>) -> Self {
         // Build a cache of column name to index for faster lookups
@@ -130,7 +130,7 @@ impl ResultSet {
     ///
     /// # Returns
     ///
-    /// A new ResultSet instance with preallocated capacity
+    /// A new `ResultSet` instance with preallocated capacity
     #[must_use]
     pub fn with_capacity(capacity: usize) -> ResultSet {
         ResultSet {

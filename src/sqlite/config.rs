@@ -3,7 +3,7 @@ use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 impl ConfigAndPool {
-    /// Asynchronous initializer for ConfigAndPool with Sqlite using deadpool_sqlite
+    /// Asynchronous initializer for `ConfigAndPool` with Sqlite using `deadpool_sqlite`
     pub async fn new_sqlite(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
         // Configure deadpool_sqlite
         let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
@@ -38,7 +38,7 @@ impl ConfigAndPool {
     }
 }
 
-/// Convert InteractError to a more specific SqlMiddlewareDbError
+/// Convert `InteractError` to a more specific `SqlMiddlewareDbError`
 impl From<deadpool_sqlite::InteractError> for SqlMiddlewareDbError {
     fn from(err: deadpool_sqlite::InteractError) -> Self {
         SqlMiddlewareDbError::ConnectionError(format!("SQLite Interact Error: {err}"))

@@ -12,19 +12,19 @@ use crate::types::RowValues;
 
 /// Wrapper around a database connection for generic code
 ///
-/// This enum allows code to handle PostgreSQL, SQLite, SQL Server, or LibSQL
+/// This enum allows code to handle `PostgreSQL`, `SQLite`, SQL Server, or `LibSQL`
 /// connections in a generic way.
 pub enum AnyConnWrapper<'a> {
-    /// PostgreSQL client connection
+    /// `PostgreSQL` client connection
     #[cfg(feature = "postgres")]
     Postgres(&'a mut tokio_postgres::Client),
-    /// SQLite database connection
+    /// `SQLite` database connection
     #[cfg(feature = "sqlite")]
     Sqlite(&'a mut SqliteConnectionType),
     /// SQL Server client connection
     #[cfg(feature = "mssql")]
     Mssql(&'a mut TiberiusClient<Compat<TcpStream>>),
-    /// LibSQL database connection
+    /// `LibSQL` database connection
     #[cfg(feature = "libsql")]
     Libsql(&'a deadpool_libsql::Object),
 }
@@ -42,7 +42,7 @@ pub struct QueryAndParams {
 }
 
 impl QueryAndParams {
-    /// Create a new QueryAndParams with the given query string and parameters
+    /// Create a new `QueryAndParams` with the given query string and parameters
     ///
     /// # Arguments
     ///
@@ -51,7 +51,7 @@ impl QueryAndParams {
     ///
     /// # Returns
     ///
-    /// A new QueryAndParams instance
+    /// A new `QueryAndParams` instance
     pub fn new(query: impl Into<String>, params: Vec<RowValues>) -> Self {
         Self {
             query: query.into(),
@@ -59,7 +59,7 @@ impl QueryAndParams {
         }
     }
 
-    /// Create a new QueryAndParams with no parameters
+    /// Create a new `QueryAndParams` with no parameters
     ///
     /// # Arguments
     ///
@@ -67,7 +67,7 @@ impl QueryAndParams {
     ///
     /// # Returns
     ///
-    /// A new QueryAndParams instance with an empty parameter list
+    /// A new `QueryAndParams` instance with an empty parameter list
     pub fn new_without_params(query: impl Into<String>) -> Self {
         Self {
             query: query.into(),

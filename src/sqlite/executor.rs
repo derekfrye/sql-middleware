@@ -5,7 +5,7 @@ use super::params::convert_params;
 use super::query::build_result_set;
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
-/// Execute a batch of SQL statements for SQLite
+/// Execute a batch of SQL statements for `SQLite`
 pub async fn execute_batch(
     sqlite_client: &Object,
     query: &str,
@@ -30,7 +30,7 @@ pub async fn execute_batch(
         .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {e}")))?
 }
 
-/// Execute a SELECT query in SQLite
+/// Execute a SELECT query in `SQLite`
 pub async fn execute_select(
     sqlite_client: &Object,
     query: &str,
@@ -52,7 +52,7 @@ pub async fn execute_select(
         .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Interact error: {e}")))?
 }
 
-/// Execute a DML query (INSERT, UPDATE, DELETE) in SQLite
+/// Execute a DML query (INSERT, UPDATE, DELETE) in `SQLite`
 pub async fn execute_dml(
     sqlite_client: &Object,
     query: &str,

@@ -12,7 +12,8 @@ pub type MssqlClient = Client<Compat<TcpStream>>;
 pub type MssqlManager = TiberiusManager;
 
 impl ConfigAndPool {
-    /// Asynchronous initializer for ConfigAndPool with SQL Server (MSSQL)
+    /// Asynchronous initializer for `ConfigAndPool` with SQL Server (MSSQL)
+    #[allow(clippy::unused_async)]
     pub async fn new_mssql(
         server: String,
         database: String,

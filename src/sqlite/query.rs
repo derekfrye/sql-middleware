@@ -4,7 +4,7 @@ use rusqlite::{Statement, ToSql};
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
-/// Extract a RowValues from a SQLite row
+/// Extract a `RowValues` from a `SQLite` row
 pub fn sqlite_extract_value_sync(
     row: &rusqlite::Row,
     idx: usize,
@@ -31,7 +31,7 @@ pub fn sqlite_extract_value_sync(
     }
 }
 
-/// Build a result set from a SQLite query
+/// Build a result set from a `SQLite` query
 /// Only SELECT queries return rows affected. If a DML is sent, it does run it.
 /// If there's more than one query in the statement, idk which statement will be run.
 pub fn build_result_set(

@@ -9,7 +9,7 @@ pub struct Params<'a> {
 }
 
 impl<'a> Params<'a> {
-    /// Convert from a slice of RowValues to SQL Server parameters
+    /// Convert from a slice of `RowValues` to SQL Server parameters
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         // Pre-allocate space for performance
         let mut references = Vec::with_capacity(params.len());
@@ -45,7 +45,7 @@ impl<'a> ParamConverter<'a> for Params<'a> {
     }
 }
 
-/// ToSql for RowValues for passing parameters
+/// `ToSql` for `RowValues` for passing parameters
 impl ToSql for RowValues {
     fn to_sql(&self) -> tiberius::ColumnData<'_> {
         match self {

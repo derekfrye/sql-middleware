@@ -10,7 +10,7 @@ pub struct Params<'a> {
 }
 
 impl<'a> Params<'a> {
-    /// Convert from a slice of RowValues to Postgres parameters
+    /// Convert from a slice of `RowValues` to Postgres parameters
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         let references: Vec<&(dyn ToSql + Sync)> =
             params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
@@ -18,7 +18,7 @@ impl<'a> Params<'a> {
         Ok(Params { references })
     }
 
-    /// Convert a slice of RowValues for batch operations
+    /// Convert a slice of `RowValues` for batch operations
     pub fn convert_for_batch(
         params: &'a [RowValues],
     ) -> Result<Vec<&'a (dyn ToSql + Sync + 'a)>, SqlMiddlewareDbError> {

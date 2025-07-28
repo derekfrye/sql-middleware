@@ -55,7 +55,7 @@ pub async fn build_result_set(
     Ok(result_set)
 }
 
-/// Extract a RowValues from a libsql row at the given index
+/// Extract a `RowValues` from a libsql row at the given index
 fn libsql_extract_value(
     row: &deadpool_libsql::libsql::Row,
     idx: i32,

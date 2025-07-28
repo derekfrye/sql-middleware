@@ -66,7 +66,8 @@ pub struct ConfigAndPool {
 }
 
 impl MiddlewarePool {
-    // Return a reference to self instead of cloning the entire pool
+    // Return a reference to self instead of cloning the entire pool  
+    #[allow(clippy::unused_async)]
     pub async fn get(&self) -> Result<&MiddlewarePool, SqlMiddlewareDbError> {
         Ok(self)
     }

@@ -9,7 +9,7 @@ thread_local! {
     static TIMESTAMP_BUF: std::cell::RefCell<String> = std::cell::RefCell::new(String::with_capacity(32));
 }
 
-/// Convert a single RowValue to a rusqlite Value
+/// Convert a single `RowValue` to a rusqlite `Value`
 pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqlite::types::Value {
     match value {
         RowValues::Int(i) => rusqlite::types::Value::Integer(*i),
@@ -54,7 +54,7 @@ pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqli
     }
 }
 
-/// Bind middleware params to SQLite types.
+/// Bind middleware params to `SQLite` types.
 pub fn convert_params(
     params: &[RowValues],
 ) -> Result<Vec<rusqlite::types::Value>, SqlMiddlewareDbError> {
@@ -84,10 +84,10 @@ where
     Ok(rusqlite::params_from_iter(values.into_iter()))
 }
 
-/// Wrapper for SQLite parameters for queries.
+/// Wrapper for `SQLite` parameters for queries.
 pub struct SqliteParamsQuery(pub Vec<rusqlite::types::Value>);
 
-/// Wrapper for SQLite parameters for execution.
+/// Wrapper for `SQLite` parameters for execution.
 pub struct SqliteParamsExecute(
     pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>,
 );

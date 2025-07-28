@@ -3,7 +3,7 @@ use deadpool_libsql::{Manager, Pool};
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 impl ConfigAndPool {
-    /// Asynchronous initializer for ConfigAndPool with libsql using deadpool_libsql
+    /// Asynchronous initializer for `ConfigAndPool` with libsql using `deadpool_libsql`
     pub async fn new_libsql(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
         // Create libsql database connection
         let db = deadpool_libsql::libsql::Builder::new_local(db_path.clone())
