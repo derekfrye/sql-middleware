@@ -12,6 +12,10 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 * Minimal overhead (just syntax convenience/wrapper fns)
 * Allow consumers to only include the database backends they need
 
+## Design Documents
+
+- **[Async Design Decisions](async.md)** - Explains why certain functions are marked with `#[allow(clippy::unused_async)]` and our async API design philosophy
+
 ## Feature Flags
 
 By default, all database backends are enabled. You can selectively enable only the backends you need:
