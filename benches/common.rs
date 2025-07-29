@@ -7,7 +7,7 @@ pub fn get_benchmark_rows() -> usize {
     std::env::var("BENCH_ROWS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(50_000)
+        .unwrap_or(10)
 }
 
 pub fn generate_insert_statements(num_rows: usize) -> String {

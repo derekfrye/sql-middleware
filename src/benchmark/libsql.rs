@@ -14,19 +14,24 @@ static LIBSQL_INSTANCE: LazyLock<Mutex<Option<(ConfigAndPool, String)>>> =
     LazyLock::new(|| Mutex::new(None));
 
 pub async fn get_libsql_instance() -> ConfigAndPool {
+    println!("get_libsql_instance: Starting...");
     let mut instance_guard = LIBSQL_INSTANCE.lock().unwrap();
+    println!("get_libsql_instance: Got mutex lock");
     
     if instance_guard.is_none() {
         println!("Setting up LibSQL instance (one-time setup)...");
-        let db_path = "benchmark_libsql_global.db".to_string();
+        let db_path = ":memory:".to_string();
         
+        println!("get_libsql_instance: About to call setup_libsql_db");
         let config_and_pool = setup_libsql_db(&db_path).await.unwrap();
+        println!("get_libsql_instance: setup_libsql_db completed");
         
         *instance_guard = Some((config_and_pool, db_path));
         println!("LibSQL instance ready!");
     }
     
     let (config_and_pool, _) = instance_guard.as_ref().unwrap();
+    println!("get_libsql_instance: Returning config_and_pool");
     config_and_pool.clone()
 }
 
@@ -50,11 +55,15 @@ pub async fn clean_libsql_tables(config_and_pool: &ConfigAndPool) -> Result<(), 
 }
 
 async fn setup_libsql_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
-    if Path::new(db_path).exists() {
+    println!("setup_libsql_db: Starting with path: {}", db_path);
+    // Skip file removal for in-memory databases
+    if db_path != ":memory:" && Path::new(db_path).exists() {
         fs::remove_file(db_path).unwrap();
     }
 
+    println!("setup_libsql_db: About to call ConfigAndPool::new_libsql");
     let config_and_pool = ConfigAndPool::new_libsql(db_path.to_string()).await?;
+    println!("setup_libsql_db: ConfigAndPool::new_libsql completed");
 
     let ddl = "CREATE TABLE IF NOT EXISTS test (
         recid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,16 +76,8 @@ async fn setup_libsql_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     let libsql_conn = MiddlewarePool::get_connection(&pool).await?;
 
     if let MiddlewarePoolConnection::Libsql(libsql_conn) = libsql_conn {
-        let tx = libsql_conn.transaction().await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Failed to start transaction: {e}"))
-        })?;
-        
-        tx.execute(ddl, ()).await.map_err(|e| {
+        libsql_conn.execute(ddl, ()).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Failed to execute DDL: {e}"))
-        })?;
-        
-        tx.commit().await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Failed to commit transaction: {e}"))
         })?;
     } else {
         panic!("Expected LibSQL connection");
@@ -108,9 +109,8 @@ pub fn benchmark_libsql(c: &mut Criterion) {
                     if let MiddlewarePoolConnection::Libsql(libsql_conn) = libsql_conn {
                         let start = std::time::Instant::now();
                         
-                        let tx = libsql_conn.transaction().await.unwrap();
-                        tx.execute_batch(&statements).await.unwrap();
-                        tx.commit().await.unwrap();
+                        // Use the libsql executor function directly
+                        crate::libsql::execute_batch(&libsql_conn, &statements).await.unwrap();
                         
                         let elapsed = start.elapsed();
                         total_duration += elapsed;
@@ -128,13 +128,18 @@ pub fn benchmark_libsql(c: &mut Criterion) {
 pub fn cleanup_libsql() {
     let mut libsql_guard = LIBSQL_INSTANCE.lock().unwrap();
     if let Some((_, db_path)) = libsql_guard.take() {
-        println!("Cleaning up LibSQL database file on exit...");
-        if Path::new(&db_path).exists() {
-            if let Err(e) = fs::remove_file(&db_path) {
-                println!("Warning: Failed to remove LibSQL file {}: {}", db_path, e);
-            } else {
-                println!("LibSQL database file removed.");
+        // Skip cleanup for in-memory databases
+        if db_path != ":memory:" {
+            println!("Cleaning up LibSQL database file on exit...");
+            if Path::new(&db_path).exists() {
+                if let Err(e) = fs::remove_file(&db_path) {
+                    println!("Warning: Failed to remove LibSQL file {}: {}", db_path, e);
+                } else {
+                    println!("LibSQL database file removed.");
+                }
             }
+        } else {
+            println!("LibSQL in-memory database cleaned up.");
         }
     }
 }

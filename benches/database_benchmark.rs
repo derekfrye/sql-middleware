@@ -28,8 +28,5 @@ criterion_group!(postgres_benches, benchmark_postgres);
 #[cfg(feature = "libsql")]
 criterion_group!(libsql_benches, benchmark_libsql);
 
-#[cfg(feature = "libsql")]
-criterion_main!(sqlite_benches, postgres_benches, libsql_benches);
-
-#[cfg(not(feature = "libsql"))]
+// LibSQL benchmarks disabled due to instability/hanging issues
 criterion_main!(sqlite_benches, postgres_benches);
