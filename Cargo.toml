@@ -18,6 +18,7 @@ postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
 libsql = ["deadpool-libsql"]
 test-utils = ["dep:postgresql_embedded"]
+benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
 
 [dependencies]
 # checked March 2025
@@ -41,6 +42,10 @@ deadpool-tiberius = { version = "0.1.9", optional = true }
 futures-util = { version = "0", optional = true }
 lazy_static = "1"
 postgresql_embedded = { version = "0", features = ["bundled"], optional = true }
+# Benchmark dependencies
+criterion = { version = "0", features = ["async_tokio"], optional = true }
+rand = { version = "0", optional = true }
+rand_chacha = { version = "0", optional = true }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--deny", "unsafe_code"]
@@ -54,7 +59,7 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", features = ["test-utils"] }
+sql-middleware = { path = ".", features = ["test-utils", "benchmarks"] }
 
 [[bench]]
 name = "database_benchmark"

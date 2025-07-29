@@ -5,6 +5,10 @@
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
+// Benchmark utilities module - for benchmarks
+#[cfg(feature = "benchmarks")]
+pub mod benchmark;
+
 // Public API modules
 pub mod conversion;
 pub mod exports;
