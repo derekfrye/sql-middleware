@@ -4,3 +4,4 @@ xxx
 xxx-shm
 xxx-wal
 .gemini/
+benchmark_sqlite_global.db*
