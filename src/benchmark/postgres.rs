@@ -140,8 +140,7 @@ async fn setup_postgres_db(
     Ok((config_and_pool, postgres_instance))
 }
 
-pub fn benchmark_postgres(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+pub fn benchmark_postgres(c: &mut Criterion, rt: &Runtime) {
     let num_rows = get_benchmark_rows();
     println!("Running PostgreSQL benchmark with {} rows", num_rows);
     let postgres_insert_statements = generate_postgres_insert_statements(num_rows);
@@ -149,7 +148,7 @@ pub fn benchmark_postgres(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("postgres", format!("{}_rows", num_rows)), |b| {
         let statements = postgres_insert_statements.clone();
-        b.to_async(&rt).iter_custom(|iters| {
+        b.to_async(rt).iter_custom(|iters| {
             let statements = statements.clone();
             async move {
                 let config_and_pool = get_postgres_instance().await;

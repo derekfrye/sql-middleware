@@ -85,8 +85,7 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     Ok(config_and_pool)
 }
 
-pub fn benchmark_sqlite(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+pub fn benchmark_sqlite(c: &mut Criterion, rt: &Runtime) {
     let num_rows = get_benchmark_rows();
     println!("Running SQLite benchmark with {} rows", num_rows);
     let insert_statements = generate_insert_statements(num_rows);
@@ -94,7 +93,7 @@ pub fn benchmark_sqlite(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("sqlite", format!("{}_rows", num_rows)), |b| {
         let statements = insert_statements.clone();
-        b.to_async(&rt).iter_custom(|iters| {
+        b.to_async(rt).iter_custom(|iters| {
             let statements = statements.clone();
             async move {
                 let config_and_pool = get_sqlite_instance().await;

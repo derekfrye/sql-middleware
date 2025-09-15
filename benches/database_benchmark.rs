@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main};
 use std::sync::LazyLock;
+use tokio::runtime::Runtime;
 use sql_middleware::benchmark::{
     sqlite::{benchmark_sqlite, cleanup_sqlite},
     postgres::{benchmark_postgres, cleanup_postgres},
@@ -23,8 +24,19 @@ impl Drop for DatabaseCleanup {
 
 static _CLEANUP: LazyLock<DatabaseCleanup> = LazyLock::new(|| DatabaseCleanup);
 
-criterion_group!(sqlite_benches, benchmark_sqlite);
-criterion_group!(postgres_benches, benchmark_postgres);
+// Shared runtime for all benchmarks to avoid dual runtimes
+static SHARED_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().unwrap());
+
+fn sqlite_benches_wrapper(c: &mut criterion::Criterion) {
+    benchmark_sqlite(c, &SHARED_RUNTIME);
+}
+
+fn postgres_benches_wrapper(c: &mut criterion::Criterion) {
+    benchmark_postgres(c, &SHARED_RUNTIME);
+}
+
+criterion_group!(sqlite_benches, sqlite_benches_wrapper);
+criterion_group!(postgres_benches, postgres_benches_wrapper);
 #[cfg(feature = "libsql")]
 criterion_group!(libsql_benches, benchmark_libsql);
 
