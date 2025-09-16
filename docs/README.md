@@ -7,25 +7,17 @@ Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crate
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
 ## Goals
-* Convenience functions for common sql query patterns
-* Keep underlying flexibility of deadpool-sqlite, deadpool-postgres, and deadpool-tiberius
-* Minimal overhead (just syntax convenience/wrapper fns)
-* Allow consumers to only include the database backends they need
-
-## Design Documents
-
-- **[Async Design Decisions](async.md)** - Explains why certain functions are marked with `#[allow(clippy::unused_async)]` and our async API design philosophy
+* Convenience functions for common SQL query patterns
+* Keep underlying flexibility of `deadpool`
+* Minimal overhead (ideally, just syntaxs sugar/wrapper fns)
 
 ## Feature Flags
 
-By default, all database backends are enabled. You can selectively enable only the backends you need:
+By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
 
 ```toml
-# Only include SQLite and PostgreSQL support
-sql-middleware = { version = "0", features = ["sqlite", "postgres"] }
-
-# Only include SQLite support
-sql-middleware = { version = "0", features = ["sqlite"] }
+# Only include SQLite and LibSQL support
+sql-middleware = { version = "0", features = ["sqlite", "libsql"] }
 ```
 
 Available features:
@@ -42,7 +34,7 @@ More examples available in the [tests dir](../tests/), and this is in-use with a
 
 ### Importing
 
-Use the prelude to import everything you need, or import stuff item by item:
+You can use the prelude to import everything you need, or import item by item.
 
 ```rust
 use sql_middleware::prelude::*;
@@ -147,21 +139,6 @@ let conn = MiddlewarePool
 
 Same api regardless of db backend.
 
-<table>
-<tr>
-<th>
-PostgreSQL
-</th>
-<th>
-SQLite
-</th>
-<th>
-LibSQL
-</th>
-</tr>
-<tr>
-<td>
-
 ```rust
 // simple api for batch queries
 let ddl_query =
@@ -169,29 +146,6 @@ let ddl_query =
 conn.execute_batch(&ddl_query).await?;
 ```
 
-</td>
-<td>
-
-```rust
-// same api
-let ddl_query = 
-    include_str!("/path/to/test1.sql");
-conn.execute_batch(&ddl_query).await?;
-```
-
-</td>
-<td>
-
-```rust
-// same api
-let ddl_query = 
-    include_str!("/path/to/test1.sql");
-conn.execute_batch(&ddl_query).await?;
-```
-
-</td>
-</tr>
-</table>
 
 ### Parameterized Queries
 
@@ -509,3 +463,7 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
     Ok(())
 }
 ```
+
+## Design Documents
+
+- **[Async Design Decisions](async.md)** - Explains why some functions are marked with `#[allow(clippy::unused_async)]` and our async API design philosophy.
