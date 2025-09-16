@@ -5,3 +5,5 @@ xxx-shm
 xxx-wal
 .gemini/
 benchmark_sqlite_global.db*
+test_sqlite.db*
+test_libsql.db*

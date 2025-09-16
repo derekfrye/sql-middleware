@@ -35,14 +35,39 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     let postgres_stuff = setup_postgres_container(&cfg)?;
     cfg.port = Some(postgres_stuff.port);
 
-    let test_cases = vec![
+    let  test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
-        TestCase::Postgres(&cfg), // Adjust connection string
+        TestCase::Sqlite("test_sqlite.db".to_string()),
+        TestCase::Postgres(&cfg),
     ];
+    
+    // #[cfg(feature = "libsql")]
+    // {
+    //     test_cases.push(TestCase::Libsql(":memory:".to_string()));
+    //     test_cases.push(TestCase::Libsql("test_libsql.db".to_string()));
+    // }
 
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
         for test_case in test_cases {
+            // Clean up database files if they exist
+            match &test_case {
+                TestCase::Sqlite(connection_string) => {
+                    if connection_string != "file::memory:?cache=shared" {
+                        let _ = std::fs::remove_file(&connection_string);
+                    }
+                }
+                // #[cfg(feature = "libsql")]
+                // TestCase::Libsql(connection_string) => {
+                //     if connection_string != ":memory:" {
+                //         let _ = std::fs::remove_file(&connection_string);
+                //     }
+                // }
+                TestCase::Postgres(_) => {
+                    // No cleanup needed for Postgres
+                }
+            }
+            
             match test_case {
                 TestCase::Sqlite(connection_string) => {
                     // Initialize Sqlite pool
@@ -62,6 +87,16 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Postgres).await?;
                 }
+                // #[cfg(feature = "libsql")]
+                // TestCase::Libsql(connection_string) => {
+                //     // Initialize Libsql pool
+                //     let config_and_pool = ConfigAndPool2::new_libsql(connection_string).await?;
+                //     let pool = config_and_pool.pool.get().await?;
+                //     let mut conn = MiddlewarePool::get_connection(&pool).await?;
+
+                //     // Execute test logic
+                //     run_test_logic(&mut conn, DatabaseType::Libsql).await?;
+                // }
             }
         }
 
@@ -78,6 +113,8 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 enum TestCase<'a> {
     Sqlite(String),
     Postgres(&'a deadpool_postgres::Config),
+    // #[cfg(feature = "libsql")]
+    // Libsql(String),
 }
 
 async fn run_test_logic(
