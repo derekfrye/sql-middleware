@@ -1,16 +1,34 @@
 # SQL Middleware - A unified interface for SQL databases
 
 This crate provides a middleware layer for SQL database access,
-currently supporting `SQLite`, `PostgreSQL`, and SQL Server backends. The main goal is to
-provide a unified, async-compatible API that works across different database systems.
+supporting `SQLite`, `PostgreSQL`, `LibSQL`, and SQL Server backends. The goal is a
+unified, async-compatible API that works consistently across databases.
 
 ## Features
 
-- Asynchronous database access with deadpool connection pooling
-- Support for `SQLite`, `PostgreSQL`, and SQL Server backends
+- Asynchronous access with deadpool connection pooling
+- Backends: `SQLite`, `PostgreSQL`, `LibSQL`, and SQL Server
 - Unified parameter conversion system
-- Consistent result handling across database engines
+- Consistent result handling across engines
 - Transaction support
+
+## Feature Flags
+
+Default features are `sqlite` and `postgres`. Enable others as needed:
+
+```toml
+# Only SQLite and LibSQL
+sql-middleware = { version = "0", features = ["sqlite", "libsql"] }
+
+# All backends
+sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "libsql"] }
+```
+
+Additional flags:
+- `mssql`: SQL Server via `tiberius`
+- `libsql`: LibSQL (local or remote)
+- `test-utils`: Test helpers for internal testing
+- `benchmarks`: Criterion helpers for benches
 
 ## Example
 
@@ -62,6 +80,30 @@ async fn postgres_example() -> Result<(), SqlMiddlewareDbError> {
     Ok(())
 }
 
+async fn libsql_example() -> Result<(), SqlMiddlewareDbError> {
+    use sql_middleware::prelude::*;
+
+    // In-memory LibSQL (or use a file path like "./data.db")
+    let config = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
+
+    // Remote LibSQL (Turso) example:
+    // let config = ConfigAndPool::new_libsql_remote(
+    //     "libsql://your-url".to_string(),
+    //     "your_auth_token".to_string(),
+    // ).await?;
+
+    let pool = config.pool.get().await?;
+    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+
+    let result = conn.execute_select(
+        "SELECT 1 as one",
+        &[]
+    ).await?;
+
+    assert_eq!(*result.results[0].get("one").unwrap().as_int().unwrap(), 1);
+    Ok(())
+}
+
 async fn sqlserver_example() -> Result<(), SqlMiddlewareDbError> {
     // Create an SQL Server connection pool
     let config = ConfigAndPool::new_mssql(
@@ -84,4 +126,8 @@ async fn sqlserver_example() -> Result<(), SqlMiddlewareDbError> {
     
     Ok(())
 }
+
+// For more in-depth examples (parameter conversion, batch queries, per-backend
+// transactions, AsyncDatabaseExecutor usage), see the project README:
+// https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md
 ```

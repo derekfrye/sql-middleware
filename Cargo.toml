@@ -22,6 +22,7 @@ benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
 
 [dependencies]
 # checked August 2025
+# `cargo stale`
 tokio = { version = "1", features = ["full"] }  
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
