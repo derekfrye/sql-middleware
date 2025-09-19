@@ -109,6 +109,8 @@ let conn = MiddlewarePool
 </tr>
 </table>
 
+Note: Turso currently does not expose a transaction helper through this middleware. For simple multi-step operations, you can wrap statements with `execute_batch("BEGIN; ...; COMMIT")`. If you need step-by-step custom logic within a single transaction, consider LibSQL for richer transactional ergonomics, or emulate with explicit `BEGIN`/`COMMIT` statements.
+
 Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the constructor as needed: `new_sqlite(path)`, `new_libsql(path)`, or `new_turso(path)`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
 
 ### Batch query w/o params
@@ -204,37 +206,34 @@ Here, the APIs differ, because the underlying database's transaction approach di
 <table>
 <tr>
 <th>
-PostgreSQL
+PostgreSQL / LibSQL
 </th>
 <th>
 SQLite
-</th>
-<th>
-LibSQL
 </th>
 </tr>
 <tr>
 <td>
 
 ```rust
-// Get PostgreSQL-specific connection
+// Get db-specific connection`1`
 let pg_conn = match &conn {
     MiddlewarePoolConnection::Postgres(pg) 
         => pg,
     _ => panic!("Expected Postgres connection"),
 };
 
-// Get client
-let pg_client = &pg_conn.client;
+// Get client from deadpool Object`2`
+let client: &mut tokio_postgres::Client = pg_conn.as_mut();
 
-let tx = pg_client.transaction().await?;
+let tx = client.transaction().await?;
 
 // could run custom logic anywhere between stmts
 
 // Prepare statement
 let stmt = tx.prepare(&q.query).await?;
 
-// Convert parameters
+// Convert parameters`3`
 let converted_params = 
     convert_sql_params::<PostgresParams>(
         &q.params,
@@ -302,52 +301,13 @@ let rows = sqlite_conn
 ```
 
 </td>
-<td>
 
-```rust
-// Get LibSQL-specific connection
-let libsql_conn = match &conn {
-    MiddlewarePoolConnection::Libsql(libsql) 
-        => libsql,
-    _ => panic!("Expected LibSQL connection"),
-};
-
-// Get client
-let libsql_client = &libsql_conn.client;
-
-let tx = libsql_client.transaction().await?;
-
-// could run custom logic anywhere between stmts
-
-// Convert parameters
-let converted_params = 
-    convert_sql_params::<LibsqlParams>(
-        &q.params,
-        ConversionMode::Execute
-    )?;
-
-// Execute query directly
-// For repeated queries, you could use:
-// let stmt = tx.prepare(&q.query).await?;
-// let rows = stmt.execute(converted_params.0).await?;
-let rows = tx.execute(
-    &q.query,
-    converted_params.0
-).await?;
-
-tx.commit().await?;
-
-
-
-
-
-
-
-```
-
-</td>
 </tr>
 </table>
+
+`1` Note: The Postgres example applies to Postgres, LibSQL, and Turso. Swap the connection type as needed: `MiddlewarePoolConnection::Postgres`, `MiddlewarePoolConnection::Libsql`, or `MiddlewarePoolConnection::Turso`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
+`2` Note: Same as prior note; swap `tokio_postgres::Client` with `XXX` for libsql.
+`3` Note: Same as prior note; swap `PostgresParams` with `XXX` for libsql.
 
 ### Using the AsyncDatabaseExecutor trait
 
