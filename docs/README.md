@@ -201,7 +201,7 @@ let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 
 ### Transactions with custom logic
 
-Here, the APIs differ, because the underlying database's transaction approach differs. It doesn't appear easy to make these consistent. But this is the way to do queries if you need custom app logic between `connection.transaction()` and `connection.commit()`.
+Here, the APIs differ, because the underlying database's transaction approach differs. It doesn't appear easy to make these consistent. But this is the way to do queries if you need custom app logic between `connection.transaction()` and `connection.commit()`. [^1][^2][^3]
 
 <table>
 <tr>
@@ -216,14 +216,14 @@ SQLite
 <td>
 
 ```rust
-// Get db-specific connection`1`
+// Get db-specific connection
 let pg_conn = match &conn {
     MiddlewarePoolConnection::Postgres(pg) 
         => pg,
     _ => panic!("Expected Postgres connection"),
 };
 
-// Get client from deadpool Object`2`
+// Get client from deadpool Object
 let client: &mut tokio_postgres::Client = pg_conn.as_mut();
 
 let tx = client.transaction().await?;
@@ -233,7 +233,7 @@ let tx = client.transaction().await?;
 // Prepare statement
 let stmt = tx.prepare(&q.query).await?;
 
-// Convert parameters`3`
+// Convert parameters
 let converted_params = 
     convert_sql_params::<PostgresParams>(
         &q.params,
@@ -305,9 +305,11 @@ let rows = sqlite_conn
 </tr>
 </table>
 
-`1` Note: The Postgres example applies to Postgres, LibSQL, and Turso. Swap the connection type as needed: `MiddlewarePoolConnection::Postgres`, `MiddlewarePoolConnection::Libsql`, or `MiddlewarePoolConnection::Turso`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
-`2` Note: Same as prior note; swap `tokio_postgres::Client` with `XXX` for libsql.
-`3` Note: Same as prior note; swap `PostgresParams` with `XXX` for libsql.
+[^1]: The Postgres/LibSQL pattern applies to PostgreSQL and LibSQL. Turso connections are not pooled in this middleware; for multi-step transactional logic via the middleware, use `execute_batch("BEGIN; ...; COMMIT")`, or match on `MiddlewarePoolConnection::Turso` and use `turso::Connection::transaction()` directly.
+
+[^2]: Postgres: get a `tokio_postgres::Client` from the deadpool object via `pg_obj.as_mut()`. LibSQL: start a transaction directly on the deadpool-libsql object with `.transaction().await?` — there is no `.client`.
+
+[^3]: In these transaction snippets we omit parameters for brevity. When using native clients in transactions, bind parameters according to each client's API. With the middleware’s `AsyncDatabaseExecutor`, you can usually pass `&[RowValues]` directly without manual conversion.
 
 ### Using the AsyncDatabaseExecutor trait
 
@@ -316,7 +318,7 @@ The `AsyncDatabaseExecutor` trait provides a consistent interface for database o
 ```rust
 // This works for PostgreSQL, SQLite, LibSQL, and Turso connections
 async fn insert_user<T: AsyncDatabaseExecutor>(
-    conn: &T,
+    conn: &mut T,
     user_id: i32,
     name: &str
 ) -> Result<(), SqlMiddlewareDbError> {
@@ -331,11 +333,9 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
         ]
     );
     
-    // Execute query through the trait
-    conn.execute_dml(
-        &query.query,
-        &conn.convert_params(&query.params, ConversionMode::Execute)?
-    ).await?;
+    // Execute query through the trait. Placeholder style in `query.query`
+    // must match the active backend.
+    conn.execute_dml(&query.query, &query.params).await?;
     
     Ok(())
 }
