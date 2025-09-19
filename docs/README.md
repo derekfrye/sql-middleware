@@ -2,7 +2,7 @@
 
 ![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
 
-Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling, and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), experimental [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling (except Turso, which doesn't have deadpool backend yet), and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api regardless of database backend.
 
 Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
 
@@ -24,8 +24,9 @@ Available features:
 - `sqlite`: Enables SQLite support
 - `postgres`: Enables PostgreSQL support
 - `mssql`: Enables SQL Server support
-- `libsql`: Enables LibSQL support, for Turso (untested) and local LibSQL databases
-- `default`: Enables all database backends (sqlite, postgres, mssql, libsql)
+- `libsql`: Enables LibSQL support (local or remote)
+- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. No deadpool support (yet).
+- `default`: Enables common backends (sqlite, postgres). Enable others as needed.
 - `test-utils`: Enables test utilities for internal testing
 
 ## Examples
@@ -50,10 +51,7 @@ Similar api regardless of db backend.
 PostgreSQL
 </th>
 <th>
-SQLite
-</th>
-<th>
-LibSQL
+SQLite / LibSQL / Turso
 </th>
 </tr>
 <tr>
@@ -108,32 +106,10 @@ let conn = MiddlewarePool
 ```
 
 </td>
-<td>
-
-```rust
-let cfg = ":memory:".to_string();
-// Or file-based:
-// let cfg = "./data.db".to_string();
-
-// Remote libSQL (untested)
-// let c = ConfigAndPool::
-//     new_libsql_remote(
-//         "libsql://...".to_string(),
-//         "auth_token".to_string())
-//     .await?;
-
-let c = ConfigAndPool::
-    new_libsql(cfg)
-    .await?;
-let conn = MiddlewarePool
-    ::get_connection(&c.pool)
-    .await?;
-
-```
-
-</td>
 </tr>
 </table>
+
+Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the constructor as needed: `new_sqlite(path)`, `new_libsql(path)`, or `new_turso(path)`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
 
 ### Batch query w/o params
 
@@ -149,7 +125,7 @@ conn.execute_batch(&ddl_query).await?;
 
 ### Parameterized Queries
 
-Consistent api for running parametrized queries using the `QueryAndParams` struct. Database-specific parameter syntax is handled by the middleware.
+Consistent API using `QueryAndParams`. Only the placeholder syntax differs.
 
 <table>
 <tr>
@@ -157,127 +133,68 @@ Consistent api for running parametrized queries using the `QueryAndParams` struc
 PostgreSQL
 </th>
 <th>
-SQLite
-</th>
-<th>
-LibSQL
+SQLite / LibSQL / Turso
 </th>
 </tr>
 <tr>
 <td>
 
 ```rust
-// Create query with parameters
-// tokio-postgres uses $-style params
+// PostgreSQL uses $-style placeholders
 let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name, ins_ts) 
-     VALUES ($1, $2, $3)",
+    "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)",
     vec![
         RowValues::Int(123456),
-        RowValues::Text("test name"
-            .to_string()),
-        RowValues::Timestamp(
-            NaiveDateTime::parse_from_str(
-                "2021-08-06 16:00:00"
-                , "%Y-%m-%d %H:%M:%S")?,
-        ),
-    ]);
+        RowValues::Text("test name".to_string()),
+        RowValues::Timestamp(NaiveDateTime::parse_from_str(
+            "2021-08-06 16:00:00",
+            "%Y-%m-%d %H:%M:%S",
+        )?),
+    ],
+);
 
-// Convert params using the ParamConverter trait
-let converted_params = 
-    convert_sql_params::<PostgresParams>(
-        &q.params,
-        ConversionMode::Execute
-    )?;
-
-// Execute the query
-conn.execute_dml(
-    &q.query, 
-    &converted_params)
-.await?;
+// Execute directly with RowValues; middleware converts internally
+conn.execute_dml(&q.query, &q.params).await?;
 ```
 
 </td>
 <td>
 
 ```rust
-// Create query with parameters
-// rusqlite uses ?-style params
+// SQLite-compatible backends use ? or ?N placeholders
 let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name, ins_ts) 
-     VALUES (?1, ?2, ?3)",
+    "INSERT INTO test (espn_id, name, ins_ts) VALUES (?1, ?2, ?3)",
     vec![
         RowValues::Int(123456),
-        RowValues::Text("test name"
-            .to_string()),
-        RowValues::Timestamp(
-            NaiveDateTime::parse_from_str(
-                "2021-08-06 16:00:00"
-                , "%Y-%m-%d %H:%M:%S")?,
-        ),
-    ]);
+        RowValues::Text("test name".to_string()),
+        RowValues::Timestamp(NaiveDateTime::parse_from_str(
+            "2021-08-06 16:00:00",
+            "%Y-%m-%d %H:%M:%S",
+        )?),
+    ],
+);
 
-// Similar API for parameter conversion
-let converted_params = 
-    convert_sql_params::<SqliteParamsExecute>(
-        &q.params,
-        ConversionMode::Execute
-    )?;
-
-// Execute the query
-conn.execute_dml(
-    &q.query, 
-    &converted_params)
-.await?;
-```
-
-</td>
-<td>
-
-```rust
-// Create query with parameters
-// libsql uses ?-style params
-let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name, ins_ts) 
-     VALUES (?, ?, ?)",
-    vec![
-        RowValues::Int(123456),
-        RowValues::Text("test name"
-            .to_string()),
-        RowValues::Timestamp(
-            NaiveDateTime::parse_from_str(
-                "2021-08-06 16:00:00"
-                , "%Y-%m-%d %H:%M:%S")?,
-        ),
-    ]);
-
-// Similar API for parameter conversion
-let converted_params = 
-    convert_sql_params::<LibsqlParams>(
-        &q.params,
-        ConversionMode::Execute
-    )?;
-
-// Execute the query
-conn.execute_dml(
-    &q.query, 
-    &converted_params)
-.await?;
+// Works the same for SQLite, LibSQL, and Turso
+conn.execute_dml(&q.query, &q.params).await?;
 ```
 
 </td>
 </tr>
 </table>
 
+Note: For LibSQL, construct with `ConfigAndPool::new_libsql(path)`. For Turso, use `ConfigAndPool::new_turso(path)`; there is no deadpool pooling for Turso — `get_connection` creates a new connection.
+
 ### Queries without parameters
 
-You can create queries without parameters using `new_without_params`, same whether using sqlite, postgres, or libsql:
+You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, LibSQL, and Turso:
 
 ```rust
-let query = QueryAndParams::new_without_params(
-    "SELECT * FROM users"
-);
+// Either build a QueryAndParams
+let query = QueryAndParams::new_without_params("SELECT * FROM users");
 let results = conn.execute_select(&query.query, &[]).await?;
+
+// Or pass the SQL string directly
+let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 ```
 
 ### Transactions with custom logic
@@ -437,7 +354,7 @@ tx.commit().await?;
 The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations:
 
 ```rust
-// This works for PostgreSQL, SQLite, and LibSQL connections
+// This works for PostgreSQL, SQLite, LibSQL, and Turso connections
 async fn insert_user<T: AsyncDatabaseExecutor>(
     conn: &T,
     user_id: i32,
@@ -446,7 +363,7 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
     let query = QueryAndParams::new(
         // Use appropriate parameter syntax for your DB
         // PostgreSQL: "VALUES ($1, $2)"
-        // SQLite/LibSQL: "VALUES (?, ?)" or "VALUES (?1, ?2)"
+        // SQLite/LibSQL/Turso: "VALUES (?, ?)" or "VALUES (?1, ?2)"
         "INSERT INTO users (id, name) VALUES ($1, $2)",
         vec![
             RowValues::Int(user_id),
@@ -467,3 +384,11 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
 ## Design Documents
 
 - **[Async Design Decisions](async.md)** - Explains why some functions are marked with `#[allow(clippy::unused_async)]` and our async API design philosophy.
+
+## Developing and Testing
+
+- Build with defaults (sqlite, postgres): `cargo build`
+- Include Turso backend: `cargo build --features turso`
+- Run tests (defaults): `cargo test`
+- Run with Turso: `cargo test --features turso`
+- Run with LibSQL: `cargo test --features libsql`

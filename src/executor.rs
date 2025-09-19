@@ -7,6 +7,8 @@ use crate::types::RowValues;
 
 #[cfg(feature = "libsql")]
 use crate::libsql;
+#[cfg(feature = "turso")]
+use crate::turso;
 #[cfg(feature = "mssql")]
 use crate::mssql;
 #[cfg(feature = "postgres")]
@@ -55,6 +57,10 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Libsql(libsql_client) => {
                 libsql::execute_batch(libsql_client, query).await
             }
+            #[cfg(feature = "turso")]
+            MiddlewarePoolConnection::Turso(turso_conn) => {
+                turso::execute_batch(turso_conn, query).await
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
@@ -84,6 +90,10 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             MiddlewarePoolConnection::Libsql(libsql_client) => {
                 libsql::execute_select(libsql_client, query, params).await
             }
+            #[cfg(feature = "turso")]
+            MiddlewarePoolConnection::Turso(turso_conn) => {
+                turso::execute_select(turso_conn, query, params).await
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
@@ -112,6 +122,10 @@ impl AsyncDatabaseExecutor for MiddlewarePoolConnection {
             #[cfg(feature = "libsql")]
             MiddlewarePoolConnection::Libsql(libsql_client) => {
                 libsql::execute_dml(libsql_client, query, params).await
+            }
+            #[cfg(feature = "turso")]
+            MiddlewarePoolConnection::Turso(turso_conn) => {
+                turso::execute_dml(turso_conn, query, params).await
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(

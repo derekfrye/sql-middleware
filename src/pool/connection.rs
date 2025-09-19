@@ -6,6 +6,8 @@ use deadpool_sqlite::Object as SqliteObject;
 
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Object as LibsqlObject;
+#[cfg(feature = "turso")]
+use turso::Connection as TursoConnection;
 
 use crate::error::SqlMiddlewareDbError;
 use super::types::MiddlewarePool;
@@ -19,6 +21,8 @@ pub enum MiddlewarePoolConnection {
     Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
     #[cfg(feature = "libsql")]
     Libsql(LibsqlObject),
+    #[cfg(feature = "turso")]
+    Turso(TursoConnection),
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -36,6 +40,8 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
                 .finish(),
             #[cfg(feature = "libsql")]
             Self::Libsql(conn) => f.debug_tuple("Libsql").field(conn).finish(),
+            #[cfg(feature = "turso")]
+            Self::Turso(_) => f.debug_tuple("Turso").field(&"<Connection>").finish(),
         }
     }
 }
@@ -80,6 +86,13 @@ impl MiddlewarePool {
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorLibsql)?;
                 Ok(MiddlewarePoolConnection::Libsql(conn))
+            }
+            #[cfg(feature = "turso")]
+            MiddlewarePool::Turso(db) => {
+                let conn: TursoConnection = db
+                    .connect()
+                    .map_err(SqlMiddlewareDbError::from)?;
+                Ok(MiddlewarePoolConnection::Turso(conn))
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(

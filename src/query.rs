@@ -27,6 +27,9 @@ pub enum AnyConnWrapper<'a> {
     /// `LibSQL` database connection
     #[cfg(feature = "libsql")]
     Libsql(&'a deadpool_libsql::Object),
+    /// Turso database connection
+    #[cfg(feature = "turso")]
+    Turso(&'a turso::Connection),
 }
 
 /// A query and its parameters bundled together

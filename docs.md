@@ -1,13 +1,13 @@
 # SQL Middleware - A unified interface for SQL databases
 
 This crate provides a middleware layer for SQL database access,
-supporting `SQLite`, `PostgreSQL`, `LibSQL`, and SQL Server backends. The goal is a
+supporting `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server backends. The goal is a
 unified, async-compatible API that works consistently across databases.
 
 ## Features
 
 - Asynchronous access with deadpool connection pooling
-- Backends: `SQLite`, `PostgreSQL`, `LibSQL`, and SQL Server
+- Backends: `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (in-process), and SQL Server
 - Unified parameter conversion system
 - Consistent result handling across engines
 - Transaction support
@@ -21,12 +21,13 @@ Default features are `sqlite` and `postgres`. Enable others as needed:
 sql-middleware = { version = "0", features = ["sqlite", "libsql"] }
 
 # All backends
-sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "libsql"] }
+sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "libsql", "turso"] }
 ```
 
 Additional flags:
 - `mssql`: SQL Server via `tiberius`
 - `libsql`: LibSQL (local or remote)
+- `turso`: Turso (in-process, SQLite-compatible). Experimental; no remote support.
 - `test-utils`: Test helpers for internal testing
 - `benchmarks`: Criterion helpers for benches
 
@@ -101,6 +102,28 @@ async fn libsql_example() -> Result<(), SqlMiddlewareDbError> {
     ).await?;
 
     assert_eq!(*result.results[0].get("one").unwrap().as_int().unwrap(), 1);
+    Ok(())
+}
+
+async fn turso_example() -> Result<(), SqlMiddlewareDbError> {
+    use sql_middleware::prelude::*;
+
+    // In-memory Turso (or use a file path like "./data.db")
+    let config = ConfigAndPool::new_turso(":memory:".to_string()).await?;
+
+    let pool = config.pool.get().await?;
+    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+
+    conn.execute_batch("CREATE TABLE t (id INTEGER, name TEXT);").await?;
+    conn.execute_dml(
+        "INSERT INTO t (id, name) VALUES (?, ?)",
+        &[RowValues::Int(1), RowValues::Text("alice".into())],
+    ).await?;
+
+    let rs = conn
+        .execute_select("SELECT name FROM t WHERE id = ?", &[RowValues::Int(1)])
+        .await?;
+    assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "alice");
     Ok(())
 }
 

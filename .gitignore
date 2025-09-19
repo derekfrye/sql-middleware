@@ -7,3 +7,5 @@ xxx-wal
 benchmark_sqlite_global.db*
 test_sqlite.db*
 test_libsql.db*
+test_turso.db
+test_turso.db-wal

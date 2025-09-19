@@ -27,6 +27,8 @@ pub mod types;
 // Private database-specific modules
 #[cfg(feature = "libsql")]
 pub mod libsql;
+#[cfg(feature = "turso")]
+pub mod turso;
 #[cfg(feature = "mssql")]
 mod mssql;
 #[cfg(feature = "postgres")]

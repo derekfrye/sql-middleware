@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[cfg(feature = "libsql")]
 use deadpool_libsql;
+#[cfg(feature = "turso")]
+use turso;
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::rusqlite;
 #[cfg(feature = "mssql")]
@@ -42,6 +44,10 @@ pub enum SqlMiddlewareDbError {
     #[cfg(feature = "libsql")]
     #[error(transparent)]
     PoolErrorLibsql(#[from] deadpool_libsql::PoolError),
+
+    #[cfg(feature = "turso")]
+    #[error(transparent)]
+    TursoError(#[from] turso::Error),
 
     #[cfg(feature = "mssql")]
     #[error("SQL Server connection pool error: {0}")]

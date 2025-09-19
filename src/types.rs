@@ -118,6 +118,9 @@ pub enum DatabaseType {
     /// `LibSQL` database
     #[cfg(feature = "libsql")]
     Libsql,
+    /// Turso (SQLite-compatible, in-process) database
+    #[cfg(feature = "turso")]
+    Turso,
 }
 
 /// The conversion "mode".

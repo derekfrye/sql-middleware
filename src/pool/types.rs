@@ -12,6 +12,8 @@ use deadpool_tiberius::Pool as TiberiusPool;
 
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Pool as DeadpoolLibsqlPool;
+#[cfg(feature = "turso")]
+use turso::Database as TursoDatabase;
 
 use crate::error::SqlMiddlewareDbError;
 
@@ -33,6 +35,9 @@ pub enum MiddlewarePool {
     /// `LibSQL` connection pool
     #[cfg(feature = "libsql")]
     Libsql(DeadpoolLibsqlPool),
+    /// `Turso` pseudo-pool (Database handle)
+    #[cfg(feature = "turso")]
+    Turso(TursoDatabase),
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -47,6 +52,8 @@ impl std::fmt::Debug for MiddlewarePool {
             Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
             #[cfg(feature = "libsql")]
             Self::Libsql(pool) => f.debug_tuple("Libsql").field(pool).finish(),
+            #[cfg(feature = "turso")]
+            Self::Turso(_) => f.debug_tuple("Turso").field(&"<Database>").finish(),
         }
     }
 }
