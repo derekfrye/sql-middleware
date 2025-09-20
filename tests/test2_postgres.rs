@@ -71,6 +71,10 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             MiddlewarePoolConnection::Libsql(_) => {
                 panic!("Only postgres is supported in this test");
             }
+            #[cfg(feature = "turso")]
+            MiddlewarePoolConnection::Turso(_) => {
+                panic!("Only postgres is supported in this test");
+            }
         };
 
         ({

@@ -109,7 +109,7 @@ let conn = MiddlewarePool
 </tr>
 </table>
 
-Note: Turso currently does not expose a transaction helper through this middleware. For simple multi-step operations, you can wrap statements with `execute_batch("BEGIN; ...; COMMIT")`. If you need step-by-step custom logic within a single transaction, consider LibSQL for richer transactional ergonomics, or emulate with explicit `BEGIN`/`COMMIT` statements.
+Note: Turso now exposes a transaction helper through this middleware. Use `turso::with_transaction(&conn, |tx| async move { ... })` or `turso::begin_transaction(&conn)` to drive custom logic between `BEGIN`/`COMMIT`, similar in spirit to the PostgreSQL/LibSQL flow below.
 
 Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the constructor as needed: `new_sqlite(path)`, `new_libsql(path)`, or `new_turso(path)`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
 
@@ -211,6 +211,9 @@ PostgreSQL / LibSQL
 <th>
 SQLite
 </th>
+<th>
+Turso
+</th>
 </tr>
 <tr>
 <td>
@@ -301,11 +304,63 @@ let rows = sqlite_conn
 ```
 
 </td>
+<td>
+
+```rust
+use sql_middleware::prelude::*;
+
+// Match the connection to get a Turso handle
+let turso_conn = match &conn {
+    MiddlewarePoolConnection::Turso(t) => t,
+    _ => panic!("Expected Turso connection"),
+};
+
+// Run custom logic inside a transaction
+let inserted: usize = sql_middleware::turso::with_transaction(turso_conn, |tx| async move {
+    // DDL/DML/SELECT are available via helpers
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT)").await?;
+    let rows = tx
+        .execute_dml(
+            "INSERT INTO t (id, name) VALUES (?, ?)",
+            &[RowValues::Int(1), RowValues::Text("bob".into())],
+        )
+        .await?;
+
+    // You can also read within the same tx
+    let rs = tx
+        .execute_select("SELECT name FROM t WHERE id = ?", &[RowValues::Int(1)])
+        .await?;
+    assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "bob");
+
+    Ok::<usize, SqlMiddlewareDbError>(rows)
+})
+.await?;
+assert_eq!(inserted, 1);
+```
+
+Alternatively, drive it manually:
+
+```rust
+use sql_middleware::prelude::*;
+use sql_middleware::turso;
+
+let turso_conn = match &conn {
+    MiddlewarePoolConnection::Turso(t) => t,
+    _ => panic!("Expected Turso connection"),
+};
+
+let mut tx = turso::begin_transaction(turso_conn).await?;
+tx.execute_batch("CREATE TABLE IF NOT EXISTS t2 (id INTEGER)").await?;
+let _ = tx.execute_dml("INSERT INTO t2 (id) VALUES (?)", &[RowValues::Int(7)]).await?;
+tx.commit().await?;
+```
+
+</td>
 
 </tr>
 </table>
 
-[^1]: The Postgres/LibSQL pattern applies to PostgreSQL and LibSQL. Turso connections are not pooled in this middleware; for multi-step transactional logic via the middleware, use `execute_batch("BEGIN; ...; COMMIT")`, or match on `MiddlewarePoolConnection::Turso` and use `turso::Connection::transaction()` directly.
+[^1]: The Postgres/LibSQL pattern applies to PostgreSQL and LibSQL. Turso connections are not pooled in this middleware; use the provided `turso::with_transaction`/`turso::begin_transaction` helpers for multi-step transactional logic on a single connection.
 
 [^2]: Postgres: get a `tokio_postgres::Client` from the deadpool object via `pg_obj.as_mut()`. LibSQL: start a transaction directly on the deadpool-libsql object with `.transaction().await?` — there is no `.client`.
 

@@ -90,3 +90,31 @@ Nice-to-Haves
 - Add a simple `tests/util/mod.rs` for cross-backend test helpers.
 - Where possible, prefer small async helpers over large inlined blocks in tests.
 
+Turso Parity and Follow-ups
+---------------------------
+
+Context
+- Added Turso transaction helpers: `turso::Tx`, `begin_transaction`, `with_transaction`.
+- Extended `test4` to cover Turso using a Turso-specific DDL set derived from SQLite’s.
+- Current `turso_core` (0.1.5) translation gaps required relaxing some SQL types/constraints to pass.
+
+Implemented now
+- tests/turso/test4 DDL (relaxed where needed):
+  - 00_event.sql: DATETIME -> TEXT for `ins_ts`, default literal timestamp; removed AUTOINCREMENT.
+  - 02_golfer.sql: DATETIME -> TEXT, default literal timestamp; removed AUTOINCREMENT.
+  - 03_bettor.sql: DATETIME -> TEXT, default literal timestamp.
+  - 04_event_user_player.sql: prepared with FK/REFERENCES removed and DATETIME -> TEXT, but NOT executed yet.
+  - 05_eup_statistic.sql: prepared with JSON affinity -> TEXT and FK removed, but NOT executed yet.
+  - setup.sql: currently a no-op; main data setup still uses tests/test4.sql for other backends.
+
+Test adjustments
+- For Turso, DDL is applied per-file (other backends batch join).
+- For Turso, middleware-based operations mirror LibSQL in test4 while DDL converges.
+
+TODOs (as Turso evolves)
+- Re-enable tests/turso/test4/04_event_user_player.sql in Turso DDL list; restore FK REFERENCES and DATETIME defaults.
+- Re-enable tests/turso/test4/05_eup_statistic.sql in Turso DDL list; restore JSON affinity, FK REFERENCES, DATETIME defaults.
+- Switch Turso DDL execution back to a single batched `execute_batch(ddl.join("\n"))` once stable.
+- Expand tests/turso/test4/setup.sql to match tests/test4.sql as constraints become supported.
+- Add a dedicated Turso integration test that exercises `with_transaction` end-to-end.
+- Clean up `unused mut` warning in `src/turso/transaction.rs`.
