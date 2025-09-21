@@ -118,3 +118,8 @@ TODOs (as Turso evolves)
 - Expand tests/turso/test4/setup.sql to match tests/test4.sql as constraints become supported.
 - Add a dedicated Turso integration test that exercises `with_transaction` end-to-end.
 - Clean up `unused mut` warning in `src/turso/transaction.rs`.
+
+LibSQL prepared (wrapper) note
+- Our current `libsql::Prepared` is a thin wrapper around the SQL string and executes via the pooled connection.
+- If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
+- Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.

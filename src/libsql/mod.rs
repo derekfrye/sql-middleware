@@ -10,8 +10,10 @@ pub mod config;
 pub mod executor;
 pub mod params;
 pub mod query;
+pub mod transaction;
 
 // Re-export the public API
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
 pub use query::build_result_set;
+pub use transaction::{begin_transaction, Tx, Prepared};

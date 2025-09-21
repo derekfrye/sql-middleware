@@ -206,13 +206,10 @@ Here, the APIs differ, because the underlying database's transaction approach di
 <table>
 <tr>
 <th>
-PostgreSQL / LibSQL
+PostgreSQL / LibSQL / Turso
 </th>
 <th>
 SQLite
-</th>
-<th>
-Turso
 </th>
 </tr>
 <tr>
@@ -220,6 +217,7 @@ Turso
 
 ```rust
 // Get db-specific connection
+// Turso: match `MiddlewarePoolConnection::Turso(t)` instead of Postgres
 let pg_conn = match &conn {
     MiddlewarePoolConnection::Postgres(pg) 
         => pg,
@@ -227,16 +225,21 @@ let pg_conn = match &conn {
 };
 
 // Get client from deadpool Object
+// Turso: no deadpool client step; begin a tx via `sql_middleware::turso::begin_transaction(t)`
 let client: &mut tokio_postgres::Client = pg_conn.as_mut();
 
+// Begin transaction
+// Turso: `let tx = sql_middleware::turso::begin_transaction(t).await?;`
 let tx = client.transaction().await?;
 
 // could run custom logic anywhere between stmts
 
 // Prepare statement
+// Turso: `let mut stmt = tx.prepare("... ?1, ?2 ...").await?;` (SQLite-style placeholders)
 let stmt = tx.prepare(&q.query).await?;
 
-// Convert parameters
+// Convert parameters (Postgres)
+// Turso/LibSQL prepared helpers accept `&[RowValues]` directly
 let converted_params = 
     convert_sql_params::<PostgresParams>(
         &q.params,
@@ -244,11 +247,15 @@ let converted_params =
     )?;
 
 // Execute query
+// Turso: `tx.execute_prepared(&mut stmt, &q.params).await?;`
+// LibSQL: `tx.execute_prepared(&stmt, &q.params).await?;`
 let rows = tx.execute(
     &stmt, 
     converted_params.as_refs()
 ).await?;
 
+// Commit
+// Turso: `tx.commit().await?;`
 tx.commit().await?;
 
 
@@ -301,58 +308,6 @@ let rows = sqlite_conn
         Ok::<_, SqlMiddlewareDbError>(rows)
     })
     .await?;
-```
-
-</td>
-<td>
-
-```rust
-use sql_middleware::prelude::*;
-
-// Match the connection to get a Turso handle
-let turso_conn = match &conn {
-    MiddlewarePoolConnection::Turso(t) => t,
-    _ => panic!("Expected Turso connection"),
-};
-
-// Run custom logic inside a transaction
-let inserted: usize = sql_middleware::turso::with_transaction(turso_conn, |tx| async move {
-    // DDL/DML/SELECT are available via helpers
-    tx.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT)").await?;
-    let rows = tx
-        .execute_dml(
-            "INSERT INTO t (id, name) VALUES (?, ?)",
-            &[RowValues::Int(1), RowValues::Text("bob".into())],
-        )
-        .await?;
-
-    // You can also read within the same tx
-    let rs = tx
-        .execute_select("SELECT name FROM t WHERE id = ?", &[RowValues::Int(1)])
-        .await?;
-    assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "bob");
-
-    Ok::<usize, SqlMiddlewareDbError>(rows)
-})
-.await?;
-assert_eq!(inserted, 1);
-```
-
-Alternatively, drive it manually:
-
-```rust
-use sql_middleware::prelude::*;
-use sql_middleware::turso;
-
-let turso_conn = match &conn {
-    MiddlewarePoolConnection::Turso(t) => t,
-    _ => panic!("Expected Turso connection"),
-};
-
-let mut tx = turso::begin_transaction(turso_conn).await?;
-tx.execute_batch("CREATE TABLE IF NOT EXISTS t2 (id INTEGER)").await?;
-let _ = tx.execute_dml("INSERT INTO t2 (id) VALUES (?)", &[RowValues::Int(7)]).await?;
-tx.commit().await?;
 ```
 
 </td>
