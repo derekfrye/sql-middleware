@@ -8,7 +8,7 @@ fn test5b_libsql_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     rt.block_on(async move {
         let cap = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
         let pool = cap.pool.get().await?;
-        let mut conn = MiddlewarePool::get_connection(&pool).await?;
+        let mut conn = MiddlewarePool::get_connection(pool).await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);").await?;
 

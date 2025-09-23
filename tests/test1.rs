@@ -23,7 +23,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}_{}_{}.db", prefix, pid, ns)
     }
 
-    let  mut test_cases = vec![
+    let  test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
     ];
@@ -72,7 +72,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let pool = cap.pool.get().await?;
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = MiddlewarePool::get_connection(pool).await?;
 
             // DDL: ensure table exists
             let ddl = r#"
@@ -112,7 +112,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
                 NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
             );
             assert_eq!(res.results[0].get("d").unwrap().as_float().unwrap(), 10.5);
-            assert_eq!(*res.results[0].get("e").unwrap().as_bool().unwrap(), true);
+            assert!(*res.results[0].get("e").unwrap().as_bool().unwrap());
             assert_eq!(
                 res.results[0].get("f").unwrap().as_blob().unwrap(),
                 b"Blob12"

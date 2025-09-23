@@ -44,7 +44,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}_{}_{}.db", prefix, pid, ns)
     }
 
-    let mut test_cases = vec![
+    let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
         TestCase::Postgres(&cfg),
@@ -80,7 +80,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
             let _cleanup_guard = match &test_case {
                 TestCase::Sqlite(connection_string) => {
                     if connection_string != "file::memory:?cache=shared" {
-                        let _ = std::fs::remove_file(&connection_string);
+                        let _ = std::fs::remove_file(connection_string);
                         Some(FileCleanup(vec![connection_string.clone()]))
                     } else { None }
                 }
@@ -107,7 +107,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Initialize Sqlite pool
                     let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
                     let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+                    let mut conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
@@ -116,7 +116,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Initialize Postgres pool
                     let config_and_pool = ConfigAndPool2::new_postgres(cfg.clone()).await?;
                     let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+                    let mut conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Postgres).await?;
@@ -266,7 +266,7 @@ async fn run_test_logic(
     // lets first run this through 100 transactions, yikes
     for param in params {
         // println!("param: {:?}", param);
-        conn.execute_dml(&parameterized_query, &param).await?;
+        conn.execute_dml(parameterized_query, &param).await?;
     }
 
     let query = "select count(*) as cnt from test;";
@@ -289,7 +289,7 @@ async fn run_test_logic(
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
-                    tx.execute(parameterized_query, &postgres_params.as_refs())
+                    tx.execute(parameterized_query, postgres_params.as_refs())
                         .await?;
                 }
                 tx.commit().await?;
@@ -328,7 +328,7 @@ async fn run_test_logic(
             // For this test, skip the MSSQL implementation
             // Simply insert the data using the middleware connection
             for param in params {
-                conn.execute_dml(&parameterized_query, &param).await?;
+                conn.execute_dml(parameterized_query, &param).await?;
             }
         }
         #[cfg(feature = "turso")]
@@ -341,7 +341,7 @@ async fn run_test_logic(
         DatabaseType::Libsql => {
             // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
-                conn.execute_dml(&parameterized_query, &param).await?;
+                conn.execute_dml(parameterized_query, &param).await?;
             }
         }
     }
@@ -367,7 +367,7 @@ async fn run_test_logic(
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
-                    tx.execute(parameterized_query, &postgres_params.as_refs())
+                    tx.execute(parameterized_query, postgres_params.as_refs())
                         .await?;
                 }
                 tx.commit().await?;
@@ -436,7 +436,7 @@ async fn run_test_logic(
         DatabaseType::Mssql => {
             // For MS SQL, insert data using the middleware connection
             for param in params {
-                conn.execute_dml(&parameterized_query, &param).await?;
+                conn.execute_dml(parameterized_query, &param).await?;
             }
         }
         #[cfg(feature = "turso")]
@@ -449,7 +449,7 @@ async fn run_test_logic(
         DatabaseType::Libsql => {
             // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
-                conn.execute_dml(&parameterized_query, &param).await?;
+                conn.execute_dml(parameterized_query, &param).await?;
             }
         }
     }
@@ -517,11 +517,11 @@ async fn run_test_logic(
                     )?;
                     let mut stmt = tx.prepare(&query_and_params_vec.query)?;
                     let result_set = {
-                        let rs = sql_middleware::sqlite_build_result_set(
+                        
+                        sql_middleware::sqlite_build_result_set(
                             &mut stmt,
                             &converted_params.0,
-                        )?;
-                        rs
+                        )?
                     };
                     assert_eq!(result_set.results.len(), 1);
                     assert_eq!(

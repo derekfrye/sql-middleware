@@ -58,7 +58,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
         let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(&pool).await?;
+        let conn = MiddlewarePool::get_connection(pool).await?;
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
             MiddlewarePoolConnection::Sqlite(_) => {
@@ -79,23 +79,23 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         ({
             let tx = pgconn.transaction().await?;
-            let result_set = {
-                let rs = tx.batch_execute(stmt).await?;
-                rs
+            {
+                tx.batch_execute(stmt).await?;
+                
             };
             tx.commit().await?;
-            Ok::<_, SqlMiddlewareDbError>(result_set)
+            Ok::<_, SqlMiddlewareDbError>(())
         })?;
 
         let query = "DELETE FROM test;";
         ({
             let tx = pgconn.transaction().await?;
-            let result_set = {
-                let rs = tx.batch_execute(query).await?;
-                rs
+            {
+                tx.batch_execute(query).await?;
+                
             };
             tx.commit().await?;
-            Ok::<_, SqlMiddlewareDbError>(result_set)
+            Ok::<_, SqlMiddlewareDbError>(())
         })?;
 
         let query_and_params = QueryAndParams {
@@ -117,7 +117,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
         let tx = pgconn.transaction().await?;
         tx.prepare(query_and_params.query.as_str()).await?;
-        tx.execute(query_and_params.query.as_str(), &converted_params.as_refs())
+        tx.execute(query_and_params.query.as_str(), converted_params.as_refs())
             .await?;
         tx.commit().await?;
 
@@ -126,14 +126,14 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             let tx = pgconn.transaction().await?;
             let stmt = tx.prepare(query).await?;
             let result_set = {
-                let rs = postgres_build_result_set(&stmt, &[], &tx).await?;
-                rs
+                
+                postgres_build_result_set(&stmt, &[], &tx).await?
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         })?;
 
-        let expected_result = vec![sql_middleware::test_helpers::create_test_row(
+        let expected_result = [sql_middleware::test_helpers::create_test_row(
             vec![
                 "event_id".to_string(),
                 "espn_id".to_string(),
@@ -151,7 +151,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             ],
         )];
 
-        let cols_to_actually_check = vec!["espn_id", "name", "ins_ts"];
+        let cols_to_actually_check = ["espn_id", "name", "ins_ts"];
 
         for (index, row) in result.results.iter().enumerate() {
             let left: Vec<RowValues> = row
@@ -178,12 +178,12 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         DROP TABLE test_2;";
         ({
             let tx = pgconn.transaction().await?;
-            let result_set = {
-                let rs = tx.batch_execute(query).await?;
-                rs
+            {
+                tx.batch_execute(query).await?;
+                
             };
             tx.commit().await?;
-            Ok::<_, SqlMiddlewareDbError>(result_set)
+            Ok::<_, SqlMiddlewareDbError>(())
         })?;
 
         // stop the container

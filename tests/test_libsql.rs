@@ -81,7 +81,7 @@ mod libsql_tests {
             assert_eq!(*row.get("id").unwrap().as_int().unwrap(), 1);
             assert_eq!(row.get("name").unwrap().as_text().unwrap(), "Alice");
             assert_eq!(row.get("value").unwrap().as_float().unwrap(), 42.5);
-            assert_eq!(*row.get("is_active").unwrap().as_bool().unwrap(), true);
+            assert!(*row.get("is_active").unwrap().as_bool().unwrap());
             assert_eq!(row.get("data").unwrap().as_blob().unwrap(), b"test_blob");
 
             // Test SELECT with multiple results

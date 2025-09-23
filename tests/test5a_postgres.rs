@@ -18,7 +18,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
     rt.block_on(async move {
         let cap = ConfigAndPool::new_postgres(real_cfg).await?;
         let pool = cap.pool.get().await?;
-        let mut conn = MiddlewarePool::get_connection(&pool).await?;
+        let mut conn = MiddlewarePool::get_connection(pool).await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);").await?;
 
