@@ -35,7 +35,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     let postgres_stuff = setup_postgres_container(&cfg)?;
     cfg.port = Some(postgres_stuff.port);
 
-    let  mut test_cases = vec![
+    let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite("test_sqlite.db".to_string()),
         TestCase::Postgres(&cfg),

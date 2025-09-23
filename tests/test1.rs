@@ -13,7 +13,7 @@ enum TestCase {
 fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
 
-    let mut test_cases = vec![
+    let  test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite("test_sqlite.db".to_string()),
     ];
