@@ -201,6 +201,12 @@ let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 
 ### Transactions with custom logic
 
+See minimal, copy‑pasteable examples in the tests directory:
+- [PostgreSQL](../tests/test5a_postgres.rs)
+- [LibSQL](../tests/test5b_libsql.rs)
+- [SQLite](../tests/test5c_sqlite.rs)
+- [Turso](../tests/test5d_turso.rs)
+
 Here, the APIs differ, because the underlying database's transaction approach differs. It doesn't appear easy to make these consistent. But this is the way to do queries if you need custom app logic between `connection.transaction()` and `connection.commit()`. [^1][^2][^3]
 
 <table>
