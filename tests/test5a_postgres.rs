@@ -32,6 +32,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         let insert = "INSERT INTO t (id, name) VALUES ($1, $2)";
         let stmt = tx.prepare(insert).await?;
         let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
+        // - Explicit convert_sql_params call req'd; underlying tokio_postgres needs our RowValues converted
         let converted = convert_sql_params::<PostgresParams>(&params, ConversionMode::Execute)?;
         let _ = tx.execute(&stmt, converted.as_refs()).await?;
         tx.commit().await?;
