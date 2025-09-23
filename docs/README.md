@@ -207,7 +207,7 @@ See minimal, copy‑pasteable examples in the tests directory:
 - [SQLite](../tests/test5c_sqlite.rs)
 - [Turso](../tests/test5d_turso.rs)
 
-Here, the APIs differ, because the underlying database's transaction approach differs. It doesn't appear easy to make these consistent. But this is the way to do queries if you need custom app logic between `connection.transaction()` and `connection.commit()`. [^1][^2][^3]
+Here, the APIs differ a bit, because the underlying libraries are different. It doesn't appear easy to make these consistent without hiding underlying library capabilities. This is the most similar way to do queries w this middleware if you need custom app logic between `transaction()` and `commit()`. [^1][^2][^3]
 
 <table>
 <tr>
@@ -223,25 +223,24 @@ SQLite
 
 ```rust
 // Get db-specific connection
-// Turso: match `MiddlewarePoolConnection::Turso(t)` instead of Postgres
 let pg_conn = match &conn {
     MiddlewarePoolConnection::Postgres(pg) 
         => pg,
     _ => panic!("Expected Postgres connection"),
 };
 
-// Get client from deadpool Object
-// Turso: no deadpool client step; begin a tx via `sql_middleware::turso::begin_transaction(t)`
+// Get client (no deadpool support for Turso; run txn off the conn)
+sql_middleware::turso::begin_transaction(t)
 let client: &mut tokio_postgres::Client = pg_conn.as_mut();
 
 // Begin transaction
-// Turso: `let tx = sql_middleware::turso::begin_transaction(t).await?;`
+// Turso: `let tx = turso::begin_transaction(t).await?;`
 let tx = client.transaction().await?;
 
 // could run custom logic anywhere between stmts
 
 // Prepare statement
-// Turso: `let mut stmt = tx.prepare("... ?1, ?2 ...").await?;` (SQLite-style placeholders)
+// Turso: `let mut stmt = tx.prepare("... ?1, ?2 ...").await?;`
 let stmt = tx.prepare(&q.query).await?;
 
 // Convert parameters (Postgres)
@@ -261,15 +260,7 @@ let rows = tx.execute(
 ).await?;
 
 // Commit
-// Turso: `tx.commit().await?;`
 tx.commit().await?;
-
-
-
-
-
-
-
 ```
 
 </td>
@@ -320,12 +311,6 @@ let rows = sqlite_conn
 
 </tr>
 </table>
-
-[^1]: The Postgres/LibSQL pattern applies to PostgreSQL and LibSQL. Turso connections are not pooled in this middleware; use the provided `turso::with_transaction`/`turso::begin_transaction` helpers for multi-step transactional logic on a single connection.
-
-[^2]: Postgres: get a `tokio_postgres::Client` from the deadpool object via `pg_obj.as_mut()`. LibSQL: start a transaction directly on the deadpool-libsql object with `.transaction().await?` — there is no `.client`.
-
-[^3]: In these transaction snippets we omit parameters for brevity. When using native clients in transactions, bind parameters according to each client's API. With the middleware’s `AsyncDatabaseExecutor`, you can usually pass `&[RowValues]` directly without manual conversion.
 
 ### Using the AsyncDatabaseExecutor trait
 
