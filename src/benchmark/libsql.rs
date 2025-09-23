@@ -37,7 +37,7 @@ pub async fn get_libsql_instance() -> ConfigAndPool {
 
 pub async fn clean_libsql_tables(config_and_pool: &ConfigAndPool) -> Result<(), Box<dyn std::error::Error>> {
     let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(&pool).await?;
+    let conn = MiddlewarePool::get_connection(pool).await?;
     
     if let MiddlewarePoolConnection::Libsql(libsql_conn) = conn {
         // Drop and recreate the table
@@ -73,7 +73,7 @@ async fn setup_libsql_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     )";
 
     let pool = config_and_pool.pool.get().await?;
-    let libsql_conn = MiddlewarePool::get_connection(&pool).await?;
+    let libsql_conn = MiddlewarePool::get_connection(pool).await?;
 
     if let MiddlewarePoolConnection::Libsql(libsql_conn) = libsql_conn {
         libsql_conn.execute(ddl, ()).await.map_err(|e| {
@@ -104,7 +104,7 @@ pub fn benchmark_libsql(c: &mut Criterion) {
                 for _i in 0..iters {
                     clean_libsql_tables(&config_and_pool).await.unwrap();
                     let pool = config_and_pool.pool.get().await.unwrap();
-                    let libsql_conn = MiddlewarePool::get_connection(&pool).await.unwrap();
+                    let libsql_conn = MiddlewarePool::get_connection(pool).await.unwrap();
 
                     if let MiddlewarePoolConnection::Libsql(libsql_conn) = libsql_conn {
                         let start = std::time::Instant::now();

@@ -32,7 +32,7 @@ pub async fn get_sqlite_instance() -> ConfigAndPool {
 
 pub async fn clean_sqlite_tables(config_and_pool: &ConfigAndPool) -> Result<(), Box<dyn std::error::Error>> {
     let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(&pool).await?;
+    let conn = MiddlewarePool::get_connection(pool).await?;
     
     if let MiddlewarePoolConnection::Sqlite(sconn) = conn {
         sconn.interact(move |conn| {
@@ -67,7 +67,7 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     )";
 
     let pool = config_and_pool.pool.get().await?;
-    let sqlite_conn = MiddlewarePool::get_connection(&pool).await?;
+    let sqlite_conn = MiddlewarePool::get_connection(pool).await?;
 
     if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
         sconn
@@ -102,7 +102,7 @@ pub fn benchmark_sqlite(c: &mut Criterion, rt: &Runtime) {
                 for _i in 0..iters {
                     clean_sqlite_tables(&config_and_pool).await.unwrap();
                     let pool = config_and_pool.pool.get().await.unwrap();
-                    let sqlite_conn = MiddlewarePool::get_connection(&pool).await.unwrap();
+                    let sqlite_conn = MiddlewarePool::get_connection(pool).await.unwrap();
 
                     if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
                         let insert_statements_copy = statements.clone();

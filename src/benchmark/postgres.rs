@@ -33,7 +33,7 @@ pub async fn get_postgres_instance() -> ConfigAndPool {
 
 pub async fn clean_postgres_tables(config_and_pool: &ConfigAndPool) -> Result<(), Box<dyn std::error::Error>> {
     let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(&pool).await?;
+    let conn = MiddlewarePool::get_connection(pool).await?;
     
     if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
         let cleanup_sql = "DROP TABLE IF EXISTS test";
@@ -75,7 +75,7 @@ async fn setup_postgres_db(
     
     postgresql.create_database(db_name).await?;
     
-    let (final_user, final_password) = if db_user != &embedded_user {
+    let (final_user, final_password) = if db_user != embedded_user {
         let mut admin_cfg = cfg.clone();
         admin_cfg.port = Some(port);
         admin_cfg.host = Some(host.clone());
@@ -85,7 +85,7 @@ async fn setup_postgres_db(
         
         let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
         let pool = admin_pool.pool.get().await?;
-        let admin_conn = MiddlewarePool::get_connection(&pool).await?;
+        let admin_conn = MiddlewarePool::get_connection(pool).await?;
         
         if let MiddlewarePoolConnection::Postgres(pgconn) = admin_conn {
             let create_user_sql = format!(
@@ -127,7 +127,7 @@ async fn setup_postgres_db(
     )";
 
     let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(&pool).await?;
+    let conn = MiddlewarePool::get_connection(pool).await?;
 
     if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
         let tx = pgconn.transaction().await?;
@@ -157,7 +157,7 @@ pub fn benchmark_postgres(c: &mut Criterion, rt: &Runtime) {
                 for _i in 0..iters {
                     clean_postgres_tables(&config_and_pool).await.unwrap();
                     let pool = config_and_pool.pool.get().await.unwrap();
-                    let conn = MiddlewarePool::get_connection(&pool).await.unwrap();
+                    let conn = MiddlewarePool::get_connection(pool).await.unwrap();
 
                     if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
                         let start = std::time::Instant::now();

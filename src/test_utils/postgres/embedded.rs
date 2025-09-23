@@ -53,7 +53,7 @@ pub fn setup_postgres_embedded(
                 
                 let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
                 let pool = admin_pool.pool.get().await?;
-                let admin_conn = MiddlewarePool::get_connection(&pool).await?;
+                let admin_conn = MiddlewarePool::get_connection(pool).await?;
                 
                 if let MiddlewarePoolConnection::Postgres(pgconn) = admin_conn {
                     // Create the desired user with the desired password
@@ -91,7 +91,7 @@ pub fn setup_postgres_embedded(
         // Quick connection test
         let config_and_pool = ConfigAndPool::new_postgres(final_cfg.clone()).await?;
         let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(&pool).await?;
+        let conn = MiddlewarePool::get_connection(pool).await?;
         
         if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
             // Test with a simple query

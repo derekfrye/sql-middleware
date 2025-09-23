@@ -23,7 +23,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
         format!("{}_{}_{}.db", prefix, pid, ns)
     }
 
-    let  mut test_cases = vec![
+    let  test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
     ];
@@ -70,7 +70,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                 TestCase::Turso(path) => ConfigAndPool::new_turso(path).await?,
             };
             let pool = cap.pool.get().await?;
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = MiddlewarePool::get_connection(pool).await?;
 
             // Create table
             let ddl = r#"
@@ -143,7 +143,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                 NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
             );
             assert_eq!(res.results[0].get("d").unwrap().as_float().unwrap(), 10.5);
-            assert_eq!(*res.results[0].get("e").unwrap().as_bool().unwrap(), true);
+            assert!(*res.results[0].get("e").unwrap().as_bool().unwrap());
             assert_eq!(
                 res.results[0].get("f").unwrap().as_blob().unwrap(),
                 b"Blob12"
@@ -163,7 +163,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                 NaiveDateTime::parse_from_str("2024-01-03 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
             );
             assert_eq!(res.results[2].get("d").unwrap().as_float().unwrap(), 30.25);
-            assert_eq!(*res.results[2].get("e").unwrap().as_bool().unwrap(), true);
+            assert!(*res.results[2].get("e").unwrap().as_bool().unwrap());
 
             // param row (Juliet)
             assert_eq!(*res.results[3].get("a").unwrap().as_int().unwrap(), 100);
