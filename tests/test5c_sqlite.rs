@@ -1,6 +1,5 @@
 #![cfg(feature = "sqlite")]
 
-use deadpool_sqlite::rusqlite::ToSql;
 use sql_middleware::prelude::*;
 use sql_middleware::{convert_sql_params, SqliteParamsExecute};
 
@@ -21,10 +20,12 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             let _ = sqlite_obj
                 .interact(move |raw| {
                     let tx = raw.transaction()?;
-                    let mut stmt = tx.prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")?;
-                    let param_refs: Vec<&dyn ToSql> = converted.0.iter().map(|v| v as &dyn ToSql).collect();
-                    let _ = stmt.execute(&param_refs[..])?;
-                    tx.commit()?;
+                    {
+                        let mut stmt = tx.prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")?;
+                        // SqliteParamsExecute wraps a ParamsFromIter which can be passed directly
+                        let _ = stmt.execute(converted.0)?;
+                    }
+                    tx.commit()?; // commit after stmt is dropped
                     Ok::<(), SqlMiddlewareDbError>(())
                 })
                 .await?;
@@ -38,4 +39,3 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     Ok(())
 }
-

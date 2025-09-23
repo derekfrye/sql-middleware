@@ -11,11 +11,12 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
     cfg.host = Some("localhost".to_string());
 
     let pg = setup_postgres_container(&cfg)?;
-    cfg.port = Some(pg.port);
+    // Use the fully populated config returned by the embedded helper (has correct user/pass/port)
+    let real_cfg = pg.config.clone();
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_postgres(cfg).await?;
+        let cap = ConfigAndPool::new_postgres(real_cfg).await?;
         let pool = cap.pool.get().await?;
         let mut conn = MiddlewarePool::get_connection(&pool).await?;
 
@@ -46,4 +47,3 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
     stop_postgres_container(pg);
     Ok(())
 }
-

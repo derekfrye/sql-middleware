@@ -1,3 +1,4 @@
+#![cfg(any(feature = "sqlite", feature = "turso"))]
 use chrono::NaiveDateTime;
 use serde_json::json;
 use sql_middleware::middleware::{AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, RowValues};
@@ -13,31 +14,54 @@ enum TestCase {
 fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
 
-    let  test_cases = vec![
+    fn unique_path(prefix: &str) -> String {
+        let pid = std::process::id();
+        let ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{}_{}_{}.db", prefix, pid, ns)
+    }
+
+    let  mut test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
-        TestCase::Sqlite("test_sqlite.db".to_string()),
+        TestCase::Sqlite(unique_path("test_sqlite")),
     ];
 
     #[cfg(feature = "turso")]
     {
         test_cases.push(TestCase::Turso(":memory:".to_string()));
-        test_cases.push(TestCase::Turso("test_turso.db".to_string()));
+        test_cases.push(TestCase::Turso(unique_path("test_turso")));
+    }
+
+    // Drop guard to clean up file-backed DBs even on failure
+    struct FileCleanup(Vec<String>);
+    impl Drop for FileCleanup {
+        fn drop(&mut self) {
+            for p in &self.0 {
+                let _ = std::fs::remove_file(p);
+                let _ = std::fs::remove_file(format!("{}-wal", p));
+                let _ = std::fs::remove_file(format!("{}-shm", p));
+            }
+        }
     }
 
     for case in test_cases {
         // Clean up files for file-backed cases
-        match &case {
+        let _cleanup_guard = match &case {
             TestCase::Sqlite(path) if path != "file::memory:?cache=shared" => {
                 let _ = std::fs::remove_file(path);
+                Some(FileCleanup(vec![path.clone()]))
             }
             #[cfg(feature = "turso")]
             TestCase::Turso(path) if path != ":memory:" => {
                 let _ = std::fs::remove_file(path);
                 let _ = std::fs::remove_file(format!("{}-wal", path));
                 let _ = std::fs::remove_file(format!("{}-shm", path));
+                Some(FileCleanup(vec![path.clone()]))
             }
-            _ => {}
-        }
+            _ => None,
+        };
 
         rt.block_on(async {
             // Build config/pool

@@ -164,7 +164,7 @@ pub async fn with_transaction<F, T>(
 where
     F: for<'a> FnOnce(&'a Tx<'a>) -> Pin<Box<dyn Future<Output = Result<T, SqlMiddlewareDbError>> + 'a>>,
 {
-    let mut tx = begin_transaction(conn).await?;
+    let tx = begin_transaction(conn).await?;
     let res = f(&tx).await;
     match res {
         Ok(val) => {
