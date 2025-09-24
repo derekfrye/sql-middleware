@@ -211,9 +211,9 @@ Here, the APIs differ a bit, because the underlying libraries are different. It 
 
 See further examples in the tests directory:
 - [PostgreSQL](/tests/test5a_postgres.rs)
-- [LibSQL](../tests/test5b_libsql.rs)
-- [SQLite](../tests/test5c_sqlite.rs)
-- [Turso](../tests/test5d_turso.rs)
+- [LibSQL](/tests/test5b_libsql.rs)
+- [SQLite](/tests/test5c_sqlite.rs)
+- [Turso](/tests/test5d_turso.rs)
 
 <table>
 <tr>
