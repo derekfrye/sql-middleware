@@ -56,7 +56,8 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     let postgres_stuff = setup_postgres_container(&cfg)?;
     cfg.port = Some(postgres_stuff.port);
 
-    let test_cases = vec![
+    #[allow(unused_mut)]
+    let mut test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
         TestCase::Postgres(&cfg),
