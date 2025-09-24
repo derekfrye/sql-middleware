@@ -38,7 +38,9 @@ pub fn generate_insert_statements(num_rows: usize) -> String {
         let e = rng.gen_bool(0.5);
 
         let blob_len = rng.gen_range(10, 21);
-        let blob: Vec<u8> = (0..blob_len).map(|_| rng.gen_range(0, 256)).collect();
+        let blob: Vec<u8> = (0..blob_len)
+            .map(|_| u8::try_from(rng.gen_range(0, 256)).unwrap())
+            .collect();
         let blob_hex = blob
             .iter()
             .map(|b| format!("{:02X}", b))
@@ -111,7 +113,9 @@ pub fn generate_postgres_insert_statements(num_rows: usize) -> String {
         let e = rng.gen_bool(0.5);
 
         let blob_len = rng.gen_range(10, 21);
-        let blob: Vec<u8> = (0..blob_len).map(|_| rng.gen_range(0, 256)).collect();
+        let blob: Vec<u8> = (0..blob_len)
+            .map(|_| u8::try_from(rng.gen_range(0, 256)).unwrap())
+            .collect();
         let blob_hex = blob
             .iter()
             .map(|b| format!("{:02x}", b))
