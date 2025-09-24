@@ -1,5 +1,5 @@
-pub mod row;
 pub mod result_set;
+pub mod row;
 
-pub use row::CustomDbRow;
 pub use result_set::ResultSet;
+pub use row::CustomDbRow;

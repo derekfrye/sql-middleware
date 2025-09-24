@@ -26,7 +26,7 @@ sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "li
 
 Additional flags:
 - `mssql`: SQL Server via `tiberius`
-- `libsql`: LibSQL (local or remote)
+- `libsql`: `LibSQL` (local or remote)
 - `turso`: Turso (in-process, SQLite-compatible). Experimental; no remote support.
 - `test-utils`: Test helpers for internal testing
 - `benchmarks`: Criterion helpers for benches

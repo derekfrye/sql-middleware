@@ -1,6 +1,6 @@
+use super::connection::MiddlewarePoolConnection;
 use crate::error::SqlMiddlewareDbError;
 use crate::query::AnyConnWrapper;
-use super::connection::MiddlewarePoolConnection;
 
 impl MiddlewarePoolConnection {
     /// Interact with the connection asynchronously

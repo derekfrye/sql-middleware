@@ -1,12 +1,11 @@
-use tokio::runtime::Runtime;
 use std::sync::LazyLock;
+use tokio::runtime::Runtime;
 
 /// Shared tokio runtime for test utilities to avoid creating multiple runtimes
-pub(crate) static SHARED_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
-    Runtime::new().expect("Failed to create tokio runtime for test utilities")
-});
+pub(crate) static SHARED_RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Failed to create tokio runtime for test utilities"));
 
-/// Test utilities for PostgreSQL testing and benchmarking
+/// Test utilities for `PostgreSQL` testing and benchmarking
 pub mod postgres;
 
 // Re-export the most commonly used items for backwards compatibility

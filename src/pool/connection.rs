@@ -9,8 +9,8 @@ use deadpool_libsql::Object as LibsqlObject;
 #[cfg(feature = "turso")]
 use turso::Connection as TursoConnection;
 
-use crate::error::SqlMiddlewareDbError;
 use super::types::MiddlewarePool;
+use crate::error::SqlMiddlewareDbError;
 
 pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
@@ -89,9 +89,7 @@ impl MiddlewarePool {
             }
             #[cfg(feature = "turso")]
             MiddlewarePool::Turso(db) => {
-                let conn: TursoConnection = db
-                    .connect()
-                    .map_err(SqlMiddlewareDbError::from)?;
+                let conn: TursoConnection = db.connect().map_err(SqlMiddlewareDbError::from)?;
                 Ok(MiddlewarePoolConnection::Turso(conn))
             }
             #[allow(unreachable_patterns)]

@@ -7,14 +7,14 @@ use crate::types::RowValues;
 
 #[cfg(feature = "libsql")]
 use crate::libsql;
-#[cfg(feature = "turso")]
-use crate::turso;
 #[cfg(feature = "mssql")]
 use crate::mssql;
 #[cfg(feature = "postgres")]
 use crate::postgres;
 #[cfg(feature = "sqlite")]
 use crate::sqlite;
+#[cfg(feature = "turso")]
+use crate::turso;
 
 #[async_trait]
 pub trait AsyncDatabaseExecutor {

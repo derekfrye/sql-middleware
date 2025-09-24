@@ -1,8 +1,10 @@
 #![cfg(feature = "test-utils")]
 
 use sql_middleware::prelude::*;
-use sql_middleware::{convert_sql_params, PostgresParams};
-use sql_middleware::test_utils::testing_postgres::{setup_postgres_container, stop_postgres_container};
+use sql_middleware::test_utils::testing_postgres::{
+    setup_postgres_container, stop_postgres_container,
+};
+use sql_middleware::{PostgresParams, convert_sql_params};
 
 #[test]
 fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,7 +22,8 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         let pool = cap.pool.get().await?;
         let mut conn = MiddlewarePool::get_connection(pool).await?;
 
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);").await?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")
+            .await?;
 
         // Get Postgres-specific client and start a transaction
         let pg_obj = match &mut conn {
@@ -39,8 +42,13 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         tx.commit().await?;
 
         // Verify
-        let rs = conn.execute_select("SELECT name FROM t WHERE id = $1", &[RowValues::Int(1)]).await?;
-        assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "alice");
+        let rs = conn
+            .execute_select("SELECT name FROM t WHERE id = $1", &[RowValues::Int(1)])
+            .await?;
+        assert_eq!(
+            rs.results[0].get("name").unwrap().as_text().unwrap(),
+            "alice"
+        );
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
 

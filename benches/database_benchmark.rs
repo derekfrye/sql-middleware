@@ -1,14 +1,12 @@
 use criterion::{criterion_group, criterion_main};
-use std::sync::LazyLock;
-use tokio::runtime::Runtime;
-use sql_middleware::benchmark::{
-    sqlite::{benchmark_sqlite, cleanup_sqlite},
-    postgres::{benchmark_postgres, cleanup_postgres},
-};
 #[cfg(feature = "libsql")]
 use sql_middleware::benchmark::libsql::{benchmark_libsql, cleanup_libsql};
-
-
+use sql_middleware::benchmark::{
+    postgres::{benchmark_postgres, cleanup_postgres},
+    sqlite::{benchmark_sqlite, cleanup_sqlite},
+};
+use std::sync::LazyLock;
+use tokio::runtime::Runtime;
 
 #[allow(dead_code)]
 struct DatabaseCleanup;

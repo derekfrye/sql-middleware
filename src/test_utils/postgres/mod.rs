@@ -1,7 +1,7 @@
-/// PostgreSQL embedded database functionality
+/// `PostgreSQL` embedded database functionality
 pub mod embedded;
 
-/// PostgreSQL threading and concurrent tests
+/// `PostgreSQL` threading and concurrent tests
 pub mod tests;
 
 // Re-export the public API for backwards compatibility

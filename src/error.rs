@@ -2,14 +2,14 @@ use thiserror::Error;
 
 #[cfg(feature = "libsql")]
 use deadpool_libsql;
-#[cfg(feature = "turso")]
-use turso;
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::rusqlite;
 #[cfg(feature = "mssql")]
 use tiberius;
 #[cfg(feature = "postgres")]
 use tokio_postgres;
+#[cfg(feature = "turso")]
+use turso;
 
 #[derive(Debug, Error)]
 pub enum SqlMiddlewareDbError {

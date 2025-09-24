@@ -1,12 +1,9 @@
-use crate::types::RowValues;
 use super::row::CustomDbRow;
+use crate::types::RowValues;
 
 type ColumnCacheMap = std::sync::LazyLock<
     std::sync::Mutex<
-        std::collections::HashMap<
-            usize,
-            std::sync::Arc<std::collections::HashMap<String, usize>>,
-        >,
+        std::collections::HashMap<usize, std::sync::Arc<std::collections::HashMap<String, usize>>>,
     >,
 >;
 
@@ -63,9 +60,10 @@ impl ResultSet {
         if let Some(column_names) = &self.column_names {
             // Build a cache of column name to index for faster lookups
             // We only need to build this cache once and reuse it
-            static CACHE_MAP: ColumnCacheMap = std::sync::LazyLock::new(
-                || std::sync::Mutex::new(std::collections::HashMap::new()),
-            );
+            static CACHE_MAP: ColumnCacheMap =
+                std::sync::LazyLock::new(
+                    || std::sync::Mutex::new(std::collections::HashMap::new()),
+                );
 
             // Use the pointer to column_names as a key for the cache
             let ptr = column_names.as_ref().as_ptr() as usize;

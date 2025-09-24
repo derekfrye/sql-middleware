@@ -1,9 +1,9 @@
-pub mod types;
 pub mod connection;
 pub mod interaction;
+pub mod types;
 
-pub use types::{MiddlewarePool, SqliteWritePool};
 pub use connection::MiddlewarePoolConnection;
+pub use types::{MiddlewarePool, SqliteWritePool};
 
 use crate::types::DatabaseType;
 

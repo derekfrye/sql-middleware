@@ -27,14 +27,14 @@ pub mod types;
 // Private database-specific modules
 #[cfg(feature = "libsql")]
 pub mod libsql;
-#[cfg(feature = "turso")]
-pub mod turso;
 #[cfg(feature = "mssql")]
 mod mssql;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "turso")]
+pub mod turso;
 
 // Direct exports for frequently used types
 pub use middleware::{
