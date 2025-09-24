@@ -228,30 +228,31 @@ SQLite
 ```rust
 // Get db-specific connection
 let pg_conn = match &conn {
-    MiddlewarePoolConnection::Postgres(pg) 
+    MiddlewarePoolConnection::Postgres(pg)
         => pg,
-    _ => panic!("Expected Postgres connection"),
+    _ => panic!("Expected connection"),
 };
 
 // Get client
-// (no deadpool support for Turso; run txn from conn)
+// (N/A for Turso; no deadpool yet)
 sql_middleware::turso::begin_transaction(t)
 let client: &mut tokio_postgres::Client 
     = pg_conn.as_mut();
 
 // Begin transaction
-// Turso: `let tx = turso::begin_transaction(t).await?;`
+// Turso: `let tx = 
+//  turso::begin_transaction(t).await?;`
 let tx = client.transaction().await?;
 
-// could run custom logic anywhere between stmts
+// could run custom logic between stmts
 
 // Prepare statement
 // Turso: `let mut stmt 
-//      = tx.prepare("... ?1, ?2 ...").await?;`
+//    = tx.prepare("... ?1, ?2 ...").await?;`
 let stmt = tx.prepare(&q.query).await?;
 
-// Convert parameters (Postgres)
-// Turso/LibSQL prepared accept `&[RowValues]` directly
+// Convert params (Postgres)
+// Turso/LibSQL not necessary
 let converted_params = 
     convert_sql_params::<PostgresParams>(
         &q.params,
@@ -259,8 +260,10 @@ let converted_params =
     )?;
 
 // Execute query
-// Turso: `tx.execute_prepared(&mut stmt, &q.params).await?;`
-// LibSQL: `tx.execute_prepared(&stmt, &q.params).await?;`
+// Turso: `tx.execute_prepared(
+//  &mut stmt, &q.params).await?;`
+// LibSQL: `tx.execute_prepared(
+//  &stmt, &q.params).await?;`
 let rows = tx.execute(
     &stmt, 
     converted_params.as_refs()
@@ -276,9 +279,9 @@ tx.commit().await?;
 ```rust
 // Get SQLite-specific connection
 let sqlite_conn = match &conn {
-    MiddlewarePoolConnection::Sqlite(sqlite) 
+    MiddlewarePoolConnection::Sqlite(sqlite)
         => sqlite,
-    _ => panic!("Expected SQLite connection"),
+    _ => panic!("Expected connection"),
 };
 
 // Use interact for async tx
@@ -288,12 +291,13 @@ let rows = sqlite_conn
         
         // Convert parameters
         let converted_params = 
-            convert_sql_params::<SqliteParamsExecute>(
+            convert_sql_params::
+                <SqliteParamsExecute>(
                 &q.params,
                 ConversionMode::Execute
             )?;
             
-// could run custom logic anywhere between stmts
+// could run custom logic between stmts
 
         // Create parameter references
         let param_refs: Vec<&dyn ToSql> =
@@ -303,7 +307,8 @@ let rows = sqlite_conn
         
         // Prepare and execute
         let rows = {
-            let mut stmt = tx.prepare(&q.query)?;
+            let mut stmt = tx.prepare(
+                &q.query)?;
             stmt.execute(&param_refs[..])?
         };
         
