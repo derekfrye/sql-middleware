@@ -3,12 +3,12 @@ name = "sql-middleware"
 version = "0.1.8"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
-license = "BSD-2-Clause"
-description = "Lightweight async wrappers for tokio-postgres, rusqlite, and tiberius (SQL Server)."
+license = "MIT"
+description = "Lightweight async wrappers for tokio-postgres, rusqlite, libsql, turso, and tiberius."
 repository = "https://github.com/derekfrye/sql-middleware"
 readme = "docs/README.md"
 homepage = "https://github.com/derekfrye/sql-middleware"
-keywords = ["sql", "sqlx", "sqlite", "postgres", "sqlserver", "postgresql", "sql server"]
+keywords = ["sql", "sqlx", "sqlite", "postgres", "sqlserver", "postgresql", "sql server", "libsql", "turso"]
 documentation = "https://docs.rs/sql-middleware"
 
 [features]
@@ -22,7 +22,7 @@ test-utils = ["dep:postgresql_embedded"]
 benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
 
 [dependencies]
-# checked August 2025
+# checked Sept 2025
 # `cargo stale`
 tokio = { version = "1", features = ["full"] }  
 serde = { version = "1", features = ["derive"] }
@@ -33,7 +33,6 @@ deadpool-postgres = { version = "0", optional = true }
 regex = "1"
 clap = { version = "4", features = ["derive"] }
 deadpool-sqlite = { version = "0", features = ["rt_tokio_1"], optional = true }
-deadpool-libsql = { version = "0", optional = true }
 deadpool = "0"
 thiserror = "2"
 async-trait = "0"
@@ -47,6 +46,9 @@ postgresql_embedded = { version = "0", features = ["bundled"], optional = true }
 criterion = { version = "0", features = ["async_tokio"], optional = true }
 rand = { version = "0", optional = true }
 rand_chacha = { version = "0", optional = true }
+# LibSQL dependencies
+deadpool-libsql = { version = "0", optional = true }
+# turso deps
 turso = { version = "0.1.5", optional = true }
 
 [package.metadata.docs.rs]
@@ -61,7 +63,7 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", features = ["test-utils", "benchmarks", "mssql", "libsql"] }
+sql-middleware = { path = ".", features = ["test-utils", "benchmarks", "mssql", "libsql", "turso"] }
 
 [[bench]]
 name = "database_benchmark"

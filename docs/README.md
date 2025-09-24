@@ -353,3 +353,7 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
 - Run tests (defaults): `cargo test`
 - Run with Turso: `cargo test --features turso`
 - Run with LibSQL: `cargo test --features libsql`
+
+## Release Notes
+
+- 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT and added third-party notice documentation.
