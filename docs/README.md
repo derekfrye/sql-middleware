@@ -210,7 +210,7 @@ let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 Here, the APIs differ a bit, because the underlying libraries are different. It doesn't appear easy to make these consistent without hiding underlying library capabilities. This is the most similar way to do queries w this middleware if you need custom app logic between `transaction()` and `commit()`.
 
 See further examples in the tests directory:
-- [PostgreSQL](./tests/test5a_postgres.rs)
+- [PostgreSQL](/tests/test5a_postgres.rs)
 - [LibSQL](../tests/test5b_libsql.rs)
 - [SQLite](../tests/test5c_sqlite.rs)
 - [Turso](../tests/test5d_turso.rs)
