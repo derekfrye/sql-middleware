@@ -7,6 +7,7 @@ mod libsql_tests {
     };
     use tokio::runtime::Runtime;
 
+    #[allow(clippy::float_cmp)]
     #[test]
     fn test_libsql_basic_operations() -> Result<(), Box<dyn std::error::Error>> {
         let rt = Runtime::new()?;
@@ -19,10 +20,10 @@ mod libsql_tests {
             let mut libsql_conn = MiddlewarePool::get_connection(pool).await?;
 
             // Verify we got the right connection type
-            match &libsql_conn {
-                MiddlewarePoolConnection::Libsql(_) => {},
-                _ => panic!("Expected LibSQL connection"),
-            }
+            assert!(
+                matches!(&libsql_conn, MiddlewarePoolConnection::Libsql(_)),
+                "Expected LibSQL connection"
+            );
 
             // Test batch execution - create table
             let create_table_sql = "

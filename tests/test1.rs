@@ -10,18 +10,31 @@ enum TestCase {
     Turso(String),
 }
 
+fn unique_path(prefix: &str) -> String {
+    let pid = std::process::id();
+    let ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("{prefix}_{pid}_{ns}.db")
+}
+
+struct FileCleanup(Vec<String>);
+
+impl Drop for FileCleanup {
+    fn drop(&mut self) {
+        for p in &self.0 {
+            let _ = std::fs::remove_file(p);
+            let _ = std::fs::remove_file(format!("{p}-wal"));
+            let _ = std::fs::remove_file(format!("{p}-shm"));
+        }
+    }
+}
+
+#[allow(clippy::float_cmp)]
 #[test]
 fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
-
-    fn unique_path(prefix: &str) -> String {
-        let pid = std::process::id();
-        let ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        format!("{}_{}_{}.db", prefix, pid, ns)
-    }
 
     let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
@@ -34,18 +47,6 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
         test_cases.push(TestCase::Turso(unique_path("test_turso")));
     }
 
-    // Drop guard to clean up file-backed DBs even on failure
-    struct FileCleanup(Vec<String>);
-    impl Drop for FileCleanup {
-        fn drop(&mut self) {
-            for p in &self.0 {
-                let _ = std::fs::remove_file(p);
-                let _ = std::fs::remove_file(format!("{}-wal", p));
-                let _ = std::fs::remove_file(format!("{}-shm", p));
-            }
-        }
-    }
-
     for case in test_cases {
         // Clean up files for file-backed cases
         let _cleanup_guard = match &case {
@@ -56,8 +57,8 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(feature = "turso")]
             TestCase::Turso(path) if path != ":memory:" => {
                 let _ = std::fs::remove_file(path);
-                let _ = std::fs::remove_file(format!("{}-wal", path));
-                let _ = std::fs::remove_file(format!("{}-shm", path));
+                let _ = std::fs::remove_file(format!("{path}-wal"));
+                let _ = std::fs::remove_file(format!("{path}-shm"));
                 Some(FileCleanup(vec![path.clone()]))
             }
             _ => None,
@@ -75,7 +76,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
             let mut conn = MiddlewarePool::get_connection(pool).await?;
 
             // DDL: ensure table exists
-            let ddl = r#"
+            let ddl = r"
                 CREATE TABLE IF NOT EXISTS test (
                     recid INTEGER PRIMARY KEY AUTOINCREMENT,
                     a int,
@@ -86,7 +87,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
                     f blob,
                     g json
                 );
-            "#;
+            ";
             conn.execute_batch(ddl).await?;
 
             // Seed with the shared SQLite setup script (SQLite-compatible)
@@ -107,7 +108,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
             assert_eq!(
                 res.results[0]
                     .get("c")
-                    .and_then(|v| v.as_timestamp())
+                    .and_then(RowValues::as_timestamp)
                     .unwrap(),
                 NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
             );

@@ -17,6 +17,27 @@ use sql_middleware::{
 };
 use tokio::runtime::Runtime;
 
+fn unique_path(prefix: &str) -> String {
+    let pid = std::process::id();
+    let ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("{prefix}_{pid}_{ns}.db")
+}
+
+struct FileCleanup(Vec<String>);
+
+impl Drop for FileCleanup {
+    fn drop(&mut self) {
+        for p in &self.0 {
+            let _ = std::fs::remove_file(p);
+            let _ = std::fs::remove_file(format!("{p}-wal"));
+            let _ = std::fs::remove_file(format!("{p}-shm"));
+        }
+    }
+}
+
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     let db_user = "test_user";
@@ -34,15 +55,6 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     cfg.password = Some(db_pass.to_string());
     let postgres_stuff = setup_postgres_container(&cfg)?;
     cfg.port = Some(postgres_stuff.port);
-
-    fn unique_path(prefix: &str) -> String {
-        let pid = std::process::id();
-        let ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        format!("{}_{}_{}.db", prefix, pid, ns)
-    }
 
     let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
@@ -64,37 +76,26 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
         // Drop guard to clean up file-backed DBs even on failure
-        struct FileCleanup(Vec<String>);
-        impl Drop for FileCleanup {
-            fn drop(&mut self) {
-                for p in &self.0 {
-                    let _ = std::fs::remove_file(p);
-                    let _ = std::fs::remove_file(format!("{}-wal", p));
-                    let _ = std::fs::remove_file(format!("{}-shm", p));
-                }
-            }
-        }
-
         for test_case in test_cases {
             // Clean up database files if they exist, and register cleanup guard
             let _cleanup_guard = match &test_case {
                 TestCase::Sqlite(connection_string) => {
-                    if connection_string != "file::memory:?cache=shared" {
+                    if connection_string == "file::memory:?cache=shared" {
+                        None
+                    } else {
                         let _ = std::fs::remove_file(connection_string);
                         Some(FileCleanup(vec![connection_string.clone()]))
-                    } else {
-                        None
                     }
                 }
                 #[cfg(feature = "turso")]
                 TestCase::Turso(connection_string) => {
-                    if connection_string != ":memory:" {
-                        let _ = std::fs::remove_file(&connection_string);
-                        let _ = std::fs::remove_file(format!("{}-wal", connection_string));
-                        let _ = std::fs::remove_file(format!("{}-shm", connection_string));
-                        Some(FileCleanup(vec![connection_string.clone()]))
-                    } else {
+                    if connection_string == ":memory:" {
                         None
+                    } else {
+                        let _ = std::fs::remove_file(&connection_string);
+                        let _ = std::fs::remove_file(format!("{connection_string}-wal"));
+                        let _ = std::fs::remove_file(format!("{connection_string}-shm"));
+                        Some(FileCleanup(vec![connection_string.clone()]))
                     }
                 }
                 // #[cfg(feature = "libsql")]
@@ -166,6 +167,7 @@ enum TestCase<'a> {
     // Libsql(String),
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_test_logic(
     conn: &mut MiddlewarePoolConnection,
     db_type: DatabaseType,
@@ -216,11 +218,10 @@ async fn run_test_logic(
     #[cfg(feature = "turso")]
     if db_type == DatabaseType::Turso {
         for (idx, stmt) in ddl.iter().enumerate() {
-            conn.execute_batch(stmt).await.map_err(|e| {
+            conn.execute_batch(stmt).await.map_err(|error| {
+                let part = idx + 1;
                 SqlMiddlewareDbError::ExecutionError(format!(
-                    "Turso DDL failure on part {}: {}",
-                    idx + 1,
-                    e
+                    "Turso DDL failure on part {part}: {error}"
                 ))
             })?;
         }
@@ -260,7 +261,7 @@ async fn run_test_logic(
 
     // generate 100 params
     let params: Vec<Vec<RowValues>> = (0..100)
-        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
+        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{i}"))])
         .collect();
     // dbg!(&params);
 
@@ -281,7 +282,7 @@ async fn run_test_logic(
 
     // generate 100 more params
     let params: Vec<Vec<RowValues>> = (100..200)
-        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
+        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{i}"))])
         .collect();
 
     // now let's be a little smarter and write our own loop to exec a 100 inserts
@@ -358,7 +359,7 @@ async fn run_test_logic(
 
     // generate 200 more params
     let params: Vec<Vec<RowValues>> = (0..200)
-        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{}", i))])
+        .map(|i| vec![RowValues::Int(i), RowValues::Text(format!("name_{i}"))])
         .collect();
 
     // now let's be a little smarter and write our own loop to exec inserts
@@ -466,10 +467,7 @@ async fn run_test_logic(
 
     // let's test a common pattern in rusty-golf
     // generate 1 more param
-    let params: Vec<RowValues> = vec![
-        RowValues::Int(990),
-        RowValues::Text(format!("name_{}", 990)),
-    ];
+    let params: Vec<RowValues> = vec![RowValues::Int(990), RowValues::Text("name_990".to_string())];
 
     let query_and_params = QueryAndParams {
         query: parameterized_query.to_string(),

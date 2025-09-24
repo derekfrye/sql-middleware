@@ -1,36 +1,49 @@
 use criterion::{BenchmarkId, Criterion};
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 #[cfg(feature = "test-utils")]
 use crate::test_utils::postgres::EmbeddedPostgres;
+#[cfg(feature = "test-utils")]
+use postgresql_embedded::PostgreSQL;
 
 use super::common::{generate_postgres_insert_statements, get_benchmark_rows};
 
 static POSTGRES_INSTANCE: LazyLock<Mutex<Option<(ConfigAndPool, EmbeddedPostgres)>>> =
     LazyLock::new(|| Mutex::new(None));
 
+/// Acquire or initialise the shared `PostgreSQL` benchmark instance.
+///
+/// # Panics
+/// Panics if the global mutex is poisoned or if the embedded `PostgreSQL` setup fails.
 pub async fn get_postgres_instance() -> ConfigAndPool {
-    let mut instance_guard = POSTGRES_INSTANCE.lock().unwrap();
-
-    if instance_guard.is_none() {
-        println!("Setting up PostgreSQL instance (one-time setup)...");
-        let db_user = "test_user";
-        let db_pass = "test_password123";
-        let db_name = "test_db";
-
-        let (config_and_pool, postgres_instance) =
-            setup_postgres_db(db_user, db_pass, db_name).await.unwrap();
-
-        *instance_guard = Some((config_and_pool, postgres_instance));
-        println!("PostgreSQL instance ready!");
+    if let Some((config_and_pool, _)) = POSTGRES_INSTANCE.lock().unwrap().as_ref() {
+        println!("get_postgres_instance: Reusing cached instance");
+        return config_and_pool.clone();
     }
 
-    let (config_and_pool, _) = instance_guard.as_ref().unwrap();
-    config_and_pool.clone()
+    println!("get_postgres_instance: Initialising PostgreSQL instance");
+    let db_user = "test_user";
+    let db_pass = "test_password123";
+    let db_name = "test_db";
+
+    let (config_and_pool, postgres_instance) = setup_postgres_db(db_user, db_pass, db_name)
+        .await
+        .expect("Failed to initialise embedded PostgreSQL");
+
+    let mut instance_guard = POSTGRES_INSTANCE.lock().unwrap();
+    instance_guard.replace((config_and_pool.clone(), postgres_instance));
+    println!("get_postgres_instance: PostgreSQL instance ready");
+
+    config_and_pool
 }
 
+/// Reset the `PostgreSQL` benchmark table to an empty state.
+///
+/// # Errors
+/// Returns any error encountered while acquiring a connection or executing the cleanup SQL.
 pub async fn clean_postgres_tables(
     config_and_pool: &ConfigAndPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -38,8 +51,7 @@ pub async fn clean_postgres_tables(
     let conn = MiddlewarePool::get_connection(pool).await?;
 
     if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
-        let cleanup_sql = "DROP TABLE IF EXISTS test";
-        pgconn.execute(cleanup_sql, &[]).await?;
+        pgconn.execute("DROP TABLE IF EXISTS test", &[]).await?;
 
         let create_sql = "CREATE TABLE IF NOT EXISTS test (
             recid SERIAL PRIMARY KEY,
@@ -52,15 +64,17 @@ pub async fn clean_postgres_tables(
     Ok(())
 }
 
+/// Start an embedded `PostgreSQL` instance and return a ready-to-use pool.
+///
+/// # Errors
+/// Propagates any error that occurs while preparing the embedded database, creating users,
+/// or executing the schema initialisation SQL.
+#[cfg(feature = "test-utils")]
 async fn setup_postgres_db(
     db_user: &str,
     db_pass: &str,
     db_name: &str,
 ) -> Result<(ConfigAndPool, EmbeddedPostgres), Box<dyn std::error::Error>> {
-    use crate::test_utils::postgres::EmbeddedPostgres;
-    #[cfg(feature = "test-utils")]
-    use postgresql_embedded::PostgreSQL;
-
     let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.user = Some(db_user.to_string());
@@ -77,38 +91,33 @@ async fn setup_postgres_db(
 
     postgresql.create_database(db_name).await?;
 
-    let (final_user, final_password) = if db_user != embedded_user {
+    let (final_user, final_password) = if db_user == embedded_user {
+        (embedded_user, embedded_password)
+    } else {
         let mut admin_cfg = cfg.clone();
         admin_cfg.port = Some(port);
         admin_cfg.host = Some(host.clone());
         admin_cfg.user = Some(embedded_user.clone());
         admin_cfg.password = Some(embedded_password.clone());
-        admin_cfg.dbname = Some("postgres".to_string());
+        admin_cfg.dbname = Some(String::from("postgres"));
 
         let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
         let pool = admin_pool.pool.get().await?;
         let admin_conn = MiddlewarePool::get_connection(pool).await?;
 
         if let MiddlewarePoolConnection::Postgres(pgconn) = admin_conn {
-            let create_user_sql = format!(
-                "CREATE USER \"{}\" WITH PASSWORD '{}' CREATEDB SUPERUSER",
-                db_user, db_pass
-            );
+            let create_user_sql =
+                format!("CREATE USER \"{db_user}\" WITH PASSWORD '{db_pass}' CREATEDB SUPERUSER");
             pgconn
                 .execute(&create_user_sql, &[])
                 .await
-                .map_err(|e| format!("Failed to create user {}: {}", db_user, e))?;
+                .map_err(|error| format!("Failed to create user {db_user}: {error}"))?;
         }
 
         (db_user.to_string(), db_pass.to_string())
-    } else {
-        (embedded_user, embedded_password)
     };
 
-    let database_url = format!(
-        "postgres://{}:{}@{}:{}/{}",
-        final_user, final_password, host, port, db_name
-    );
+    let database_url = format!("postgres://{final_user}:{final_password}@{host}:{port}/{db_name}");
 
     let mut final_cfg = cfg.clone();
     final_cfg.port = Some(port);
@@ -146,36 +155,49 @@ async fn setup_postgres_db(
     Ok((config_and_pool, postgres_instance))
 }
 
-pub fn benchmark_postgres(c: &mut Criterion, rt: &Runtime) {
+/// Benchmark insert throughput for the `PostgreSQL` backend.
+///
+/// # Panics
+/// Panics if any benchmark iteration fails.
+pub fn benchmark_postgres(c: &mut Criterion, runtime: &Runtime) {
     let num_rows = get_benchmark_rows();
-    println!("Running PostgreSQL benchmark with {} rows", num_rows);
+    println!("Running PostgreSQL benchmark with {num_rows} rows");
     let postgres_insert_statements = generate_postgres_insert_statements(num_rows);
     let mut group = c.benchmark_group("database_inserts");
 
     group.bench_function(
-        BenchmarkId::new("postgres", format!("{}_rows", num_rows)),
+        BenchmarkId::new("postgres", format!("{num_rows}_rows")),
         |b| {
             let statements = postgres_insert_statements.clone();
-            b.to_async(rt).iter_custom(|iters| {
+            b.to_async(runtime).iter_custom(|iters| {
                 let statements = statements.clone();
                 async move {
                     let config_and_pool = get_postgres_instance().await;
-                    let mut total_duration = std::time::Duration::new(0, 0);
+                    let mut total_duration = Duration::default();
 
-                    for _i in 0..iters {
-                        clean_postgres_tables(&config_and_pool).await.unwrap();
-                        let pool = config_and_pool.pool.get().await.unwrap();
-                        let conn = MiddlewarePool::get_connection(pool).await.unwrap();
+                    for _ in 0..iters {
+                        clean_postgres_tables(&config_and_pool)
+                            .await
+                            .expect("Failed to reset PostgreSQL tables");
+                        let pool = config_and_pool
+                            .pool
+                            .get()
+                            .await
+                            .expect("Failed to get pool");
+                        let conn = MiddlewarePool::get_connection(pool)
+                            .await
+                            .expect("Failed to get conn");
 
                         if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
-                            let start = std::time::Instant::now();
+                            let start = Instant::now();
 
-                            let tx = pgconn.transaction().await.unwrap();
-                            tx.batch_execute(&statements).await.unwrap();
-                            tx.commit().await.unwrap();
+                            let tx = pgconn.transaction().await.expect("Failed to open tx");
+                            tx.batch_execute(&statements)
+                                .await
+                                .expect("Failed to run benchmark statements");
+                            tx.commit().await.expect("Failed to commit benchmark tx");
 
-                            let elapsed = start.elapsed();
-                            total_duration += elapsed;
+                            total_duration += start.elapsed();
                         }
                     }
 
@@ -188,12 +210,16 @@ pub fn benchmark_postgres(c: &mut Criterion, rt: &Runtime) {
     group.finish();
 }
 
+/// Tear down the shared `PostgreSQL` benchmark instance.
+///
+/// # Panics
+/// Panics if the global mutex is poisoned or if the Tokio runtime cannot be created.
 pub fn cleanup_postgres() {
     let mut postgres_guard = POSTGRES_INSTANCE.lock().unwrap();
     if let Some((_, postgres_instance)) = postgres_guard.take() {
         println!("Cleaning up PostgreSQL instance on exit...");
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
+        let runtime = Runtime::new().expect("Tokio runtime creation failed for cleanup");
+        runtime.block_on(async {
             let _ = postgres_instance.postgresql.stop().await;
         });
         println!("PostgreSQL instance stopped.");

@@ -19,6 +19,7 @@ use sql_middleware::{
 use std::vec;
 use tokio::runtime::Runtime;
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
     let db_user = "test_user";
@@ -99,7 +100,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         let query_and_params = QueryAndParams {
             query: "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)".to_string(),
             params: vec![
-                RowValues::Int(123456),
+                RowValues::Int(123_456),
                 RowValues::Text("test name".to_string()),
                 RowValues::Timestamp(NaiveDateTime::parse_from_str(
                     "2021-08-06 16:00:00",
@@ -137,7 +138,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             ],
             vec![
                 RowValues::Int(1),
-                RowValues::Int(123456),
+                RowValues::Int(123_456),
                 RowValues::Text("test name".to_string()),
                 RowValues::Timestamp(
                     NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")

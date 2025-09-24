@@ -10,18 +10,31 @@ enum TestCase {
     Turso(String),
 }
 
+fn unique_path(prefix: &str) -> String {
+    let pid = std::process::id();
+    let ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("{prefix}_{pid}_{ns}.db")
+}
+
+struct FileCleanup(Vec<String>);
+
+impl Drop for FileCleanup {
+    fn drop(&mut self) {
+        for p in &self.0 {
+            let _ = std::fs::remove_file(p);
+            let _ = std::fs::remove_file(format!("{p}-wal"));
+            let _ = std::fs::remove_file(format!("{p}-shm"));
+        }
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::float_cmp)]
 #[test]
 fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
-
-    fn unique_path(prefix: &str) -> String {
-        let pid = std::process::id();
-        let ns = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        format!("{}_{}_{}.db", prefix, pid, ns)
-    }
 
     let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
@@ -34,18 +47,6 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
         test_cases.push(TestCase::Turso(unique_path("test_turso")));
     }
 
-    // Drop guard to clean up file-backed DBs even on failure
-    struct FileCleanup(Vec<String>);
-    impl Drop for FileCleanup {
-        fn drop(&mut self) {
-            for p in &self.0 {
-                let _ = std::fs::remove_file(p);
-                let _ = std::fs::remove_file(format!("{}-wal", p));
-                let _ = std::fs::remove_file(format!("{}-shm", p));
-            }
-        }
-    }
-
     for case in test_cases {
         let _cleanup_guard = match &case {
             TestCase::Sqlite(path) if path != "file::memory:?cache=shared" => {
@@ -55,8 +56,8 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
             #[cfg(feature = "turso")]
             TestCase::Turso(path) if path != ":memory:" => {
                 let _ = std::fs::remove_file(path);
-                let _ = std::fs::remove_file(format!("{}-wal", path));
-                let _ = std::fs::remove_file(format!("{}-shm", path));
+                let _ = std::fs::remove_file(format!("{path}-wal"));
+                let _ = std::fs::remove_file(format!("{path}-shm"));
                 Some(FileCleanup(vec![path.clone()]))
             }
             _ => None,
@@ -73,7 +74,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
             let mut conn = MiddlewarePool::get_connection(pool).await?;
 
             // Create table
-            let ddl = r#"
+            let ddl = r"
                 CREATE TABLE IF NOT EXISTS test (
                     recid INTEGER PRIMARY KEY AUTOINCREMENT,
                     a int,
@@ -84,7 +85,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                     f blob,
                     g json
                 );
-            "#;
+            ";
             conn.execute_batch(ddl).await?;
 
             // Apply setup inserts (parameterized)

@@ -26,9 +26,8 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             .await?;
 
         // Get Postgres-specific client and start a transaction
-        let pg_obj = match &mut conn {
-            MiddlewarePoolConnection::Postgres(pg) => pg,
-            _ => panic!("Expected Postgres connection"),
+        let MiddlewarePoolConnection::Postgres(pg_obj) = &mut conn else {
+            panic!("Expected Postgres connection");
         };
         let tx = pg_obj.transaction().await?;
 
