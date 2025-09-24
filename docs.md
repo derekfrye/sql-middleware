@@ -1,16 +1,15 @@
-# SQL Middleware - A unified interface for SQL databases
+# SQL Middleware - A lightweight wrapper SQL backends
 
-This crate provides a middleware layer for SQL database access,
-supporting `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server backends. The goal is a
-unified, async-compatible API that works consistently across databases.
+This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
+similar, async-compatible API consistent across databases.
 
 ## Features
 
-- Asynchronous access with deadpool connection pooling
-- Backends: `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (in-process), and SQL Server
-- Unified parameter conversion system
-- Consistent result handling across engines
+- Similar API regardless of backend (as much as possible)
+- Asynchronous (where available)
+- `deadpool` connection pooling (where available)
 - Transaction support
+- Not an ORM
 
 ## Feature Flags
 
@@ -25,10 +24,10 @@ sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "li
 ```
 
 Additional flags:
-- `mssql`: SQL Server via `tiberius`
-- `libsql`: `LibSQL` (local or remote)
+- `libsql`: `LibSQL` (local has been tested, remote is present)
 - `turso`: Turso (in-process, SQLite-compatible). Experimental; no remote support.
 - `test-utils`: Test helpers for internal testing
+- `mssql`: SQL Server via `tiberius` (untested, but present)
 - `benchmarks`: Criterion helpers for benches
 
 ## Example
