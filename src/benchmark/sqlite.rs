@@ -10,44 +10,48 @@ use crate::{
 
 use super::common::{generate_insert_statements, get_benchmark_rows};
 
-static SQLITE_INSTANCE: LazyLock<Mutex<Option<(ConfigAndPool, String)>>> = 
+static SQLITE_INSTANCE: LazyLock<Mutex<Option<(ConfigAndPool, String)>>> =
     LazyLock::new(|| Mutex::new(None));
 
 pub async fn get_sqlite_instance() -> ConfigAndPool {
     let mut instance_guard = SQLITE_INSTANCE.lock().unwrap();
-    
+
     if instance_guard.is_none() {
         println!("Setting up SQLite instance (one-time setup)...");
         let db_path = "benchmark_sqlite_global.db".to_string();
-        
+
         let config_and_pool = setup_sqlite_db(&db_path).await.unwrap();
-        
+
         *instance_guard = Some((config_and_pool, db_path));
         println!("SQLite instance ready!");
     }
-    
+
     let (config_and_pool, _) = instance_guard.as_ref().unwrap();
     config_and_pool.clone()
 }
 
-pub async fn clean_sqlite_tables(config_and_pool: &ConfigAndPool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn clean_sqlite_tables(
+    config_and_pool: &ConfigAndPool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let pool = config_and_pool.pool.get().await?;
     let conn = MiddlewarePool::get_connection(pool).await?;
-    
+
     if let MiddlewarePoolConnection::Sqlite(sconn) = conn {
-        sconn.interact(move |conn| {
-            conn.execute("DROP TABLE IF EXISTS test", [])?;
-            
-            let create_sql = "CREATE TABLE IF NOT EXISTS test (
+        sconn
+            .interact(move |conn| {
+                conn.execute("DROP TABLE IF EXISTS test", [])?;
+
+                let create_sql = "CREATE TABLE IF NOT EXISTS test (
                 recid INTEGER PRIMARY KEY AUTOINCREMENT,
                 a int, b text, c datetime not null default current_timestamp,
                 d real, e boolean, f blob, g json,
                 h text, i text, j text, k text, l text, m text, n text, o text, p text
             )";
-            conn.execute(create_sql, [])?;
-            
-            Ok::<_, SqlMiddlewareDbError>(())
-        }).await??;
+                conn.execute(create_sql, [])?;
+
+                Ok::<_, SqlMiddlewareDbError>(())
+            })
+            .await??;
     }
     Ok(())
 }
@@ -91,43 +95,46 @@ pub fn benchmark_sqlite(c: &mut Criterion, rt: &Runtime) {
     let insert_statements = generate_insert_statements(num_rows);
     let mut group = c.benchmark_group("database_inserts");
 
-    group.bench_function(BenchmarkId::new("sqlite", format!("{}_rows", num_rows)), |b| {
-        let statements = insert_statements.clone();
-        b.to_async(rt).iter_custom(|iters| {
-            let statements = statements.clone();
-            async move {
-                let config_and_pool = get_sqlite_instance().await;
-                let mut total_duration = std::time::Duration::new(0, 0);
-                
-                for _i in 0..iters {
-                    clean_sqlite_tables(&config_and_pool).await.unwrap();
-                    let pool = config_and_pool.pool.get().await.unwrap();
-                    let sqlite_conn = MiddlewarePool::get_connection(pool).await.unwrap();
+    group.bench_function(
+        BenchmarkId::new("sqlite", format!("{}_rows", num_rows)),
+        |b| {
+            let statements = insert_statements.clone();
+            b.to_async(rt).iter_custom(|iters| {
+                let statements = statements.clone();
+                async move {
+                    let config_and_pool = get_sqlite_instance().await;
+                    let mut total_duration = std::time::Duration::new(0, 0);
 
-                    if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
-                        let insert_statements_copy = statements.clone();
-                        let start = std::time::Instant::now();
-                        
-                        sconn
-                            .interact(move |conn| {
-                                let tx = conn.transaction()?;
-                                tx.execute_batch(&insert_statements_copy)?;
-                                tx.commit()?;
-                                Ok::<_, SqlMiddlewareDbError>(())
-                            })
-                            .await
-                            .unwrap()
-                            .unwrap();
-                        
-                        let elapsed = start.elapsed();
-                        total_duration += elapsed;
+                    for _i in 0..iters {
+                        clean_sqlite_tables(&config_and_pool).await.unwrap();
+                        let pool = config_and_pool.pool.get().await.unwrap();
+                        let sqlite_conn = MiddlewarePool::get_connection(pool).await.unwrap();
+
+                        if let MiddlewarePoolConnection::Sqlite(sconn) = sqlite_conn {
+                            let insert_statements_copy = statements.clone();
+                            let start = std::time::Instant::now();
+
+                            sconn
+                                .interact(move |conn| {
+                                    let tx = conn.transaction()?;
+                                    tx.execute_batch(&insert_statements_copy)?;
+                                    tx.commit()?;
+                                    Ok::<_, SqlMiddlewareDbError>(())
+                                })
+                                .await
+                                .unwrap()
+                                .unwrap();
+
+                            let elapsed = start.elapsed();
+                            total_duration += elapsed;
+                        }
                     }
+
+                    total_duration
                 }
-                
-                total_duration
-            }
-        });
-    });
+            });
+        },
+    );
 
     group.finish();
 }

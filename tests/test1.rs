@@ -23,7 +23,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
         format!("{}_{}_{}.db", prefix, pid, ns)
     }
 
-    let  test_cases = vec![
+    let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
     ];

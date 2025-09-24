@@ -1,5 +1,5 @@
+use crate::libsql::{Params as LibsqlParams, build_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
-use crate::libsql::{build_result_set, Params as LibsqlParams};
 use deadpool_libsql::Object;
 
 /// Lightweight transaction wrapper for libsql using explicit BEGIN/COMMIT.
@@ -15,8 +15,7 @@ pub struct Prepared {
 }
 
 pub async fn begin_transaction<'a>(conn: &'a Object) -> Result<Tx<'a>, SqlMiddlewareDbError> {
-    conn
-        .execute_batch("BEGIN")
+    conn.execute_batch("BEGIN")
         .await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("libsql begin tx error: {e}")))?;
     Ok(Tx { conn })
@@ -24,22 +23,22 @@ pub async fn begin_transaction<'a>(conn: &'a Object) -> Result<Tx<'a>, SqlMiddle
 
 impl<'a> Tx<'a> {
     pub async fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
-        Ok(Prepared { sql: sql.to_owned() })
+        Ok(Prepared {
+            sql: sql.to_owned(),
+        })
     }
 
     pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
-        let _ = self.conn
-            .execute_batch("COMMIT")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("libsql commit error: {e}")))?;
+        let _ = self.conn.execute_batch("COMMIT").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("libsql commit error: {e}"))
+        })?;
         Ok(())
     }
 
     pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
-        let _ = self.conn
-            .execute_batch("ROLLBACK")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("libsql rollback error: {e}")))?;
+        let _ = self.conn.execute_batch("ROLLBACK").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("libsql rollback error: {e}"))
+        })?;
         Ok(())
     }
 
@@ -53,10 +52,14 @@ impl<'a> Tx<'a> {
             .conn
             .execute(&prepared.sql, converted.into_vec())
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("libsql execute(prepared) error: {e}")))?;
-        usize::try_from(affected).map_err(|e| SqlMiddlewareDbError::ExecutionError(format!(
-            "libsql affected rows conversion error: {e}"
-        )))
+            .map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("libsql execute(prepared) error: {e}"))
+            })?;
+        usize::try_from(affected).map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!(
+                "libsql affected rows conversion error: {e}"
+            ))
+        })
     }
 
     pub async fn query_prepared(
@@ -69,7 +72,9 @@ impl<'a> Tx<'a> {
             .conn
             .query(&prepared.sql, converted.into_vec())
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("libsql query(prepared) error: {e}")))?;
+            .map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("libsql query(prepared) error: {e}"))
+            })?;
         build_result_set(rows).await
     }
 }

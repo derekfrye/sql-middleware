@@ -81,7 +81,6 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             let tx = pgconn.transaction().await?;
             {
                 tx.batch_execute(stmt).await?;
-                
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(())
@@ -92,7 +91,6 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             let tx = pgconn.transaction().await?;
             {
                 tx.batch_execute(query).await?;
-                
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(())
@@ -125,10 +123,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         let result = ({
             let tx = pgconn.transaction().await?;
             let stmt = tx.prepare(query).await?;
-            let result_set = {
-                
-                postgres_build_result_set(&stmt, &[], &tx).await?
-            };
+            let result_set = { postgres_build_result_set(&stmt, &[], &tx).await? };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         })?;
@@ -180,7 +175,6 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             let tx = pgconn.transaction().await?;
             {
                 tx.batch_execute(query).await?;
-                
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(())

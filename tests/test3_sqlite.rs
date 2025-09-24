@@ -23,7 +23,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
         format!("{}_{}_{}.db", prefix, pid, ns)
     }
 
-    let  test_cases = vec![
+    let test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
     ];
@@ -157,7 +157,10 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
             // row 3
             assert_eq!(*res.results[2].get("recid").unwrap().as_int().unwrap(), 3);
             assert_eq!(*res.results[2].get("a").unwrap().as_int().unwrap(), 3);
-            assert_eq!(res.results[2].get("b").unwrap().as_text().unwrap(), "Charlie");
+            assert_eq!(
+                res.results[2].get("b").unwrap().as_text().unwrap(),
+                "Charlie"
+            );
             assert_eq!(
                 res.results[2].get("c").unwrap().as_timestamp().unwrap(),
                 NaiveDateTime::parse_from_str("2024-01-03 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
@@ -168,7 +171,10 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
             // param row (Juliet)
             assert_eq!(*res.results[3].get("a").unwrap().as_int().unwrap(), 100);
             assert_eq!(res.results[3].get("d").unwrap().as_float().unwrap(), 100.75);
-            assert_eq!(res.results[3].get("f").unwrap().as_blob().unwrap(), b"Blob11");
+            assert_eq!(
+                res.results[3].get("f").unwrap().as_blob().unwrap(),
+                b"Blob11"
+            );
 
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;

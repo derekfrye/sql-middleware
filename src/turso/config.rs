@@ -9,12 +9,16 @@ impl ConfigAndPool {
         let db = turso::Builder::new_local(&db_path)
             .build()
             .await
-            .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to create Turso database: {e}")))?;
+            .map_err(|e| {
+                SqlMiddlewareDbError::ConnectionError(format!(
+                    "Failed to create Turso database: {e}"
+                ))
+            })?;
 
         // Smoke-test a connection
-        let conn = db
-            .connect()
-            .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("Failed to connect Turso database: {e}")))?;
+        let conn = db.connect().map_err(|e| {
+            SqlMiddlewareDbError::ConnectionError(format!("Failed to connect Turso database: {e}"))
+        })?;
 
         // Best-effort pragmas for concurrency (ignore failure on in-memory/unsupported)
         let _ = conn.execute("PRAGMA journal_mode = WAL", ()).await;
@@ -25,4 +29,3 @@ impl ConfigAndPool {
         })
     }
 }
-

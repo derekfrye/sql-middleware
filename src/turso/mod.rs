@@ -16,4 +16,4 @@ pub mod transaction;
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
 pub use query::build_result_set;
-pub use transaction::{begin_transaction, with_transaction, Tx, Prepared};
+pub use transaction::{Prepared, Tx, begin_transaction, with_transaction};

@@ -55,9 +55,7 @@ pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqli
 }
 
 /// Bind middleware params to `SQLite` types.
-pub fn convert_params(
-    params: &[RowValues],
-) -> Vec<rusqlite::types::Value> {
+pub fn convert_params(params: &[RowValues]) -> Vec<rusqlite::types::Value> {
     let mut vec_values = Vec::with_capacity(params.len());
     for p in params {
         vec_values.push(row_value_to_sqlite_value(p, false));
@@ -66,9 +64,7 @@ pub fn convert_params(
 }
 
 /// Convert parameters for execution operations
-pub fn convert_params_for_execute<I>(
-    iter: I,
-) -> ParamsFromIter<std::vec::IntoIter<Value>>
+pub fn convert_params_for_execute<I>(iter: I) -> ParamsFromIter<std::vec::IntoIter<Value>>
 where
     I: IntoIterator<Item = RowValues>,
 {
@@ -124,9 +120,9 @@ impl ParamConverter<'_> for SqliteParamsExecute {
         mode: ConversionMode,
     ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         match mode {
-            ConversionMode::Execute => {
-                Ok(SqliteParamsExecute(convert_params_for_execute(params.to_vec())))
-            }
+            ConversionMode::Execute => Ok(SqliteParamsExecute(convert_params_for_execute(
+                params.to_vec(),
+            ))),
             // For queries you might not support the "execute" wrapper:
             ConversionMode::Query => Err(SqlMiddlewareDbError::ParameterError(
                 "SqliteParamsExecute can only be used with Execute mode".into(),

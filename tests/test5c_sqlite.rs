@@ -1,7 +1,7 @@
 #![cfg(feature = "sqlite")]
 
 use sql_middleware::prelude::*;
-use sql_middleware::{convert_sql_params, SqliteParamsExecute};
+use sql_middleware::{SqliteParamsExecute, convert_sql_params};
 
 #[test]
 fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
@@ -11,11 +11,13 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         let pool = cap.pool.get().await?;
         let mut conn = MiddlewarePool::get_connection(pool).await?;
 
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);").await?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")
+            .await?;
 
         if let MiddlewarePoolConnection::Sqlite(sqlite_obj) = &mut conn {
             let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
-            let converted = convert_sql_params::<SqliteParamsExecute>(&params, ConversionMode::Execute)?;
+            let converted =
+                convert_sql_params::<SqliteParamsExecute>(&params, ConversionMode::Execute)?;
 
             let _ = sqlite_obj
                 .interact(move |raw| {
@@ -33,8 +35,13 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             panic!("Expected SQLite connection");
         }
 
-        let rs = conn.execute_select("SELECT name FROM t WHERE id = ?1", &[RowValues::Int(1)]).await?;
-        assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "alice");
+        let rs = conn
+            .execute_select("SELECT name FROM t WHERE id = ?1", &[RowValues::Int(1)])
+            .await?;
+        assert_eq!(
+            rs.results[0].get("name").unwrap().as_text().unwrap(),
+            "alice"
+        );
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
     Ok(())

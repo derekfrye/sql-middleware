@@ -69,10 +69,7 @@ pub async fn build_result_set(
 }
 
 /// Extract a value from a row at a specific index
-fn extract_value(
-    row: &tiberius::Row,
-    idx: usize,
-) -> Option<RowValues> {
+fn extract_value(row: &tiberius::Row, idx: usize) -> Option<RowValues> {
     // Since Tiberius Row API is a bit complex and varies by version,
     // we'll use a simple approach by trying different value types
 

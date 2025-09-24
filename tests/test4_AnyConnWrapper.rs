@@ -54,7 +54,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         test_cases.push(TestCase::Turso(":memory:".to_string()));
         test_cases.push(TestCase::Turso(unique_path("test_turso")));
     }
-    
+
     // #[cfg(feature = "libsql")]
     // {
     //     test_cases.push(TestCase::Libsql(":memory:".to_string()));
@@ -82,7 +82,9 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     if connection_string != "file::memory:?cache=shared" {
                         let _ = std::fs::remove_file(connection_string);
                         Some(FileCleanup(vec![connection_string.clone()]))
-                    } else { None }
+                    } else {
+                        None
+                    }
                 }
                 #[cfg(feature = "turso")]
                 TestCase::Turso(connection_string) => {
@@ -91,7 +93,9 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = std::fs::remove_file(format!("{}-wal", connection_string));
                         let _ = std::fs::remove_file(format!("{}-shm", connection_string));
                         Some(FileCleanup(vec![connection_string.clone()]))
-                    } else { None }
+                    } else {
+                        None
+                    }
                 }
                 // #[cfg(feature = "libsql")]
                 // TestCase::Libsql(connection_string) => {
@@ -101,7 +105,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 // }
                 TestCase::Postgres(_) => None,
             };
-                
+
             match test_case {
                 TestCase::Sqlite(connection_string) => {
                     // Initialize Sqlite pool
@@ -130,17 +134,16 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Turso).await?;
-                }
-                // #[cfg(feature = "libsql")]
-                // TestCase::Libsql(connection_string) => {
-                //     // Initialize Libsql pool
-                //     let config_and_pool = ConfigAndPool2::new_libsql(connection_string).await?;
-                //     let pool = config_and_pool.pool.get().await?;
-                //     let mut conn = MiddlewarePool::get_connection(&pool).await?;
+                } // #[cfg(feature = "libsql")]
+                  // TestCase::Libsql(connection_string) => {
+                  //     // Initialize Libsql pool
+                  //     let config_and_pool = ConfigAndPool2::new_libsql(connection_string).await?;
+                  //     let pool = config_and_pool.pool.get().await?;
+                  //     let mut conn = MiddlewarePool::get_connection(&pool).await?;
 
-                //     // Execute test logic
-                //     run_test_logic(&mut conn, DatabaseType::Libsql).await?;
-                // }
+                  //     // Execute test logic
+                  //     run_test_logic(&mut conn, DatabaseType::Libsql).await?;
+                  // }
             }
         }
 
@@ -517,11 +520,7 @@ async fn run_test_logic(
                     )?;
                     let mut stmt = tx.prepare(&query_and_params_vec.query)?;
                     let result_set = {
-                        
-                        sql_middleware::sqlite_build_result_set(
-                            &mut stmt,
-                            &converted_params.0,
-                        )?
+                        sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?
                     };
                     assert_eq!(result_set.results.len(), 1);
                     assert_eq!(
@@ -553,8 +552,10 @@ async fn run_test_logic(
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso(_) => {
             // Execute twice (align with Postgres/SQLite behavior in this section)
-            conn.execute_dml(&query_and_params.query, &query_and_params.params).await?;
-            conn.execute_dml(&query_and_params.query, &query_and_params.params).await?;
+            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+                .await?;
+            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+                .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
     })?;

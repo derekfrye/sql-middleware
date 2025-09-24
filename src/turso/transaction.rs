@@ -1,8 +1,10 @@
 use std::future::Future;
-use std::sync::Arc;
 use std::pin::Pin;
+use std::sync::Arc;
 
-use crate::middleware::{ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
+};
 use crate::turso::params::Params as TursoParams;
 
 /// Lightweight transaction wrapper for Turso.
@@ -25,11 +27,9 @@ pub struct Prepared {
 impl<'a> Tx<'a> {
     /// Prepare a SQL statement tied to this transaction's connection.
     pub async fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
-        let stmt = self
-            .conn
-            .prepare(sql)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}")))?;
+        let stmt = self.conn.prepare(sql).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
+        })?;
 
         let cols = stmt
             .columns()
@@ -45,10 +45,9 @@ impl<'a> Tx<'a> {
 
     /// Execute a batch of SQL statements within the transaction.
     pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        self.conn
-            .execute_batch(sql)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute_batch error: {e}")))
+        self.conn.execute_batch(sql).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute_batch error: {e}"))
+        })
     }
 
     /// Execute a parameterized DML statement and return affected rows.
@@ -57,15 +56,16 @@ impl<'a> Tx<'a> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted = <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
-        let affected = self
-            .conn
-            .execute(query, converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute error: {e}")))?;
-        usize::try_from(affected).map_err(|e| SqlMiddlewareDbError::ExecutionError(format!(
-            "Turso affected rows conversion error: {e}"
-        )))
+        let converted =
+            <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let affected = self.conn.execute(query, converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute error: {e}"))
+        })?;
+        usize::try_from(affected).map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!(
+                "Turso affected rows conversion error: {e}"
+            ))
+        })
     }
 
     /// Execute a prepared DML and return affected row count.
@@ -74,15 +74,16 @@ impl<'a> Tx<'a> {
         prepared: &mut Prepared,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted = <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
-        let affected = prepared
-            .stmt
-            .execute(converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute(prepared) error: {e}")))?;
-        usize::try_from(affected).map_err(|e| SqlMiddlewareDbError::ExecutionError(format!(
-            "Turso affected rows conversion error: {e}"
-        )))
+        let converted =
+            <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let affected = prepared.stmt.execute(converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute(prepared) error: {e}"))
+        })?;
+        usize::try_from(affected).map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!(
+                "Turso affected rows conversion error: {e}"
+            ))
+        })
     }
 
     /// Execute a parameterized SELECT and return a `ResultSet`.
@@ -91,14 +92,13 @@ impl<'a> Tx<'a> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted = <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let converted =
+            <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
 
         // Prepare to fetch column names, then run using same statement to avoid double-prepare.
-        let mut stmt = self
-            .conn
-            .prepare(query)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso tx prepare error: {e}")))?;
+        let mut stmt = self.conn.prepare(query).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx prepare error: {e}"))
+        })?;
 
         let cols = stmt
             .columns()
@@ -107,10 +107,9 @@ impl<'a> Tx<'a> {
             .collect::<Vec<_>>();
         let cols_arc = Arc::new(cols);
 
-        let rows = stmt
-            .query(converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso tx query error: {e}")))?;
+        let rows = stmt.query(converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx query error: {e}"))
+        })?;
 
         crate::turso::query::build_result_set(rows, Some(cols_arc)).await
     }
@@ -121,12 +120,11 @@ impl<'a> Tx<'a> {
         prepared: &mut Prepared,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted = <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
-        let rows = prepared
-            .stmt
-            .query(converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso tx query(prepared) error: {e}")))?;
+        let converted =
+            <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let rows = prepared.stmt.query(converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx query(prepared) error: {e}"))
+        })?;
         crate::turso::query::build_result_set(rows, Some(prepared.cols.clone())).await
     }
 
@@ -148,11 +146,12 @@ impl<'a> Tx<'a> {
 }
 
 /// Begin a new transaction for the given connection.
-pub async fn begin_transaction<'a>(conn: &'a turso::Connection) -> Result<Tx<'a>, SqlMiddlewareDbError> {
-    conn
-        .execute_batch("BEGIN")
-        .await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso begin transaction error: {e}")))?;
+pub async fn begin_transaction<'a>(
+    conn: &'a turso::Connection,
+) -> Result<Tx<'a>, SqlMiddlewareDbError> {
+    conn.execute_batch("BEGIN").await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("Turso begin transaction error: {e}"))
+    })?;
     Ok(Tx { conn })
 }
 
@@ -162,7 +161,9 @@ pub async fn with_transaction<F, T>(
     f: F,
 ) -> Result<T, SqlMiddlewareDbError>
 where
-    F: for<'a> FnOnce(&'a Tx<'a>) -> Pin<Box<dyn Future<Output = Result<T, SqlMiddlewareDbError>> + 'a>>,
+    F: for<'a> FnOnce(
+        &'a Tx<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<T, SqlMiddlewareDbError>> + 'a>>,
 {
     let tx = begin_transaction(conn).await?;
     let res = f(&tx).await;

@@ -10,7 +10,8 @@ fn test5b_libsql_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         let pool = cap.pool.get().await?;
         let mut conn = MiddlewarePool::get_connection(pool).await?;
 
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);").await?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")
+            .await?;
 
         // LibSQL vs 5a (Postgres): we don't want a "client" from a deadpool object here.
         // Instead, begin a transaction via the middleware helper so we can use our custom `prepare` API.
@@ -25,7 +26,9 @@ fn test5b_libsql_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         // LibSQL differences vs 5a (postgres) example:
         // - SQLite-style placeholders (?1, ?2) instead of Postgres $1, $2
         // - No explicit convert_sql_params call req'd; libsql prepared helpers accept &[RowValues] directly
-        let stmt = tx.prepare("INSERT INTO t (id, name) VALUES (?1, ?2)").await?;
+        let stmt = tx
+            .prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")
+            .await?;
         let _ = tx
             .execute_prepared(&stmt, &[RowValues::Int(1), RowValues::Text("alice".into())])
             .await?;
@@ -35,7 +38,10 @@ fn test5b_libsql_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         let rs = conn
             .execute_select("SELECT name FROM t WHERE id = ?1", &[RowValues::Int(1)])
             .await?;
-        assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "alice");
+        assert_eq!(
+            rs.results[0].get("name").unwrap().as_text().unwrap(),
+            "alice"
+        );
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
     Ok(())

@@ -42,7 +42,11 @@ pub fn build_result_set(
     params: &[Value],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-    let column_names: Vec<String> = stmt.column_names().iter().map(std::string::ToString::to_string).collect();
+    let column_names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);
