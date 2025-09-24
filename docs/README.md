@@ -143,7 +143,7 @@ SQLite / LibSQL / Turso
 // PostgreSQL uses $-style placeholders
 let q = QueryAndParams::new(
     "INSERT INTO test (espn_id, name
-    , ins_ts) VALUES ($1, $2, $3)",
+        , ins_ts) VALUES ($1, $2, $3)",
     vec![
         RowValues::Int(123456),
         RowValues::Text(
@@ -156,7 +156,7 @@ let q = QueryAndParams::new(
     ],
 );
 
-// Execute directly with RowValues; middleware converts internally
+// Execute directly with RowValues
 conn.execute_dml(&q.query, &q.params).await?;
 ```
 
@@ -164,9 +164,10 @@ conn.execute_dml(&q.query, &q.params).await?;
 <td>
 
 ```rust
-// SQLite-compatible backends use ? or ?N placeholders
+// SQLite-compatible backends use ? or ?N
 let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name, ins_ts) VALUES (?1, ?2, ?3)",
+    "INSERT INTO test (espn_id, name
+        , ins_ts) VALUES (?1, ?2, ?3)",
     vec![
         RowValues::Int(123456),
         RowValues::Text(
