@@ -109,8 +109,6 @@ let conn = MiddlewarePool
 </tr>
 </table>
 
-Note: Turso now exposes a transaction helper through this middleware. Use `turso::with_transaction(&conn, |tx| async move { ... })` or `turso::begin_transaction(&conn)` to drive custom logic between `BEGIN`/`COMMIT`, similar in spirit to the PostgreSQL/LibSQL flow below.
-
 Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the constructor as needed: `new_sqlite(path)`, `new_libsql(path)`, or `new_turso(path)`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
 
 ### Batch query w/o params
@@ -144,11 +142,14 @@ SQLite / LibSQL / Turso
 ```rust
 // PostgreSQL uses $-style placeholders
 let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)",
+    "INSERT INTO test (espn_id, name
+    , ins_ts) VALUES ($1, $2, $3)",
     vec![
         RowValues::Int(123456),
-        RowValues::Text("test name".to_string()),
-        RowValues::Timestamp(NaiveDateTime::parse_from_str(
+        RowValues::Text(
+            "test name".to_string()),
+        RowValues::Timestamp(
+            NaiveDateTime::parse_from_str(
             "2021-08-06 16:00:00",
             "%Y-%m-%d %H:%M:%S",
         )?),
@@ -168,8 +169,10 @@ let q = QueryAndParams::new(
     "INSERT INTO test (espn_id, name, ins_ts) VALUES (?1, ?2, ?3)",
     vec![
         RowValues::Int(123456),
-        RowValues::Text("test name".to_string()),
-        RowValues::Timestamp(NaiveDateTime::parse_from_str(
+        RowValues::Text(
+            "test name".to_string()),
+        RowValues::Timestamp(
+            NaiveDateTime::parse_from_str(
             "2021-08-06 16:00:00",
             "%Y-%m-%d %H:%M:%S",
         )?),
@@ -201,13 +204,13 @@ let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 
 ### Transactions with custom logic
 
-See minimal, copy‑pasteable examples in the tests directory:
+Here, the APIs differ a bit, because the underlying libraries are different. It doesn't appear easy to make these consistent without hiding underlying library capabilities. This is the most similar way to do queries w this middleware if you need custom app logic between `transaction()` and `commit()`.
+
+See further examples in the tests directory:
 - [PostgreSQL](../tests/test5a_postgres.rs)
 - [LibSQL](../tests/test5b_libsql.rs)
 - [SQLite](../tests/test5c_sqlite.rs)
 - [Turso](../tests/test5d_turso.rs)
-
-Here, the APIs differ a bit, because the underlying libraries are different. It doesn't appear easy to make these consistent without hiding underlying library capabilities. This is the most similar way to do queries w this middleware if you need custom app logic between `transaction()` and `commit()`. [^1][^2][^3]
 
 <table>
 <tr>
@@ -229,9 +232,11 @@ let pg_conn = match &conn {
     _ => panic!("Expected Postgres connection"),
 };
 
-// Get client (no deadpool support for Turso; run txn off the conn)
+// Get client
+// (no deadpool support for Turso; run txn from conn)
 sql_middleware::turso::begin_transaction(t)
-let client: &mut tokio_postgres::Client = pg_conn.as_mut();
+let client: &mut tokio_postgres::Client 
+    = pg_conn.as_mut();
 
 // Begin transaction
 // Turso: `let tx = turso::begin_transaction(t).await?;`
@@ -240,11 +245,12 @@ let tx = client.transaction().await?;
 // could run custom logic anywhere between stmts
 
 // Prepare statement
-// Turso: `let mut stmt = tx.prepare("... ?1, ?2 ...").await?;`
+// Turso: `let mut stmt 
+//      = tx.prepare("... ?1, ?2 ...").await?;`
 let stmt = tx.prepare(&q.query).await?;
 
 // Convert parameters (Postgres)
-// Turso/LibSQL prepared helpers accept `&[RowValues]` directly
+// Turso/LibSQL prepared accept `&[RowValues]` directly
 let converted_params = 
     convert_sql_params::<PostgresParams>(
         &q.params,
