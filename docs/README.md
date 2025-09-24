@@ -149,7 +149,7 @@ let q = QueryAndParams::new(
         RowValues::Text(
             "test name".to_string()),
         RowValues::Timestamp(
-            NaiveDateTime::parse_from_str(
+            parse_from_str(
             "2021-08-06 16:00:00",
             "%Y-%m-%d %H:%M:%S",
         )?),
@@ -157,7 +157,8 @@ let q = QueryAndParams::new(
 );
 
 // Execute directly with RowValues
-conn.execute_dml(&q.query, &q.params).await?;
+conn.execute_dml(&q.query, &q.params)
+    .await?;
 ```
 
 </td>
@@ -173,15 +174,16 @@ let q = QueryAndParams::new(
         RowValues::Text(
             "test name".to_string()),
         RowValues::Timestamp(
-            NaiveDateTime::parse_from_str(
+            parse_from_str(
             "2021-08-06 16:00:00",
             "%Y-%m-%d %H:%M:%S",
         )?),
     ],
 );
 
-// Works the same for SQLite, LibSQL, and Turso
-conn.execute_dml(&q.query, &q.params).await?;
+// The same for all `sqlite` variants
+conn.execute_dml(&q.query, &q.params)
+    .await?;
 ```
 
 </td>
@@ -228,7 +230,7 @@ SQLite
 ```rust
 // Get db-specific connection
 let pg_conn = match &conn {
-    MiddlewarePoolConnection::Postgres(pg)
+    Postgres(pg)
         => pg,
     _ => panic!("Expected connection"),
 };
@@ -279,7 +281,7 @@ tx.commit().await?;
 ```rust
 // Get SQLite-specific connection
 let sqlite_conn = match &conn {
-    MiddlewarePoolConnection::Sqlite(sqlite)
+    Sqlite(sqlite)
         => sqlite,
     _ => panic!("Expected connection"),
 };
