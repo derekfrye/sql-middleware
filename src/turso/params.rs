@@ -34,7 +34,7 @@ fn convert_params(params: &[RowValues]) -> turso::params::Params {
     turso::params::Params::Positional(values)
 }
 
-fn convert_params_for_execute(params: Vec<RowValues>) -> turso::params::Params {
+fn convert_params_for_execute(params: &[RowValues]) -> turso::params::Params {
     let values: Vec<turso::Value> = params
         .iter()
         .map(|p| row_value_to_turso_value(p, true))
@@ -51,7 +51,7 @@ impl ParamConverter<'_> for Params {
     ) -> Result<Self::Converted, SqlMiddlewareDbError> {
         match mode {
             ConversionMode::Query => Ok(Params(convert_params(params))),
-            ConversionMode::Execute => Ok(Params(convert_params_for_execute(params.to_vec()))),
+            ConversionMode::Execute => Ok(Params(convert_params_for_execute(params))),
         }
     }
 

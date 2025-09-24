@@ -24,8 +24,12 @@ pub struct Prepared {
     cols: Arc<Vec<String>>, // cached column names for fast ResultSet builds
 }
 
-impl<'a> Tx<'a> {
+impl Tx<'_> {
     /// Prepare a SQL statement tied to this transaction's connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when the underlying Turso prepare call fails.
     pub async fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
         let stmt = self.conn.prepare(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
@@ -44,6 +48,10 @@ impl<'a> Tx<'a> {
     }
 
     /// Execute a batch of SQL statements within the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when the Turso batch execution fails.
     pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         self.conn.execute_batch(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute_batch error: {e}"))
@@ -51,6 +59,11 @@ impl<'a> Tx<'a> {
     }
 
     /// Execute a parameterized DML statement and return affected rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when executing the statement fails or the affected row
+    /// count cannot be converted to `usize`.
     pub async fn execute_dml(
         &self,
         query: &str,
@@ -69,6 +82,11 @@ impl<'a> Tx<'a> {
     }
 
     /// Execute a prepared DML and return affected row count.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when executing the prepared statement fails or the
+    /// affected row count cannot be converted to `usize`.
     pub async fn execute_prepared(
         &self,
         prepared: &mut Prepared,
@@ -87,6 +105,11 @@ impl<'a> Tx<'a> {
     }
 
     /// Execute a parameterized SELECT and return a `ResultSet`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when preparing/executing the statement or building the
+    /// `ResultSet` fails.
     pub async fn execute_select(
         &self,
         query: &str,
@@ -115,6 +138,11 @@ impl<'a> Tx<'a> {
     }
 
     /// Execute a prepared SELECT and return a `ResultSet`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when running the prepared statement or building the
+    /// `ResultSet` fails.
     pub async fn query_prepared(
         &self,
         prepared: &mut Prepared,
@@ -129,6 +157,10 @@ impl<'a> Tx<'a> {
     }
 
     /// Commit the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when issuing the COMMIT statement fails.
     pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
         self.conn
             .execute_batch("COMMIT")
@@ -137,6 +169,10 @@ impl<'a> Tx<'a> {
     }
 
     /// Roll back the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` when issuing the ROLLBACK statement fails.
     pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
         self.conn
             .execute_batch("ROLLBACK")
@@ -146,9 +182,13 @@ impl<'a> Tx<'a> {
 }
 
 /// Begin a new transaction for the given connection.
-pub async fn begin_transaction<'a>(
-    conn: &'a turso::Connection,
-) -> Result<Tx<'a>, SqlMiddlewareDbError> {
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` when issuing the BEGIN statement fails.
+pub async fn begin_transaction(
+    conn: &turso::Connection,
+) -> Result<Tx<'_>, SqlMiddlewareDbError> {
     conn.execute_batch("BEGIN").await.map_err(|e| {
         SqlMiddlewareDbError::ExecutionError(format!("Turso begin transaction error: {e}"))
     })?;
@@ -156,6 +196,12 @@ pub async fn begin_transaction<'a>(
 }
 
 /// Run a closure inside a transaction, committing on success, rolling back on error.
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` if beginning the transaction or committing fails, or if the
+/// provided closure returns an error. Rollback errors are ignored because the rollback is
+/// already part of the error path.
 pub async fn with_transaction<F, T>(
     conn: &turso::Connection,
     f: F,

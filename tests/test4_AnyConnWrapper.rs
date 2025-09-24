@@ -93,7 +93,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     if connection_string == ":memory:" {
                         None
                     } else {
-                        let _ = std::fs::remove_file(&connection_string);
+                        let _ = std::fs::remove_file(connection_string);
                         let _ = std::fs::remove_file(format!("{connection_string}-wal"));
                         let _ = std::fs::remove_file(format!("{connection_string}-shm"));
                         Some(FileCleanup(vec![connection_string.clone()]))
@@ -132,7 +132,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Initialize Turso connection (no deadpool pooling)
                     let config_and_pool = ConfigAndPool2::new_turso(connection_string).await?;
                     let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+                    let mut conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
                     run_test_logic(&mut conn, DatabaseType::Turso).await?;
@@ -339,7 +339,7 @@ async fn run_test_logic(
         #[cfg(feature = "turso")]
         DatabaseType::Turso => {
             for param in params {
-                conn.execute_dml(&parameterized_query, &param).await?;
+                conn.execute_dml(parameterized_query, &param).await?;
             }
         }
         #[cfg(feature = "libsql")]
@@ -444,12 +444,12 @@ async fn run_test_logic(
                 conn.execute_dml(parameterized_query, &param).await?;
             }
         }
-        #[cfg(feature = "turso")]
-        DatabaseType::Turso => {
-            for param in params {
-                conn.execute_dml(&parameterized_query, &param).await?;
-            }
-        }
+                #[cfg(feature = "turso")]
+                DatabaseType::Turso => {
+                    for param in params {
+                        conn.execute_dml(parameterized_query, &param).await?;
+                    }
+                }
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => {
             // LibSQL is SQLite-compatible, use middleware connection

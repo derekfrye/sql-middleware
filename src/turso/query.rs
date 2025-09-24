@@ -1,6 +1,11 @@
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Build a result set from a Turso query execution
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` when fetching rows or converting column values from the
+/// Turso client fails.
 pub async fn build_result_set(
     mut rows: turso::Rows,
     column_names: Option<std::sync::Arc<Vec<String>>>,

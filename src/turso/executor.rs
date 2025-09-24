@@ -4,6 +4,10 @@ use crate::middleware::{
 use crate::turso::params::Params as TursoParams;
 
 /// Execute a batch of SQL statements for Turso
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` when the underlying Turso batch execution fails.
 pub async fn execute_batch(
     turso_conn: &turso::Connection,
     query: &str,
@@ -14,6 +18,11 @@ pub async fn execute_batch(
 }
 
 /// Execute a SELECT query for Turso and return a `ResultSet`
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` when preparing or running the query fails, or when
+/// converting rows into the middleware `ResultSet` fails.
 pub async fn execute_select(
     turso_conn: &turso::Connection,
     query: &str,
@@ -46,6 +55,11 @@ pub async fn execute_select(
 }
 
 /// Execute a DML statement for Turso and return affected row count
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` when executing the statement fails or the affected row
+/// count cannot be converted to `usize`.
 pub async fn execute_dml(
     turso_conn: &turso::Connection,
     query: &str,

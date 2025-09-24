@@ -9,15 +9,14 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         // Turso isn't pooled in via deadpool yet; `get_connection` creates a fresh connection each time.
         let cap = ConfigAndPool::new_turso(":memory:".to_string()).await?;
         let pool = cap.pool.get().await?;
-        let mut conn = MiddlewarePool::get_connection(&pool).await?;
+        let mut conn = MiddlewarePool::get_connection(pool).await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")
             .await?;
 
         // same pattern as LibSQL (test5b) for starting a transaction via helper
-        let turso_conn = match &conn {
-            MiddlewarePoolConnection::Turso(c) => c,
-            _ => panic!("Expected Turso connection"),
+        let MiddlewarePoolConnection::Turso(turso_conn) = &conn else {
+            panic!("Expected Turso connection");
         };
         // Begin a transaction via Turso helper (mirrors LibSQL's helper-based begin)
         let tx = sql_middleware::turso::begin_transaction(turso_conn).await?;
