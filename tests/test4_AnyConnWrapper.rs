@@ -444,12 +444,12 @@ async fn run_test_logic(
                 conn.execute_dml(parameterized_query, &param).await?;
             }
         }
-                #[cfg(feature = "turso")]
-                DatabaseType::Turso => {
-                    for param in params {
-                        conn.execute_dml(parameterized_query, &param).await?;
-                    }
-                }
+        #[cfg(feature = "turso")]
+        DatabaseType::Turso => {
+            for param in params {
+                conn.execute_dml(parameterized_query, &param).await?;
+            }
+        }
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => {
             // LibSQL is SQLite-compatible, use middleware connection

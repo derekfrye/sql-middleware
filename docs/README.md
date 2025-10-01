@@ -33,6 +33,8 @@ Available features:
 
 More examples available in the [tests dir](../tests/), and this is in-use with a tiny little website app, [rusty-golf](https://github.com/derekfrye/rusty-golf).
 
+Looking for performance numbers? See [Benchmarks](./Benchmarks.md) for details on the existing Criterion suites and what they measure today.
+
 ### Importing
 
 You can use the prelude to import everything you need, or import item by item.

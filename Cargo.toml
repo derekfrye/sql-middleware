@@ -64,9 +64,14 @@ criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
 sql-middleware = { path = ".", features = ["test-utils", "benchmarks", "mssql", "libsql", "turso"] }
+rusqlite = "0"
 
 [[bench]]
 name = "database_benchmark"
+harness = false
+
+[[bench]]
+name = "bench_rusqlite_single_row_lookup"
 harness = false
 
 [profile.bench]

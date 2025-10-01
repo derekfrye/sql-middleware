@@ -186,9 +186,7 @@ impl Tx<'_> {
 /// # Errors
 ///
 /// Returns `SqlMiddlewareDbError` when issuing the BEGIN statement fails.
-pub async fn begin_transaction(
-    conn: &turso::Connection,
-) -> Result<Tx<'_>, SqlMiddlewareDbError> {
+pub async fn begin_transaction(conn: &turso::Connection) -> Result<Tx<'_>, SqlMiddlewareDbError> {
     conn.execute_batch("BEGIN").await.map_err(|e| {
         SqlMiddlewareDbError::ExecutionError(format!("Turso begin transaction error: {e}"))
     })?;
