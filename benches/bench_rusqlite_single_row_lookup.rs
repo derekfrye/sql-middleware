@@ -1,3 +1,7 @@
+//! Criterion comparison of single-row SELECT latency for raw `rusqlite` vs. the
+//! sql-middleware abstraction. Each iteration reuses the same seeded dataset so
+//! we focus on call overhead instead of storage effects.
+
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
@@ -12,6 +16,7 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
+/// Holds the reusable on-disk database path plus deterministic id workload.
 struct Dataset {
     path: String,
     ids: Vec<i64>,
@@ -27,6 +32,7 @@ impl Dataset {
     }
 }
 
+// Prepare a shared SQLite file once so both benchmark variants hit identical data.
 static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
     let row_count = lookup_row_count();
     let path = PathBuf::from("benchmark_sqlite_single_lookup.db");
@@ -42,9 +48,11 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
     }
 });
 
+// Dedicated runtime for the async middleware path.
 static TOKIO_RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Runtime::new().expect("create tokio runtime"));
 
+/// Resolve how many lookups each iteration should perform.
 fn lookup_row_count() -> usize {
     std::env::var("BENCH_LOOKUPS")
         .ok()
@@ -57,6 +65,7 @@ fn lookup_row_count() -> usize {
         .unwrap_or(1000)
 }
 
+/// Create a fresh SQLite file with predictable contents for repeatable runs.
 fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> rusqlite::Result<()> {
     if path.exists() {
         fs::remove_file(path)?;
@@ -92,6 +101,7 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> rusqlite::Result<()>
     Ok(())
 }
 
+/// Compact struct used in both benchmark variants to ensure identical decoding cost.
 #[derive(Debug)]
 struct BenchRow {
     id: i64,
@@ -142,6 +152,7 @@ impl BenchRow {
     }
 }
 
+/// Raw `rusqlite` baseline using a cached prepared statement on a single connection.
 fn benchmark_rusqlite_direct(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
@@ -174,6 +185,7 @@ fn benchmark_rusqlite_direct(
     });
 }
 
+/// Middleware variant that goes through `MiddlewarePoolConnection::execute_select`.
 fn benchmark_middleware(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
