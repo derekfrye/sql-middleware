@@ -34,7 +34,7 @@ impl Dataset {
 
 // Prepare a shared SQLite file once so both benchmark variants hit identical data.
 static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
-    let row_count = lookup_row_count();
+    let row_count = lookup_row_count_to_run();
     let path = PathBuf::from("benchmark_sqlite_single_lookup.db");
     prepare_sqlite_dataset(&path, row_count).expect("failed to prepare SQLite dataset");
 
@@ -53,7 +53,7 @@ static TOKIO_RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Runtime::new().expect("create tokio runtime"));
 
 /// Resolve how many lookups each iteration should perform.
-fn lookup_row_count() -> usize {
+fn lookup_row_count_to_run() -> usize {
     std::env::var("BENCH_LOOKUPS")
         .ok()
         .and_then(|value| value.parse().ok())

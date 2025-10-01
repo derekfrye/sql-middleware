@@ -21,6 +21,13 @@ Because the batch string is executed verbatim against the backend-specific drive
 - Executes the batch via `rusqlite::Connection::transaction().execute_batch` inside the timed block.
 - The middleware contributes only pool acquisition and the routing that exposes the underlying `rusqlite` connection.
 
+### SQLite single-row lookup vs rusqlite (`benches/bench_rusqlite_single_row_lookup.rs`)
+- Seeds a deterministic `test` table, then times repeated `SELECT ... WHERE id = ?1` calls against the same shuffled id sequence.
+- Baseline: raw `rusqlite` connection with a cached prepared statement and direct struct decoding (`BenchRow`).
+- Middleware: uses `ConfigAndPool::new_sqlite`, pulls a pooled connection, and runs `execute_select` with recycled `RowValues`, converting the returned `ResultSet` into the same struct.
+- Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BENCH_ROWS`) to change the dataset size; defaults to 1 000 ids.
+- Focus is the per-call overhead of the middleware layer compared to the underlying driver, since both share the same data file and access pattern.
+
 ### PostgreSQL (`src/benchmark/postgres.rs`)
 - Spins up an embedded PostgreSQL instance on first use, creates the schema, and caches both the instance and the associated connection pool.
 - Each iteration recreates the `test` table, then runs the SQL batch inside a single `tokio_postgres` transaction before committing.
