@@ -4,6 +4,20 @@ Targets
 - Keep files ≤ 200 LOC where practical.
 - Keep functions ≤ 50 LOC where practical.
 
+Backend Duplication Hotspots
+- Repeated `ConfigAndPool::new_*` constructors across backends (`src/sqlite/config.rs`, `src/libsql/config.rs`, `src/postgres/config.rs`, `src/mssql/config.rs`, `src/turso/config.rs`) follow the same pool-init + smoke-test pattern with backend-specific wiring.
+- Execution helpers (`execute_batch`, `execute_select`, `execute_dml`) share nearly identical control flow in `src/*/executor.rs`, differing mostly in adapter calls and error wording.
+- Parameter conversion layers duplicate the mapping from `RowValues` into driver-native types and timestamp formatting logic in `src/*/params.rs`.
+- Result-set builders mirror each other when walking columns/rows to populate `ResultSet` (`src/*/query.rs`).
+- Transaction wrappers for libsql-like engines (`src/libsql/transaction.rs`, `src/turso/transaction.rs`) expose the same BEGIN/COMMIT/ROLLBACK and prepared-statement surface.
+- Module scaffolding (`src/*/mod.rs`) re-exports the same API sets with only backend names changed.
+
+Proposed Next Steps
+- Extract shared traits/helpers for pool creation and CRUD execution paths so backends only provide driver-specific pieces (e.g., pool builder + type aliases).
+- Centralise `RowValues` conversion and timestamp formatting into reusable helpers to avoid diverging behaviour between adapters.
+- Consolidate result-set assembly into backend-agnostic utilities (parameterised by column/value extractor) to trim repeated loops.
+- Explore a lightweight macro or template to cut down on the identical `mod.rs` re-export boilerplate per backend.
+
 Scan Summary
 - Files > 200 LOC
   - 493 lines — `tests/test4_AnyConnWrapper.rs`
