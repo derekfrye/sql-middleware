@@ -2,7 +2,7 @@
 //! sql-middleware abstraction. Each iteration reuses the same seeded dataset so
 //! we focus on call overhead instead of storage effects.
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
@@ -10,6 +10,7 @@ use rusqlite::{Connection, Row, params};
 use sql_middleware::{AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, RowValues};
 use std::cell::RefCell;
 use std::fs;
+use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::LazyLock;
@@ -68,10 +69,10 @@ fn lookup_row_count_to_run() -> usize {
 /// Create a fresh SQLite file with predictable contents for repeatable runs.
 fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> rusqlite::Result<()> {
     if path.exists() {
-        fs::remove_file(path)?;
+        let _ = fs::remove_file(path);
     }
 
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.execute_batch(
         "
         PRAGMA journal_mode = WAL;
@@ -103,6 +104,7 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> rusqlite::Result<()>
 
 /// Compact struct used in both benchmark variants to ensure identical decoding cost.
 #[derive(Debug)]
+#[allow(dead_code)]
 struct BenchRow {
     id: i64,
     name: String,
@@ -193,19 +195,19 @@ fn benchmark_middleware(
     let ids = dataset.ids().to_vec();
     let runtime = &*TOKIO_RUNTIME;
 
-    let config_and_pool = runtime
-        .block_on(ConfigAndPool::new_sqlite(dataset.path().to_string()))
-        .expect("create middleware pool");
-    let middleware_pool = config_and_pool.pool.clone();
-
     group.bench_function(BenchmarkId::new("middleware", ids.len()), |b| {
         let ids = ids.clone();
-        let pool = middleware_pool.clone();
+        let path = dataset.path().to_string();
         b.to_async(runtime).iter_custom(move |iters| {
             let ids = ids.clone();
-            let pool = pool.clone();
+            let path = path.clone();
             async move {
-                let mut conn = MiddlewarePool::get_connection(&pool)
+                let config_and_pool = ConfigAndPool::new_sqlite(path)
+                    .await
+                    .expect("create middleware pool");
+                let middleware_pool = config_and_pool.pool.clone();
+
+                let mut conn = MiddlewarePool::get_connection(&middleware_pool)
                     .await
                     .expect("acquire middleware connection");
                 let mut total = Duration::default();

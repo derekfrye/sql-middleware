@@ -18,7 +18,8 @@ postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
 libsql = ["deadpool-libsql"]
 turso = ["dep:turso"]
-test-utils = ["dep:postgresql_embedded"]
+test-utils-postgres = ["dep:postgresql_embedded"]
+test-utils = ["test-utils-postgres"]
 benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
 
 [dependencies]
@@ -63,7 +64,7 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", features = ["test-utils", "benchmarks", "mssql", "libsql", "turso"] }
+sql-middleware = { path = ".", features = ["benchmarks", "mssql", "libsql", "turso"] }
 rusqlite = "0"
 
 [[bench]]

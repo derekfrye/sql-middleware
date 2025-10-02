@@ -9,3 +9,4 @@ test_sqlite.db*
 test_libsql.db*
 test_turso.db
 test_turso.db-wal
+benchmark_sqlite_single_lookup.db

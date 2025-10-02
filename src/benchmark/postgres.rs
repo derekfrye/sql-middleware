@@ -1,12 +1,12 @@
+#![cfg(feature = "test-utils-postgres")]
+
 use criterion::{BenchmarkId, Criterion};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
 use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
-#[cfg(feature = "test-utils")]
 use crate::test_utils::postgres::EmbeddedPostgres;
-#[cfg(feature = "test-utils")]
 use postgresql_embedded::PostgreSQL;
 
 use super::common::{generate_postgres_insert_statements, get_benchmark_rows};
@@ -69,7 +69,6 @@ pub async fn clean_postgres_tables(
 /// # Errors
 /// Propagates any error that occurs while preparing the embedded database, creating users,
 /// or executing the schema initialisation SQL.
-#[cfg(feature = "test-utils")]
 async fn setup_postgres_db(
     db_user: &str,
     db_pass: &str,
