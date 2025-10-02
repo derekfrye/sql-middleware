@@ -1,32 +1,36 @@
 # Benchmarks
 
-This project ships Criterion benchmarks that focus on bulk `INSERT` performance for each supported backend. They exercise the middleware just enough to obtain a pooled connection, then measure how quickly the underlying database executes a batch of generated SQL statements. Use this guide to understand what happens when you run `cargo bench` and how to interpret the results.
+The project ships a small set of Criterion benchmarks that target two different questions:
 
-## Running the suite
-- `cargo bench` compiles `benches/database_benchmark.rs` and executes the `sqlite` and `postgres` Criterion groups by default. The LibSQL group is compiled only when the `libsql` feature is enabled, and it is currently excluded from the `criterion_main!` macro.
-- Row counts are controlled by the `BENCH_ROWS` environment variable (default: `10`). The helper `generate_*_insert_statements` functions in `benches/common.rs` prebuild a single SQL string containing that many `INSERT` statements, including JSON, blob, and text payloads.
-- Criterion’s `iter_custom` API wraps the actual work. Only the time spent inside the database execution block contributes to the reported measurements; setup, teardown, and pool access run outside the timed section.
+- **Bulk insert throughput** for each backend (`benches/database_benchmark.rs`).
+- **Single-row lookup overhead** comparing raw `rusqlite` usage with the middleware surface (`benches/bench_rusqlite_single_row_lookup.rs`).
 
-## Shared execution pattern
-1. Fetch (or lazily construct) a cached `ConfigAndPool` for the targeted backend.
-2. Drop and recreate the `test` table to guarantee a clean slate before every timed iteration.
-3. Borrow a concrete connection from the middleware pool.
-4. Start a transaction, execute the pre-generated SQL batch, commit, and accumulate the elapsed duration.
+Use this guide to see how each target is wired, which parts of the stack they exercise, and the knobs available when running `cargo bench`.
 
-Because the batch string is executed verbatim against the backend-specific driver, the results primarily report the database engine’s raw insert throughput plus the driver’s transaction overhead. Middleware logic beyond connection dispatch is not part of the measurement window.
+## Benchmark targets
+- `database_benchmark` – runs the traditional bulk insert groups for SQLite and PostgreSQL (LibSQL remains opt-in behind the `libsql` feature).
+- `bench_rusqlite_single_row_lookup` – measures repeated `SELECT ... WHERE id = ?` calls through raw rusqlite versus the middleware abstraction.
 
-## Backend specifics
+Run the whole suite with `cargo bench`, or focus on a single target via `cargo bench --bench <name>`. Criterion substring filters still apply, e.g. `cargo bench --bench database_benchmark -- sqlite`.
+
+## Configuration knobs
+- `BENCH_ROWS` controls the number of rows generated for bulk insert runs (default `10`).
+- `BENCH_LOOKUPS` controls how many ids are exercised per iteration in the single-row lookup benchmark (falls back to `BENCH_ROWS`, default `1_000`).
+
+Set either variable inline, for example `BENCH_ROWS=1000 cargo bench --bench database_benchmark`.
+
+## Bulk insert benchmark flow (`benches/database_benchmark.rs`)
+The insert-oriented groups follow the same high-level pattern:
+1. Lazily create and cache a `ConfigAndPool` plus any supporting state (embedded Postgres, on-disk SQLite file, etc.).
+2. Generate a deterministic batch of `INSERT` statements with synthetic payloads.
+3. For each timed iteration: drop/recreate the `test` table, borrow a concrete connection from the pool, execute the entire batch inside one transaction, and accumulate the elapsed time.
+
+Because the timed section delegates directly to the backend driver (rusqlite, tokio-postgres, libsql), the results mostly reflect the engine’s raw insert throughput along with driver transaction cost. Middleware code is involved only in connection acquisition and dispatch.
+
 ### SQLite (`src/benchmark/sqlite.rs`)
 - Uses a shared on-disk database (`benchmark_sqlite_global.db`) that is created once per benchmark run and removed during cleanup.
 - Executes the batch via `rusqlite::Connection::transaction().execute_batch` inside the timed block.
 - The middleware contributes only pool acquisition and the routing that exposes the underlying `rusqlite` connection.
-
-### SQLite single-row lookup vs rusqlite (`benches/bench_rusqlite_single_row_lookup.rs`)
-- Seeds a deterministic `test` table, then times repeated `SELECT ... WHERE id = ?1` calls against the same shuffled id sequence.
-- Baseline: raw `rusqlite` connection with a cached prepared statement and direct struct decoding (`BenchRow`).
-- Middleware: uses `ConfigAndPool::new_sqlite`, pulls a pooled connection, and runs `execute_select` with recycled `RowValues`, converting the returned `ResultSet` into the same struct.
-- Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BENCH_ROWS`) to change the dataset size; defaults to 1 000 ids.
-- Focus is the per-call overhead of the middleware layer compared to the underlying driver, since both share the same data file and access pattern.
 
 ### PostgreSQL (`src/benchmark/postgres.rs`)
 - Spins up an embedded PostgreSQL instance on first use, creates the schema, and caches both the instance and the associated connection pool.
@@ -38,7 +42,15 @@ Because the batch string is executed verbatim against the backend-specific drive
 - Invokes `crate::libsql::execute_batch` on the direct LibSQL connection during the timed section.
 - Currently excluded from the default `criterion_main!`, so it runs only when you enable the `libsql` feature and rewire the benchmark entry point.
 
+## Single-row lookup benchmark flow (`benches/bench_rusqlite_single_row_lookup.rs`)
+This comparison focuses on per-call middleware overhead versus raw rusqlite when fetching individual rows by primary key:
+1. On first use, build a deterministic SQLite file with `row_count` entries and a shuffled list of ids.
+2. Baseline path: open a single `rusqlite::Connection`, prepare a cached statement, and loop over the id list with `query_row`, mapping results into a simple `BenchRow` struct.
+3. Middleware path: construct a `ConfigAndPool`, borrow a pooled connection, and call `execute_select` for each id while recycling a `RowValues` buffer. The returned `ResultSet` is converted into the same `BenchRow` struct.
+
+Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BENCH_ROWS`) to scale the workload.
+
 ## Interpreting results
-- Treat the reported numbers as the baseline insert throughput of each backend’s native driver under a controlled payload. They are **not** an end-to-end measurement of higher-level middleware features (query builders, parameter binding helpers, etc.).
-- If you need middleware-level benchmarks—e.g., measuring `QueryAndParams` preparation or cross-backend abstractions—you will need to add dedicated Criterion groups that exercise those code paths instead of calling the raw driver APIs directly.
-- Use the `BENCH_ROWS` variable to scale workload size, but remember that all rows are inserted within a single transaction per iteration; adjust the workload generator if you need different access patterns.
+- Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
+- Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same dataset and decoding logic so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost.
+- When designing additional benchmarks, decide whether you want engine-level comparisons (like the bulk inserts) or API-level comparisons (like the single-row lookup) and structure the workload accordingly.
