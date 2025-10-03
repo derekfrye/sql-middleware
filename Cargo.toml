@@ -66,10 +66,6 @@ rand = "0"
 rand_chacha = "0"
 sql-middleware = { path = ".", features = ["benchmarks", "mssql", "libsql", "turso"] }
 rusqlite = "0"
-sqlx = { version = "0", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "derive"] }
-
-[patch.crates-io]
-libsqlite3-sys = { version = "0.35.0" }
 
 [[bench]]
 name = "database_benchmark"
