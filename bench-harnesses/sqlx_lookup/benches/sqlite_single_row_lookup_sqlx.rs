@@ -251,7 +251,7 @@ fn benchmark_sqlx_query_raw(
                             .fetch_one(&pool)
                             .await
                             .expect("sqlx fetch");
-                        std::hint::black_box(row);
+                        black_box(row);
                     }
                     total += start.elapsed();
                 }

@@ -36,6 +36,15 @@ mod sqlite;
 #[cfg(feature = "turso")]
 pub mod turso;
 
+#[cfg(feature = "benchmarks")]
+pub use crate::sqlite::{
+    params::{SqliteParamsExecute, SqliteParamsQuery},
+    query::build_result_set as sqlite_build_result_set,
+};
+
+#[cfg(feature = "benchmarks")]
+pub use crate::conversion::convert_sql_params as sqlite_convert_params;
+
 // Direct exports for frequently used types
 pub use middleware::{
     AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, CustomDbRow,

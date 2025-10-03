@@ -7,11 +7,10 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
-use sql_middleware::benchmark::sqlite::clean_sqlite_tables;
-use sql_middleware::sqlite::{self, build_result_set};
 use sql_middleware::{
-    AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection, RowValues,
-    SqlMiddlewareDbError,
+    AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection,
+    RowValues, SqlMiddlewareDbError, SqliteParamsQuery, sqlite_build_result_set,
+    sqlite_convert_params,
 };
 use std::cell::RefCell;
 use std::fs;
@@ -218,9 +217,6 @@ fn benchmark_middleware(
                 let query = "SELECT id, name, score, active FROM test WHERE id = ?1";
                 let mut params = vec![RowValues::Int(0)];
                 for _ in 0..iters {
-                    clean_sqlite_tables(&config_and_pool)
-                        .await
-                        .expect("reset sqlite tables");
                     let pool = config_and_pool.pool.clone();
                     let mut conn = MiddlewarePool::get_connection(&pool)
                         .await
@@ -327,10 +323,15 @@ fn benchmark_middleware_marshalling(
                     let mut stmt = conn
                         .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
                         .expect("prepare statement");
-                    let params =
-                        sql_middleware::sqlite::params::convert_params(&[RowValues::Int(id)]);
+                    let params = sqlite_convert_params::<SqliteParamsQuery>(
+                        &[RowValues::Int(id)],
+                        ConversionMode::Query,
+                    )
+                    .expect("convert params")
+                    .0;
                     let start = Instant::now();
-                    let result = build_result_set(&mut stmt, &params).expect("build result set");
+                    let result =
+                        sqlite_build_result_set(&mut stmt, &params).expect("build result set");
                     black_box(result);
                     total += start.elapsed();
                 }
@@ -356,7 +357,11 @@ fn benchmark_middleware_param_conversion(
                     let start = Instant::now();
                     for &id in &ids {
                         let params = [RowValues::Int(id)];
-                        let converted = sql_middleware::sqlite::params::convert_params(&params);
+                        let converted = sqlite_convert_params::<SqliteParamsQuery>(
+                            &params,
+                            ConversionMode::Query,
+                        )
+                        .expect("convert params");
                         black_box(converted);
                     }
                     total += start.elapsed();
