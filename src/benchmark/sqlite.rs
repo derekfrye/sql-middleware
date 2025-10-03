@@ -45,24 +45,23 @@ pub async fn clean_sqlite_tables(
     config_and_pool: &ConfigAndPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = MiddlewarePool::get_connection(pool).await?;
 
-    if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = conn {
-        sqlite_conn
-            .with_connection(move |connection| {
-                connection.execute("DROP TABLE IF EXISTS test", [])?;
+    if matches!(&conn, MiddlewarePoolConnection::Sqlite(_)) {
+        conn.with_sqlite_connection(move |connection| {
+            connection.execute("DROP TABLE IF EXISTS test", [])?;
 
-                let create_sql = "CREATE TABLE IF NOT EXISTS test (
-                recid INTEGER PRIMARY KEY AUTOINCREMENT,
-                a int, b text, c datetime not null default current_timestamp,
-                d real, e boolean, f blob, g json,
-                h text, i text, j text, k text, l text, m text, n text, o text, p text
-            )";
-                connection.execute(create_sql, [])?;
+            let create_sql = "CREATE TABLE IF NOT EXISTS test (
+            recid INTEGER PRIMARY KEY AUTOINCREMENT,
+            a int, b text, c datetime not null default current_timestamp,
+            d real, e boolean, f blob, g json,
+            h text, i text, j text, k text, l text, m text, n text, o text, p text
+        )";
+            connection.execute(create_sql, [])?;
 
-                Ok::<_, SqlMiddlewareDbError>(())
-            })
-            .await?;
+            Ok::<_, SqlMiddlewareDbError>(())
+        })
+        .await?;
     }
     Ok(())
 }
@@ -89,11 +88,11 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     )";
 
     let pool = config_and_pool.pool.get().await?;
-    let sqlite_conn = MiddlewarePool::get_connection(pool).await?;
+    let mut sqlite_conn = MiddlewarePool::get_connection(pool).await?;
 
-    if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = sqlite_conn {
+    if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite(_)) {
         sqlite_conn
-            .with_connection(move |connection| {
+            .with_sqlite_connection(move |connection| {
                 let transaction = connection.transaction()?;
                 transaction.execute_batch(ddl)?;
                 transaction.commit()?;
@@ -136,16 +135,16 @@ pub fn benchmark_sqlite(c: &mut Criterion, runtime: &Runtime) {
                             .get()
                             .await
                             .expect("Failed to get pool");
-                        let sqlite_conn = MiddlewarePool::get_connection(pool)
+                        let mut sqlite_conn = MiddlewarePool::get_connection(pool)
                             .await
                             .expect("Failed to get conn");
 
-                        if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = sqlite_conn {
+                        if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite(_)) {
                             let statements_clone = statements.clone();
                             let start = Instant::now();
 
                             sqlite_conn
-                                .with_connection(move |connection| {
+                                .with_sqlite_connection(move |connection| {
                                     let transaction = connection.transaction()?;
                                     transaction.execute_batch(&statements_clone)?;
                                     transaction.commit()?;

@@ -5,6 +5,8 @@ use deadpool_postgres::Object as PostgresObject;
 use crate::sqlite::SqliteConnection;
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::Object as SqliteObject;
+#[cfg(feature = "sqlite")]
+use deadpool_sqlite::rusqlite;
 
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Object as LibsqlObject;
@@ -98,6 +100,28 @@ impl MiddlewarePool {
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
+            )),
+        }
+    }
+}
+
+impl MiddlewarePoolConnection {
+    /// Run synchronous SQLite work on the underlying worker-owned connection.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not SQLite.
+    #[cfg(feature = "sqlite")]
+    pub async fn with_sqlite_connection<F, R>(&mut self, func: F) -> Result<R, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
+        R: Send + 'static,
+    {
+        match self {
+            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+                sqlite_conn.with_connection(func).await
+            }
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "with_sqlite_connection is only available for SQLite connections".to_string(),
             )),
         }
     }

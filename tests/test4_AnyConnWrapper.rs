@@ -495,10 +495,9 @@ async fn run_test_logic(
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Sqlite(xx) => {
-            let xx = &mut *xx;
-            Ok(xx
-                .with_connection(move |xxx| {
+        MiddlewarePoolConnection::Sqlite(_) => {
+            Ok(conn
+                .with_sqlite_connection(move |xxx| {
                     let tx = xxx.transaction()?;
                     {
                         let converted_params = convert_sql_params::<SqliteParamsQuery>(

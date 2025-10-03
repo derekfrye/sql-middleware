@@ -157,17 +157,7 @@ LibSQL prepared (wrapper) note
   ```
   so the async↔blocking hand-off happens once per batch instead of once per
   lookup.
-- Explore swapping `deadpool_sqlite::Object::interact` for a per-connection worker
-  task that owns the rusqlite handle and processes an async command queue. That
-  would trim per-call closure allocation/wake-ups for existing APIs while still
-  letting us layer a `with_sqlite_connection` guard on top for bulk workloads.
-  High-level shape would be:
-  * spawn a worker task per pooled connection when it’s created;
-  * have the worker own the `rusqlite::Connection` and listen on an `mpsc` for
-    `Command` structs (e.g. `ExecuteSelect { sql, params, responder }`);
-  * have `execute_select` et al. create and send commands instead of calling
-    `interact`, then await the response future;
-  * ensure drop/cancellation cleanly drains the queue and shuts down the worker.
-  Afterwards, layer the `with_sqlite_connection` guard on top so bulk callers
-  can send a single “run this closure” command and stay on that worker for the
-  whole batch.
+- ✅ Swapped `deadpool_sqlite::Object::interact` for a per-connection worker task
+  (see `src/sqlite/worker.rs`). `ConfigAndPool::new_sqlite` now wraps pooled
+  objects in `SqliteConnection`, and `execute_*` routes through the worker queue.
+  Added `with_connection` helper for bulk callers.
