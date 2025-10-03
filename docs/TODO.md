@@ -138,7 +138,7 @@ LibSQL prepared (wrapper) note
 - If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
 - Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
 
-- Investigate a `with_sqlite_connection` API so callers can run multiple statements while holding a connection guard. Benchmark the lookup flow using the closure-based guard (single async<->blocking hop) versus today’s per-`execute_select` interact calls.
+- ✅ Added `MiddlewarePoolConnection::with_sqlite_connection` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
 - If we add the guard, benchmark loops would switch from repeated `execute_select`
   calls to something like:
   ```rust

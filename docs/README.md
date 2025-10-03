@@ -281,40 +281,36 @@ tx.commit().await?;
 <td>
 
 ```rust
-// Get SQLite-specific connection
-let sqlite_conn = match &conn {
-    Sqlite(sqlite)
-        => sqlite,
-    _ => panic!("Expected connection"),
-};
-
-// Use the per-connection worker to run blocking SQLite code
-let rows = sqlite_conn
-    .with_connection(move |conn| {
-        let tx = conn.transaction()?;
-        
-        // Convert parameters
-        let converted_params = 
-            convert_sql_params::
+// Use the helper to run blocking SQLite code
+let rows = match &mut conn {
+    Sqlite(_) => conn
+        .with_sqlite_connection(move |conn| {
+            let tx = conn.transaction()?;
+            
+            // Convert parameters
+            let converted_params = 
+                convert_sql_params::
                 <SqliteParamsExecute>(
                 &q.params,
                 ConversionMode::Execute
             )?;
             
-// could run custom logic between stmts
+            // could run custom logic between stmts
 
-        // Prepare and execute
-        let rows = {
-            let mut stmt = tx.prepare(
-                &q.query)?;
-            stmt.execute(converted_params.0)?
-        };
-        
-        tx.commit()?;
-        
-        Ok::<_, SqlMiddlewareDbError>(rows)
-    })
-    .await?;
+            // Prepare and execute
+            let rows = {
+                let mut stmt = tx.prepare(
+                    &q.query)?;
+                stmt.execute(converted_params.0)?
+            };
+            
+            tx.commit()?;
+            
+            Ok::<_, SqlMiddlewareDbError>(rows)
+        })
+        .await?,
+    _ => panic!("Expected connection"),
+};
 ```
 
 </td>
