@@ -7,7 +7,12 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
-use sql_middleware::{AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, RowValues};
+use sql_middleware::benchmark::sqlite::clean_sqlite_tables;
+use sql_middleware::sqlite::{self, build_result_set};
+use sql_middleware::{
+    AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection, RowValues,
+    SqlMiddlewareDbError,
+};
 use std::cell::RefCell;
 use std::fs;
 use std::hint::black_box;
@@ -52,6 +57,12 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
 // Dedicated runtime for the async middleware path.
 static TOKIO_RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Runtime::new().expect("create tokio runtime"));
+
+static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
+    TOKIO_RUNTIME
+        .block_on(ConfigAndPool::new_sqlite(DATASET.path().to_string()))
+        .expect("create middleware pool")
+});
 
 /// Resolve how many lookups each iteration should perform.
 fn lookup_row_count_to_run() -> usize {
@@ -194,27 +205,26 @@ fn benchmark_middleware(
     let dataset = &*DATASET;
     let ids = dataset.ids().to_vec();
     let runtime = &*TOKIO_RUNTIME;
+    let config_and_pool = MIDDLEWARE_CONFIG.clone();
 
     group.bench_function(BenchmarkId::new("middleware", ids.len()), |b| {
         let ids = ids.clone();
-        let path = dataset.path().to_string();
+        let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
             let ids = ids.clone();
-            let path = path.clone();
+            let config_and_pool = config_and_pool.clone();
             async move {
-                let config_and_pool = ConfigAndPool::new_sqlite(path)
-                    .await
-                    .expect("create middleware pool");
-                let middleware_pool = config_and_pool.pool.clone();
-
-                let mut conn = MiddlewarePool::get_connection(&middleware_pool)
-                    .await
-                    .expect("acquire middleware connection");
                 let mut total = Duration::default();
                 let query = "SELECT id, name, score, active FROM test WHERE id = ?1";
                 let mut params = vec![RowValues::Int(0)];
-
                 for _ in 0..iters {
+                    clean_sqlite_tables(&config_and_pool)
+                        .await
+                        .expect("reset sqlite tables");
+                    let pool = config_and_pool.pool.clone();
+                    let mut conn = MiddlewarePool::get_connection(&pool)
+                        .await
+                        .expect("acquire middleware connection");
                     let start = Instant::now();
                     for &id in &ids {
                         params[0] = RowValues::Int(id);
@@ -235,6 +245,128 @@ fn benchmark_middleware(
     });
 }
 
+/// Measure the cost of checking out and dropping a middleware connection.
+fn benchmark_middleware_checkout(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let runtime = &*TOKIO_RUNTIME;
+    let config_and_pool = MIDDLEWARE_CONFIG.clone();
+    let lookup_len = DATASET.ids().len();
+
+    group.bench_function(BenchmarkId::new("middleware_checkout", lookup_len), |b| {
+        let config_and_pool = config_and_pool.clone();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.pool.clone();
+            async move {
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    let conn = MiddlewarePool::get_connection(&pool)
+                        .await
+                        .expect("checkout connection");
+                    drop(conn);
+                    total += start.elapsed();
+                }
+                total
+            }
+        });
+    });
+}
+
+/// Measure the overhead of the `interact` hop without executing a query.
+fn benchmark_middleware_interact_only(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let runtime = &*TOKIO_RUNTIME;
+    let config_and_pool = MIDDLEWARE_CONFIG.clone();
+    let lookup_len = DATASET.ids().len();
+
+    group.bench_function(BenchmarkId::new("middleware_interact", lookup_len), |b| {
+        let config_and_pool = config_and_pool.clone();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.pool.clone();
+            async move {
+                let mut total = Duration::default();
+                let mut conn = MiddlewarePool::get_connection(&pool)
+                    .await
+                    .expect("checkout connection");
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = &mut conn {
+                        sqlite_conn
+                            .interact(|_| Ok::<_, SqlMiddlewareDbError>(()))
+                            .await
+                            .expect("interact")
+                            .expect("interact inner");
+                    }
+                    total += start.elapsed();
+                }
+                drop(conn);
+                total
+            }
+        });
+    });
+}
+
+/// Measure result-set materialisation using `build_result_set` directly.
+fn benchmark_middleware_marshalling(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let path = dataset.path().to_string();
+
+    group.bench_function(BenchmarkId::new("middleware_marshalling", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = path.clone();
+        b.iter_custom(move |iters| {
+            let conn = Connection::open(&path).expect("open sqlite connection");
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                for &id in &ids {
+                    let mut stmt = conn
+                        .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
+                        .expect("prepare statement");
+                    let params =
+                        sql_middleware::sqlite::params::convert_params(&[RowValues::Int(id)]);
+                    let start = Instant::now();
+                    let result = build_result_set(&mut stmt, &params).expect("build result set");
+                    black_box(result);
+                    total += start.elapsed();
+                }
+            }
+            total
+        });
+    });
+}
+
+/// Measure parameter conversion cost for the middleware.
+fn benchmark_middleware_param_conversion(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let ids = DATASET.ids().to_vec();
+
+    group.bench_function(
+        BenchmarkId::new("middleware_param_convert", ids.len()),
+        |b| {
+            let ids = ids.clone();
+            b.iter_custom(move |iters| {
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let params = [RowValues::Int(id)];
+                        let converted = sql_middleware::sqlite::params::convert_params(&params);
+                        black_box(converted);
+                    }
+                    total += start.elapsed();
+                }
+                total
+            });
+        },
+    );
+}
+
 fn sqlite_single_row_lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("sqlite_single_row_lookup");
     let lookup_count = DATASET.ids().len() as u64;
@@ -242,6 +374,10 @@ fn sqlite_single_row_lookup(c: &mut Criterion) {
 
     benchmark_rusqlite_direct(&mut group);
     benchmark_middleware(&mut group);
+    benchmark_middleware_checkout(&mut group);
+    benchmark_middleware_interact_only(&mut group);
+    benchmark_middleware_marshalling(&mut group);
+    benchmark_middleware_param_conversion(&mut group);
 
     group.finish();
 }

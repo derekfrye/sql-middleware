@@ -57,14 +57,33 @@ This comparison focuses on per-call overhead for the rusqlite baseline versus th
 
 Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BENCH_ROWS`) to scale the workload.
 
+Additional micro-benches in the same Criterion group isolate specific parts of the middleware stack:
+- `middleware_checkout` – measures connection checkout/drop latency.
+- `middleware_interact` – times the `deadpool_sqlite::Object::interact` hop with an empty closure.
+- `middleware_marshalling` – runs `build_result_set` directly to capture row materialisation cost.
+- `middleware_param_convert` – benchmarks parameter conversion from `RowValues` into `rusqlite::Value`s.
+
 ### SQLx harness (`bench-harnesses/sqlx_lookup`)
 - Builds the same deterministic dataset (same seed and schema) using SQLx.
 - Benchmarks `SqlitePool` + `query_as` lookups over the shuffled id list.
 - Lives outside the main crate so it can track the latest SQLx release without conflicting with `rusqlite`'s `libsqlite3-sys` requirements.
 - Run it with `cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest` (optionally setting `CRITERION_HOME` as above).
 
+The harness also exposes SQLx-specific micro-benches:
+- `sqlx_query_raw` – fetches rows as `SqliteRow` without `FromRow` mapping.
+- `sqlx` – the full `query_as` baseline (identical workload to the middleware bench).
+- `sqlx_pool_acquire` – isolates connection acquisition overhead.
+- `sqlx_param_bind` – records the cost of constructing and binding parameters on the query builder.
+
 ## Interpreting results
 - Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
 - Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same dataset and decoding logic so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost.
 - Treat the SQLx harness output as a parallel data point for the same workload; compare its metrics with `rusqlite`/middleware results to gauge how your middleware stacks up against a modern async client.
 - When designing additional benchmarks, decide whether you want engine-level comparisons (like the bulk inserts) or API-level comparisons (like the single-row lookup) and structure the workload accordingly.
+
+## Great llm test:
+```shell
+git log --oneline --grep="sqlx bench results"
+git checkout <sha from above>
+"Let's add targeted micro-benches: interact hop-only, marhsalling only, parameter conversion only, and pool check/interact overhead. Make sure to add to the sqlx crate as well as our bench_rusqlite_single_row_lookup."
+```

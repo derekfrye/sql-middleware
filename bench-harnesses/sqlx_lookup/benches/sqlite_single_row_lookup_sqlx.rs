@@ -3,8 +3,9 @@ use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sqlx::{ConnectOptions, FromRow, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
-use std::str::FromStr;
+use std::hint::black_box;
 use std::path::Path;
+use std::str::FromStr;
 use tempfile::{Builder, TempPath};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -129,13 +130,12 @@ async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sql
     Ok(())
 }
 
-fn benchmark_sqlx(c: &mut Criterion) {
+fn benchmark_sqlx_query_as(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
     let dataset = &*DATASET;
     let ids = dataset.ids().to_vec();
     let runtime = &*TOKIO_RUNTIME;
-
-    let mut group = c.benchmark_group("sqlite_single_row_lookup_sqlx");
-    group.throughput(Throughput::Elements(ids.len() as u64));
 
     group.bench_function(BenchmarkId::new("sqlx", ids.len()), |b| {
         let ids = ids.clone();
@@ -178,8 +178,127 @@ fn benchmark_sqlx(c: &mut Criterion) {
         });
     });
 
+}
+
+fn benchmark_sqlx_pool_acquire(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let runtime = &*TOKIO_RUNTIME;
+    let lookup_len = dataset.ids().len();
+
+    group.bench_function(BenchmarkId::new("sqlx_pool_acquire", lookup_len), |b| {
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let path = path.clone();
+            async move {
+                let options = SqliteConnectOptions::from_str(&path)
+                    .expect("options")
+                    .create_if_missing(true)
+                    .disable_statement_logging();
+                let pool = SqlitePoolOptions::new()
+                    .max_connections(5)
+                    .connect_with(options)
+                    .await
+                    .expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    let conn = pool.acquire().await.expect("acquire connection");
+                    drop(conn);
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_query_raw(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(BenchmarkId::new("sqlx_query_raw", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let path = path.clone();
+            async move {
+                let options = SqliteConnectOptions::from_str(&path)
+                    .expect("options")
+                    .create_if_missing(true)
+                    .disable_statement_logging();
+                let pool = SqlitePoolOptions::new()
+                    .max_connections(5)
+                    .connect_with(options)
+                    .await
+                    .expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let row = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1")
+                            .bind(id)
+                            .fetch_one(&pool)
+                            .await
+                            .expect("sqlx fetch");
+                        std::hint::black_box(row);
+                    }
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_param_bind(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let ids = DATASET.ids().to_vec();
+    let lookup_len = ids.len();
+
+    group.bench_function(BenchmarkId::new("sqlx_param_bind", lookup_len), |b| {
+        let ids = ids.clone();
+        b.iter_custom(move |iters| {
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let start = Instant::now();
+                for &id in &ids {
+                    let query = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1");
+                    let bound = query.bind(id);
+                    std::hint::black_box(bound);
+                }
+                total += start.elapsed();
+            }
+            total
+        });
+    });
+}
+
+fn sqlite_single_row_lookup_sqlx(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sqlite_single_row_lookup_sqlx");
+    group.throughput(Throughput::Elements(DATASET.ids().len() as u64));
+
+    benchmark_sqlx_query_as(&mut group);
+    benchmark_sqlx_query_raw(&mut group);
+    benchmark_sqlx_pool_acquire(&mut group);
+    benchmark_sqlx_param_bind(&mut group);
+
     group.finish();
 }
 
-criterion_group!(benches, benchmark_sqlx);
+criterion_group!(benches, sqlite_single_row_lookup_sqlx);
 criterion_main!(benches);
