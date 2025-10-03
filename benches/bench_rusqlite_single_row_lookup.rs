@@ -8,6 +8,7 @@ use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
 use sql_middleware::{AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, RowValues};
+use sqlx::{FromRow, sqlite::SqlitePoolOptions};
 use std::cell::RefCell;
 use std::fs;
 use std::hint::black_box;
@@ -103,7 +104,7 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> rusqlite::Result<()>
 }
 
 /// Compact struct used in both benchmark variants to ensure identical decoding cost.
-#[derive(Debug)]
+#[derive(Debug, FromRow)]
 #[allow(dead_code)]
 struct BenchRow {
     id: i64,
@@ -235,6 +236,50 @@ fn benchmark_middleware(
     });
 }
 
+/// SQLx async baseline using `SqlitePool` and dynamic queries.
+fn benchmark_sqlx(group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(BenchmarkId::new("sqlx", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let path = path.clone();
+            async move {
+                let connection_string = format!("sqlite://{path}");
+                let pool = SqlitePoolOptions::new()
+                    .max_connections(5)
+                    .connect(&connection_string)
+                    .await
+                    .expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let row: BenchRow = sqlx::query_as(
+                            "SELECT id, name, score, active FROM test WHERE id = ?1",
+                        )
+                        .bind(id)
+                        .fetch_one(&pool)
+                        .await
+                        .expect("sqlx fetch");
+                        black_box(row);
+                    }
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
 fn sqlite_single_row_lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("sqlite_single_row_lookup");
     let lookup_count = DATASET.ids().len() as u64;
@@ -242,6 +287,7 @@ fn sqlite_single_row_lookup(c: &mut Criterion) {
 
     benchmark_rusqlite_direct(&mut group);
     benchmark_middleware(&mut group);
+    benchmark_sqlx(&mut group);
 
     group.finish();
 }

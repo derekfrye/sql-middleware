@@ -9,9 +9,9 @@ Use this guide to see how each target is wired, which parts of the stack they ex
 
 ## Benchmark targets
 - `database_benchmark` – runs the traditional bulk insert groups for SQLite and PostgreSQL (LibSQL remains opt-in behind the `libsql` feature).
-- `bench_rusqlite_single_row_lookup` – measures repeated `SELECT ... WHERE id = ?` calls through raw rusqlite versus the middleware abstraction.
+- `bench_rusqlite_single_row_lookup` – measures repeated `SELECT ... WHERE id = ?` calls through raw rusqlite, the middleware abstraction, and SQLx.
 
-Run the whole suite with `cargo bench`, or focus on a single target via `cargo bench --bench <name>`. Criterion substring filters still apply, e.g. `cargo bench --bench database_benchmark -- sqlite`.
+Run the whole suite with `cargo bench`, or focus on a single target via `CRITERION_HOME=bench_results  cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest`. Criterion substring filters still apply, e.g. `cargo bench --bench database_benchmark -- sqlite`.
 
 ## Configuration knobs
 - `BENCH_ROWS` controls the number of rows generated for bulk insert runs (default `10`).
@@ -43,14 +43,15 @@ Because the timed section delegates directly to the backend driver (rusqlite, to
 - Currently excluded from the default `criterion_main!`, so it runs only when you enable the `libsql` feature and rewire the benchmark entry point.
 
 ## Single-row lookup benchmark flow (`benches/bench_rusqlite_single_row_lookup.rs`)
-This comparison focuses on per-call middleware overhead versus raw rusqlite when fetching individual rows by primary key:
+This comparison focuses on per-call overhead for different client layers when fetching individual rows by primary key:
 1. On first use, build a deterministic SQLite file with `row_count` entries and a shuffled list of ids.
-2. Baseline path: open a single `rusqlite::Connection`, prepare a cached statement, and loop over the id list with `query_row`, mapping results into a simple `BenchRow` struct.
-3. Middleware path: construct a `ConfigAndPool`, borrow a pooled connection, and call `execute_select` for each id while recycling a `RowValues` buffer. The returned `ResultSet` is converted into the same `BenchRow` struct.
+2. `rusqlite` baseline: open a single `rusqlite::Connection`, prepare a cached statement, and loop over the id list with `query_row`, mapping results into `BenchRow`.
+3. `sql_middleware` path: construct a `ConfigAndPool`, borrow a pooled connection, and call `execute_select` for each id while recycling a `RowValues` buffer. The returned `ResultSet` converts into the same `BenchRow` struct.
+4. `sqlx` path: create a `SqlitePool`, then issue `query_as` lookups for each id using the async driver stack.
 
 Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BENCH_ROWS`) to scale the workload.
 
 ## Interpreting results
 - Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
-- Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same dataset and decoding logic so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost.
+- Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through each client layer (rusqlite, middleware, SQLx). All flows share the same dataset and decoding logic so differences primarily reflect connection dispatch, parameter conversion, and result materialisation cost.
 - When designing additional benchmarks, decide whether you want engine-level comparisons (like the bulk inserts) or API-level comparisons (like the single-row lookup) and structure the workload accordingly.
