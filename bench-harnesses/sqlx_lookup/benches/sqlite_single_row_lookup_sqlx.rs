@@ -2,12 +2,16 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use sqlx::{sqlite::SqlitePoolOptions, FromRow};
+use sqlx::{ConnectOptions, FromRow, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
+use std::str::FromStr;
+use std::path::Path;
+use tempfile::{Builder, TempPath};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
 #[derive(Debug, FromRow)]
+#[allow(dead_code)]
 struct BenchRow {
     id: i64,
     name: String,
@@ -16,6 +20,7 @@ struct BenchRow {
 }
 
 struct Dataset {
+    _temp_path: TempPath,
     path: String,
     ids: Vec<i64>,
 }
@@ -35,8 +40,13 @@ static TOKIO_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().expect
 static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
     TOKIO_RUNTIME.block_on(async {
         let row_count = lookup_row_count_to_run();
-        let path = String::from("benchmark_sqlite_single_lookup.db");
-        prepare_sqlite_dataset(&path, row_count)
+        let temp_file = Builder::new()
+            .prefix("sqlx_lookup")
+            .suffix(".db")
+            .tempfile()
+            .expect("create temp sqlite file");
+        let temp_path = temp_file.into_temp_path();
+        prepare_sqlite_dataset(temp_path.as_ref(), row_count)
             .await
             .expect("failed to prepare dataset");
 
@@ -44,7 +54,13 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
         let mut rng = ChaCha8Rng::seed_from_u64(1_234_567_890);
         ids.shuffle(&mut rng);
 
-        Dataset { path, ids }
+        let path_string = temp_path.to_string_lossy().into_owned();
+
+        Dataset {
+            _temp_path: temp_path,
+            path: path_string,
+            ids,
+        }
     })
 });
 
@@ -60,15 +76,22 @@ fn lookup_row_count_to_run() -> usize {
         .unwrap_or(1000)
 }
 
-async fn prepare_sqlite_dataset(path: &str, row_count: usize) -> Result<(), sqlx::Error> {
-    if std::path::Path::new(path).exists() {
+async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sqlx::Error> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    if path.exists() {
         let _ = std::fs::remove_file(path);
     }
 
-    let connection_string = format!("sqlite://{path}");
+    let path_str = path.to_string_lossy();
+    let options = SqliteConnectOptions::from_str(&path_str)?
+        .create_if_missing(true)
+        .disable_statement_logging();
+
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
-        .connect(&connection_string)
+        .connect_with(options.clone())
         .await?;
 
     sqlx::query(
@@ -96,7 +119,7 @@ async fn prepare_sqlite_dataset(path: &str, row_count: usize) -> Result<(), sqlx
             .bind(name)
             .bind(score)
             .bind(active)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
     }
 
@@ -121,10 +144,14 @@ fn benchmark_sqlx(c: &mut Criterion) {
             let ids = ids.clone();
             let path = path.clone();
             async move {
-                let connection_string = format!("sqlite://{path}");
+                let options = SqliteConnectOptions::from_str(&path)
+                    .expect("options")
+                    .create_if_missing(true)
+                    .disable_statement_logging();
+
                 let pool = SqlitePoolOptions::new()
                     .max_connections(5)
-                    .connect(&connection_string)
+                    .connect_with(options)
                     .await
                     .expect("create sqlx pool");
 
