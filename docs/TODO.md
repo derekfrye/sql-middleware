@@ -137,3 +137,37 @@ LibSQL prepared (wrapper) note
 - Our current `libsql::Prepared` is a thin wrapper around the SQL string and executes via the pooled connection.
 - If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
 - Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
+
+- Investigate a `with_sqlite_connection` API so callers can run multiple statements while holding a connection guard. Benchmark the lookup flow using the closure-based guard (single async<->blocking hop) versus today’s per-`execute_select` interact calls.
+- If we add the guard, benchmark loops would switch from repeated `execute_select`
+  calls to something like:
+  ```rust
+  MiddlewarePool::with_sqlite_connection(&pool, |conn| {
+      let mut stmt = conn.prepare_cached(query)?;
+      let mut params = [RowValues::Int(0)];
+      for &id in &ids {
+          params[0] = RowValues::Int(id);
+          let result = sqlite_execute_select_sync(&mut stmt, &params)?;
+          let row = result.results.first().unwrap();
+          let data = BenchRow::from_result_row(row);
+          std::hint::black_box(data);
+      }
+      Ok(())
+  }).await?
+  ```
+  so the async↔blocking hand-off happens once per batch instead of once per
+  lookup.
+- Explore swapping `deadpool_sqlite::Object::interact` for a per-connection worker
+  task that owns the rusqlite handle and processes an async command queue. That
+  would trim per-call closure allocation/wake-ups for existing APIs while still
+  letting us layer a `with_sqlite_connection` guard on top for bulk workloads.
+  High-level shape would be:
+  * spawn a worker task per pooled connection when it’s created;
+  * have the worker own the `rusqlite::Connection` and listen on an `mpsc` for
+    `Command` structs (e.g. `ExecuteSelect { sql, params, responder }`);
+  * have `execute_select` et al. create and send commands instead of calling
+    `interact`, then await the response future;
+  * ensure drop/cancellation cleanly drains the queue and shuts down the worker.
+  Afterwards, layer the `with_sqlite_connection` guard on top so bulk callers
+  can send a single “run this closure” command and stay on that worker for the
+  whole batch.
