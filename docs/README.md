@@ -288,9 +288,9 @@ let sqlite_conn = match &conn {
     _ => panic!("Expected connection"),
 };
 
-// Use interact for async tx
+// Use the per-connection worker to run blocking SQLite code
 let rows = sqlite_conn
-    .interact(move |conn| {
+    .with_connection(move |conn| {
         let tx = conn.transaction()?;
         
         // Convert parameters
@@ -303,17 +303,11 @@ let rows = sqlite_conn
             
 // could run custom logic between stmts
 
-        // Create parameter references
-        let param_refs: Vec<&dyn ToSql> =
-            converted_params.0.iter()
-                .map(|v| v as &dyn ToSql)
-                .collect();
-        
         // Prepare and execute
         let rows = {
             let mut stmt = tx.prepare(
                 &q.query)?;
-            stmt.execute(&param_refs[..])?
+            stmt.execute(converted_params.0)?
         };
         
         tx.commit()?;

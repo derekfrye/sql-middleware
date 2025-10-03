@@ -56,14 +56,13 @@ impl MiddlewarePoolConnection {
     {
         match self {
             #[cfg(feature = "sqlite")]
-            MiddlewarePoolConnection::Sqlite(sqlite_obj) => {
-                // Use `deadpool_sqlite`'s `interact` method
-                sqlite_obj
-                    .interact(move |conn| {
+            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+                sqlite_conn
+                    .with_connection(move |conn| {
                         let wrapper = AnyConnWrapper::Sqlite(conn);
                         Ok(f(wrapper))
                     })
-                    .await?
+                    .await
             }
             #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres(_) => Err(SqlMiddlewareDbError::Unimplemented(

@@ -2,6 +2,8 @@
 use deadpool_postgres::Object as PostgresObject;
 
 #[cfg(feature = "sqlite")]
+use crate::sqlite::SqliteConnection;
+#[cfg(feature = "sqlite")]
 use deadpool_sqlite::Object as SqliteObject;
 
 #[cfg(feature = "libsql")]
@@ -16,7 +18,7 @@ pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
     Postgres(PostgresObject),
     #[cfg(feature = "sqlite")]
-    Sqlite(SqliteObject),
+    Sqlite(SqliteConnection),
     #[cfg(feature = "mssql")]
     Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
     #[cfg(feature = "libsql")]
@@ -69,7 +71,8 @@ impl MiddlewarePool {
                     .get()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
-                Ok(MiddlewarePoolConnection::Sqlite(conn))
+                let worker_conn = SqliteConnection::new(conn)?;
+                Ok(MiddlewarePoolConnection::Sqlite(worker_conn))
             }
             #[cfg(feature = "mssql")]
             MiddlewarePool::Mssql(pool) => {

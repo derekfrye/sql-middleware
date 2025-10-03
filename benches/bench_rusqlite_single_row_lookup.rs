@@ -290,10 +290,9 @@ fn benchmark_middleware_interact_only(
                     let start = Instant::now();
                     if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = &mut conn {
                         sqlite_conn
-                            .interact(|_| Ok::<_, SqlMiddlewareDbError>(()))
+                            .with_connection(|_| Ok::<_, SqlMiddlewareDbError>(()))
                             .await
-                            .expect("interact")
-                            .expect("interact inner");
+                            .expect("with_connection");
                     }
                     total += start.elapsed();
                 }

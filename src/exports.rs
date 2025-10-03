@@ -11,6 +11,8 @@ pub use crate::postgres::build_result_set as postgres_build_result_set;
 
 // SQLite exports
 #[cfg(feature = "sqlite")]
+pub use crate::sqlite::SqliteConnection;
+#[cfg(feature = "sqlite")]
 pub use crate::sqlite::SqliteParamsExecute;
 #[cfg(feature = "sqlite")]
 pub use crate::sqlite::SqliteParamsQuery;

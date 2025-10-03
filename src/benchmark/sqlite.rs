@@ -49,7 +49,7 @@ pub async fn clean_sqlite_tables(
 
     if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = conn {
         sqlite_conn
-            .interact(move |connection| {
+            .with_connection(move |connection| {
                 connection.execute("DROP TABLE IF EXISTS test", [])?;
 
                 let create_sql = "CREATE TABLE IF NOT EXISTS test (
@@ -62,7 +62,7 @@ pub async fn clean_sqlite_tables(
 
                 Ok::<_, SqlMiddlewareDbError>(())
             })
-            .await??;
+            .await?;
     }
     Ok(())
 }
@@ -93,13 +93,13 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
 
     if let MiddlewarePoolConnection::Sqlite(sqlite_conn) = sqlite_conn {
         sqlite_conn
-            .interact(move |connection| {
+            .with_connection(move |connection| {
                 let transaction = connection.transaction()?;
                 transaction.execute_batch(ddl)?;
                 transaction.commit()?;
                 Ok::<_, SqlMiddlewareDbError>(())
             })
-            .await??;
+            .await?;
     } else {
         panic!("Expected SQLite connection");
     }
@@ -145,15 +145,14 @@ pub fn benchmark_sqlite(c: &mut Criterion, runtime: &Runtime) {
                             let start = Instant::now();
 
                             sqlite_conn
-                                .interact(move |connection| {
+                                .with_connection(move |connection| {
                                     let transaction = connection.transaction()?;
                                     transaction.execute_batch(&statements_clone)?;
                                     transaction.commit()?;
                                     Ok::<_, SqlMiddlewareDbError>(())
                                 })
                                 .await
-                                .expect("SQLite interact task failed")
-                                .expect("SQLite batch execution failed");
+                                .expect("SQLite worker task failed");
 
                             total_duration += start.elapsed();
                         }

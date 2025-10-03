@@ -497,48 +497,49 @@ async fn run_test_logic(
         }
         MiddlewarePoolConnection::Sqlite(xx) => {
             let xx = &mut *xx;
-            xx.interact(move |xxx| {
-                let tx = xxx.transaction()?;
-                {
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params.params,
-                        ConversionMode::Query,
-                    )?;
-                    let mut stmt = tx.prepare(&query_and_params.query)?;
-                    sqlite_build_result_set(&mut stmt, &converted_params.0)?;
-                }
-                // should be able to read that val even tho we're not done w tx
-                {
-                    let query_and_params_vec = QueryAndParams {
-                        query: "select count(*) as cnt from test;".to_string(),
-                        params: vec![],
-                    };
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params_vec.params,
-                        ConversionMode::Query,
-                    )?;
-                    let mut stmt = tx.prepare(&query_and_params_vec.query)?;
-                    let result_set = {
-                        sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?
-                    };
-                    assert_eq!(result_set.results.len(), 1);
-                    assert_eq!(
-                        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
-                        401
-                    );
-                }
-                {
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params.params,
-                        ConversionMode::Query,
-                    )?;
-                    let mut stmt = tx.prepare(&query_and_params.query)?;
-                    sqlite_build_result_set(&mut stmt, &converted_params.0)?;
-                }
-                tx.commit()?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-            })
-            .await?
+            Ok(xx
+                .with_connection(move |xxx| {
+                    let tx = xxx.transaction()?;
+                    {
+                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                            &query_and_params.params,
+                            ConversionMode::Query,
+                        )?;
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                    }
+                    // should be able to read that val even tho we're not done w tx
+                    {
+                        let query_and_params_vec = QueryAndParams {
+                            query: "select count(*) as cnt from test;".to_string(),
+                            params: vec![],
+                        };
+                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                            &query_and_params_vec.params,
+                            ConversionMode::Query,
+                        )?;
+                        let mut stmt = tx.prepare(&query_and_params_vec.query)?;
+                        let result_set = {
+                            sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?
+                        };
+                        assert_eq!(result_set.results.len(), 1);
+                        assert_eq!(
+                            *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+                            401
+                        );
+                    }
+                    {
+                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                            &query_and_params.params,
+                            ConversionMode::Query,
+                        )?;
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                    }
+                    tx.commit()?;
+                    Ok::<_, SqlMiddlewareDbError>(result_set)
+                })
+                .await?)
         }
         #[cfg(feature = "libsql")]
         MiddlewarePoolConnection::Libsql(_) => {
