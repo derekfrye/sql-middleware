@@ -2,7 +2,7 @@
 use deadpool_postgres::Object as PostgresObject;
 
 #[cfg(feature = "sqlite")]
-use crate::sqlite::SqliteConnection;
+use crate::sqlite::{SqliteConnection, SqlitePreparedStatement};
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::Object as SqliteObject;
 #[cfg(feature = "sqlite")]
@@ -122,6 +122,22 @@ impl MiddlewarePoolConnection {
             }
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "with_sqlite_connection is only available for SQLite connections".to_string(),
+            )),
+        }
+    }
+
+    /// Prepare a SQLite statement and obtain a reusable handle backed by the worker thread.
+    #[cfg(feature = "sqlite")]
+    pub async fn prepare_sqlite_statement(
+        &mut self,
+        query: &str,
+    ) -> Result<SqlitePreparedStatement, SqlMiddlewareDbError> {
+        match self {
+            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+                sqlite_conn.prepare_statement(query).await
+            }
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "prepare_sqlite_statement is only available for SQLite connections".to_string(),
             )),
         }
     }

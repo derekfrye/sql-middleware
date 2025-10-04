@@ -23,6 +23,8 @@ pub use crate::exports::SqliteParamsExecute;
 #[cfg(feature = "sqlite")]
 pub use crate::exports::SqliteParamsQuery;
 #[cfg(feature = "sqlite")]
+pub use crate::exports::SqlitePreparedStatement;
+#[cfg(feature = "sqlite")]
 pub use crate::exports::sqlite_build_result_set;
 
 #[cfg(feature = "mssql")]

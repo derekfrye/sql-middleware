@@ -139,6 +139,7 @@ LibSQL prepared (wrapper) note
 - Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
 
 - ✅ Added `MiddlewarePoolConnection::with_sqlite_connection` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
+- ✅ Introduced `prepare_sqlite_statement` + `SqlitePreparedStatement` for explicit prepared-statement reuse via the worker queue.
 - If we add the guard, benchmark loops would switch from repeated `execute_select`
   calls to something like:
   ```rust
@@ -161,3 +162,16 @@ LibSQL prepared (wrapper) note
   (see `src/sqlite/worker.rs`). `ConfigAndPool::new_sqlite` now wraps pooled
   objects in `SqliteConnection`, and `execute_*` routes through the worker queue.
   Added `with_connection` helper for bulk callers.
+- Investigate the pool layer in `MiddlewarePool::get_connection` to see if we can
+  approach SQLx’s ~8 µs checkout cost.
+  - Idea: profile the checkout hot path with Criterion’s `--profile-time` and a
+    `perf` flamegraph; *pro*: immediately shows where time is spent in worker vs
+    `tokio`; *con*: needs Linux tooling and careful interpretation of async
+    frames.
+  - Idea: add lightweight timing spans inside the pool checkout/drop code
+    (bench-only build flag); *pro*: portable and quick to iterate; *con*: adds
+    instrumentation overhead that can skew very short measurements.
+  - Idea: prototype a fast-path that bypasses the worker queue for cached
+    statements using `try_acquire` on the underlying deadpool object; *pro*:
+    could cut scheduler hops entirely; *con*: risks starving other tasks and
+    needs careful error/backoff handling.

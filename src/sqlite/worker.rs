@@ -7,10 +7,12 @@ use std::thread;
 use deadpool::managed::ObjectId;
 use deadpool_sqlite::Object;
 use deadpool_sqlite::rusqlite::{self, ToSql};
+use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 use crate::middleware::{ResultSet, SqlMiddlewareDbError};
 
+use super::prepared::SqlitePreparedStatement;
 use super::query::build_result_set;
 
 /// Owned SQLite connection backed by a dedicated worker thread.
@@ -55,6 +57,33 @@ impl SqliteConnection {
         self.worker.with_connection(func).await
     }
 
+    pub async fn prepare_statement(
+        &self,
+        query: &str,
+    ) -> Result<SqlitePreparedStatement, SqlMiddlewareDbError> {
+        let query_arc = Arc::new(query.to_owned());
+        self.worker
+            .prepare_statement(Arc::clone(&query_arc))
+            .await?;
+        Ok(SqlitePreparedStatement::new(self.clone(), query_arc))
+    }
+
+    pub(crate) async fn execute_prepared_select(
+        &self,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.worker.execute_prepared_select(query, params).await
+    }
+
+    pub(crate) async fn execute_prepared_dml(
+        &self,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        self.worker.execute_prepared_dml(query, params).await
+    }
+
     fn object_id(&self) -> ObjectId {
         self.worker.object_id
     }
@@ -77,9 +106,14 @@ impl SqliteWorker {
     fn spawn(object: Object) -> Result<Self, SqlMiddlewareDbError> {
         let (sender, receiver) = mpsc::channel::<Command>();
         let object_id = Object::id(&object);
+        let handle = Handle::try_current().ok();
         thread::Builder::new()
             .name(format!("sqlite-worker-{object_id}"))
-            .spawn(move || run_sqlite_worker(&object, receiver))
+            .spawn(move || {
+                let runtime_guard = handle.as_ref().map(|h| h.enter());
+                run_sqlite_worker(object, receiver);
+                drop(runtime_guard);
+            })
             .map_err(|err| {
                 SqlMiddlewareDbError::ConnectionError(format!(
                     "failed to spawn SQLite worker thread: {err}"
@@ -144,6 +178,55 @@ impl SqliteWorker {
         })?
     }
 
+    async fn prepare_statement(&self, query: Arc<String>) -> Result<(), SqlMiddlewareDbError> {
+        let (tx, rx) = oneshot::channel();
+        self.send_command(Command::PrepareStatement {
+            query,
+            respond_to: tx,
+        })?;
+        rx.await.map_err(|_| {
+            SqlMiddlewareDbError::ConnectionError(
+                "SQLite worker dropped while preparing statement".into(),
+            )
+        })?
+    }
+
+    async fn execute_prepared_select(
+        &self,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        let (tx, rx) = oneshot::channel();
+        self.send_command(Command::ExecutePreparedSelect {
+            query,
+            params,
+            respond_to: tx,
+        })?;
+        rx.await.map_err(|_| {
+            SqlMiddlewareDbError::ConnectionError(
+                "SQLite worker dropped while executing prepared select".into(),
+            )
+        })?
+    }
+
+    async fn execute_prepared_dml(
+        &self,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        let (tx, rx) = oneshot::channel();
+        self.send_command(Command::ExecutePreparedDml {
+            query,
+            params,
+            respond_to: tx,
+        })?;
+        rx.await.map_err(|_| {
+            SqlMiddlewareDbError::ConnectionError(
+                "SQLite worker dropped while executing prepared dml".into(),
+            )
+        })?
+    }
+
     async fn with_connection<F, R>(&self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
@@ -194,6 +277,20 @@ enum Command {
         params: Vec<rusqlite::types::Value>,
         respond_to: oneshot::Sender<Result<usize, SqlMiddlewareDbError>>,
     },
+    PrepareStatement {
+        query: Arc<String>,
+        respond_to: oneshot::Sender<Result<(), SqlMiddlewareDbError>>,
+    },
+    ExecutePreparedSelect {
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+        respond_to: oneshot::Sender<Result<ResultSet, SqlMiddlewareDbError>>,
+    },
+    ExecutePreparedDml {
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+        respond_to: oneshot::Sender<Result<usize, SqlMiddlewareDbError>>,
+    },
     WithConnection {
         callback: BoxedCallback,
         respond_to: oneshot::Sender<BoxedResponse>,
@@ -201,11 +298,11 @@ enum Command {
     Shutdown,
 }
 
-fn run_sqlite_worker(object: &Object, receiver: Receiver<Command>) {
+fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
     while let Ok(command) = receiver.recv() {
         match command {
             Command::ExecuteBatch { query, respond_to } => {
-                let outcome = with_connection(object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
                     let tx = conn.transaction()?;
                     tx.execute_batch(&query)?;
                     tx.commit()?;
@@ -218,7 +315,7 @@ fn run_sqlite_worker(object: &Object, receiver: Receiver<Command>) {
                 params,
                 respond_to,
             } => {
-                let outcome = with_connection(object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
                     let mut stmt = conn.prepare(&query)?;
                     build_result_set(&mut stmt, &params)
                 });
@@ -230,7 +327,7 @@ fn run_sqlite_worker(object: &Object, receiver: Receiver<Command>) {
                 respond_to,
             } => {
                 let outcome =
-                    with_connection(object, |conn| -> Result<usize, SqlMiddlewareDbError> {
+                    with_connection(&object, |conn| -> Result<usize, SqlMiddlewareDbError> {
                         let tx = conn.transaction()?;
                         let param_refs: Vec<&dyn ToSql> =
                             params.iter().map(|value| value as &dyn ToSql).collect();
@@ -243,11 +340,48 @@ fn run_sqlite_worker(object: &Object, receiver: Receiver<Command>) {
                     });
                 let _ = respond_to.send(outcome);
             }
+            Command::PrepareStatement { query, respond_to } => {
+                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                    let _ = conn.prepare_cached(&query)?;
+                    Ok(())
+                });
+                let _ = respond_to.send(outcome);
+            }
+            Command::ExecutePreparedSelect {
+                query,
+                params,
+                respond_to,
+            } => {
+                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                    let mut stmt = conn.prepare_cached(&query)?;
+                    build_result_set(&mut stmt, &params)
+                });
+                let _ = respond_to.send(outcome);
+            }
+            Command::ExecutePreparedDml {
+                query,
+                params,
+                respond_to,
+            } => {
+                let outcome =
+                    with_connection(&object, |conn| -> Result<usize, SqlMiddlewareDbError> {
+                        let tx = conn.transaction()?;
+                        let param_refs: Vec<&dyn ToSql> =
+                            params.iter().map(|value| value as &dyn ToSql).collect();
+                        let rows_affected = {
+                            let mut stmt = tx.prepare_cached(&query)?;
+                            stmt.execute(&param_refs[..])?
+                        };
+                        tx.commit()?;
+                        Ok(rows_affected)
+                    });
+                let _ = respond_to.send(outcome);
+            }
             Command::WithConnection {
                 callback,
                 respond_to,
             } => {
-                let outcome = with_connection(object, callback);
+                let outcome = with_connection(&object, callback);
                 let _ = respond_to.send(outcome);
             }
             Command::Shutdown => break,

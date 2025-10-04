@@ -17,6 +17,8 @@ pub use crate::sqlite::SqliteParamsExecute;
 #[cfg(feature = "sqlite")]
 pub use crate::sqlite::SqliteParamsQuery;
 #[cfg(feature = "sqlite")]
+pub use crate::sqlite::SqlitePreparedStatement;
+#[cfg(feature = "sqlite")]
 pub use crate::sqlite::build_result_set as sqlite_build_result_set;
 
 // SQL Server exports

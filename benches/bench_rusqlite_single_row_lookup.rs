@@ -8,9 +8,8 @@ use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
 use sql_middleware::{
-    AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection,
-    RowValues, SqlMiddlewareDbError, SqliteParamsQuery, sqlite_build_result_set,
-    sqlite_convert_params,
+    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, RowValues,
+    SqlMiddlewareDbError, SqliteParamsQuery, sqlite_build_result_set, sqlite_convert_params,
 };
 use std::cell::RefCell;
 use std::fs;
@@ -62,6 +61,46 @@ static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
         .block_on(ConfigAndPool::new_sqlite(DATASET.path().to_string()))
         .expect("create middleware pool")
 });
+
+static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("BENCH_TRACE")
+        .map(|value| value != "0")
+        .unwrap_or(false)
+});
+
+#[derive(Default)]
+struct MiddlewareQueryBreakdown {
+    total_query: Duration,
+    total_decode: Duration,
+    total_rows: u64,
+    iterations: u64,
+}
+
+impl MiddlewareQueryBreakdown {
+    fn record_iteration(&mut self) {
+        self.iterations += 1;
+    }
+
+    fn record_row(&mut self, query: Duration, decode: Duration, rows_returned: usize) {
+        self.total_query += query;
+        self.total_decode += decode;
+        self.total_rows += rows_returned as u64;
+    }
+
+    fn report(&self) {
+        if self.total_rows == 0 {
+            return;
+        }
+
+        let query_per_row = self.total_query.as_nanos() as f64 / self.total_rows as f64;
+        let decode_per_row = self.total_decode.as_nanos() as f64 / self.total_rows as f64;
+
+        eprintln!(
+            "bench trace: middleware prepared.query() {:.1} ns/row (decode {:.1} ns/row) across {} rows in {} iterations",
+            query_per_row, decode_per_row, self.total_rows, self.iterations,
+        );
+    }
+}
 
 /// Resolve how many lookups each iteration should perform.
 fn lookup_row_count_to_run() -> usize {
@@ -212,27 +251,58 @@ fn benchmark_middleware(
         b.to_async(runtime).iter_custom(move |iters| {
             let ids = ids.clone();
             let config_and_pool = config_and_pool.clone();
+            let mut breakdown =
+                TRACE_MIDDLEWARE_QUERY.then_some(MiddlewareQueryBreakdown::default());
             async move {
                 let mut total = Duration::default();
-                let query = "SELECT id, name, score, active FROM test WHERE id = ?1";
-                let mut params = vec![RowValues::Int(0)];
                 for _ in 0..iters {
+                    if let Some(stats) = breakdown.as_mut() {
+                        stats.record_iteration();
+                    }
                     let pool = config_and_pool.pool.clone();
                     let mut conn = MiddlewarePool::get_connection(&pool)
                         .await
                         .expect("acquire middleware connection");
+                    let prepared = conn
+                        .prepare_sqlite_statement(
+                            "SELECT id, name, score, active FROM test WHERE id = ?1",
+                        )
+                        .await
+                        .expect("prepare middleware statement");
+                    let mut params = vec![RowValues::Int(0)];
                     let start = Instant::now();
                     for &id in &ids {
                         params[0] = RowValues::Int(id);
-                        let result = conn
-                            .execute_select(query, &params)
-                            .await
-                            .expect("execute middleware select");
-                        let row = result.results.first().expect("expected row in result set");
-                        let data = BenchRow::from_result_row(row);
-                        black_box(data);
+                        if let Some(stats) = breakdown.as_mut() {
+                            let query_start = Instant::now();
+                            let result = prepared
+                                .query(&params)
+                                .await
+                                .expect("execute middleware select");
+                            let query_elapsed = query_start.elapsed();
+
+                            let decode_start = Instant::now();
+                            let row = result.results.first().expect("expected row in result set");
+                            let data = BenchRow::from_result_row(row);
+                            black_box(data);
+                            let decode_elapsed = decode_start.elapsed();
+
+                            stats.record_row(query_elapsed, decode_elapsed, result.results.len());
+                        } else {
+                            let result = prepared
+                                .query(&params)
+                                .await
+                                .expect("execute middleware select");
+                            let row = result.results.first().expect("expected row in result set");
+                            let data = BenchRow::from_result_row(row);
+                            black_box(data);
+                        }
                     }
                     total += start.elapsed();
+                }
+
+                if let Some(stats) = breakdown {
+                    stats.report();
                 }
 
                 total

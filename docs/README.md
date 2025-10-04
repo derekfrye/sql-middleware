@@ -311,6 +311,17 @@ let rows = match &mut conn {
         .await?,
     _ => panic!("Expected connection"),
 };
+
+// Or prepare once and reuse the compiled statement across many calls
+if let Sqlite(_) = &mut conn {
+    let prepared = conn
+        .prepare_sqlite_statement("SELECT name FROM users WHERE id = ?1")
+        .await?;
+    for user_id in ids {
+        let result = prepared.query(&[RowValues::Int(*user_id)]).await?;
+        // ...
+    }
+}
 ```
 
 </td>
