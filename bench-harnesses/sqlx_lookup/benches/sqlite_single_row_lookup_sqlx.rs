@@ -4,9 +4,8 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sqlx::{ConnectOptions, FromRow, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
 use std::hint::black_box;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use tempfile::{Builder, TempPath};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
@@ -21,7 +20,6 @@ struct BenchRow {
 }
 
 struct Dataset {
-    _temp_path: TempPath,
     path: String,
     ids: Vec<i64>,
 }
@@ -36,18 +34,20 @@ impl Dataset {
     }
 }
 
+fn shared_dataset_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("benchmark_sqlite_single_lookup.db")
+}
+
 static TOKIO_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().expect("create tokio runtime"));
 
 static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
     TOKIO_RUNTIME.block_on(async {
         let row_count = lookup_row_count_to_run();
-        let temp_file = Builder::new()
-            .prefix("sqlx_lookup")
-            .suffix(".db")
-            .tempfile()
-            .expect("create temp sqlite file");
-        let temp_path = temp_file.into_temp_path();
-        prepare_sqlite_dataset(temp_path.as_ref(), row_count)
+        let path = shared_dataset_path();
+        prepare_sqlite_dataset(path.as_ref(), row_count)
             .await
             .expect("failed to prepare dataset");
 
@@ -55,10 +55,9 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
         let mut rng = ChaCha8Rng::seed_from_u64(1_234_567_890);
         ids.shuffle(&mut rng);
 
-        let path_string = temp_path.to_string_lossy().into_owned();
+        let path_string = path.to_string_lossy().into_owned();
 
         Dataset {
-            _temp_path: temp_path,
             path: path_string,
             ids,
         }
@@ -274,17 +273,17 @@ fn benchmark_sqlx_param_bind(
         let ids = ids.clone();
         b.iter_custom(move |iters| {
             let mut total = Duration::default();
-            for _ in 0..iters {
-                let start = Instant::now();
-                for &id in &ids {
-                    let query = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1");
-                    let bound = query.bind(id);
-                    std::hint::black_box(bound);
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let query = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1");
+                        let bound = query.bind(id);
+                        let _ = std::hint::black_box(bound);
+                    }
+                    total += start.elapsed();
                 }
-                total += start.elapsed();
-            }
-            total
-        });
+                total
+            });
     });
 }
 

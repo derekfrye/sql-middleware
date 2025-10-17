@@ -11,3 +11,4 @@ test_turso.db
 test_turso.db-wal
 benchmark_sqlite_single_lookup.db
 benchmark_sqlite_single_lookup.db*
+perf*.data*

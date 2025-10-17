@@ -13,11 +13,18 @@ Use this guide to see how each target is wired, which parts of the stack they ex
 - `bench_rusqlite_single_row_lookup` – measures repeated `SELECT ... WHERE id = ?` calls through raw rusqlite and the middleware abstraction.
 - `sqlx_lookup_bench` (stand-alone crate) – measures the same lookup workload using SQLx in isolation.
 
-Run the bundled benches with `cargo bench`, or focus on a single target via `CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest`. Criterion substring filters still apply, e.g. `cargo bench --bench database_benchmark -- sqlite`. To capture middleware & SQLx numbers, we also need the harness crate: 
+Run the bundled benches with `cargo bench`, or focus on a single target via `CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest`. Criterion substring filters work, e.g. `cargo bench --bench database_benchmark -- sqlite`. To capture middleware & SQLx numbers, we also need the harness crate: 
 
 ```shell
 CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest
 CRITERION_HOME=$(pwd)/bench_results cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest
+```
+
+Or, to generate flamegraphs:
+
+```shell
+CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 cargo flamegraph --bench bench_rusqlite_single_row_lookup -- --bench middleware
+CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 cargo flamegraph --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml --bench sqlite_single_row_lookup_sqlx -- --bench sqlx
 ```
 
 ## Configuration knobs
@@ -53,7 +60,7 @@ Because the timed section delegates directly to the backend driver (rusqlite, to
 This comparison focuses on per-call overhead for the rusqlite baseline versus the middleware when fetching individual rows by primary key:
 1. On first use, build a deterministic SQLite file with `row_count` entries and a shuffled list of ids.
 2. `rusqlite` baseline: open a single `rusqlite::Connection`, prepare a cached statement, and loop over the id list with `query_row`, mapping results into `BenchRow`.
-3. `sql_middleware` path: construct a `ConfigAndPool`, borrow a pooled connection, and call `execute_select` for each id while recycling a `RowValues` buffer. The returned `ResultSet` converts into the same `BenchRow` struct.
+3. `sql_middleware` path: construct a `ConfigAndPool`, borrow a pooled connection each iteration, prepare the statement once via `prepare_sqlite_statement`, and then call `PreparedSqliteStatement::query` for every id while recycling a `RowValues` buffer. The first row of each `ResultSet` converts into the same `BenchRow` struct.
 
 Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BENCH_ROWS`) to scale the workload.
 
@@ -64,7 +71,7 @@ Additional micro-benches in the same Criterion group isolate specific parts of t
 - `middleware_param_convert` – benchmarks parameter conversion from `RowValues` into `rusqlite::Value`s.
 
 ### SQLx harness (`bench-harnesses/sqlx_lookup`)
-- Builds the same deterministic dataset (same seed and schema) using SQLx.
+- Rebuilds the same on-disk dataset (`benchmark_sqlite_single_lookup.db` in the repo root) using SQLx with the identical seed and schema.
 - Benchmarks `SqlitePool` + `query_as` lookups over the shuffled id list.
 - Lives outside the main crate so it can track the latest SQLx release without conflicting with `rusqlite`'s `libsqlite3-sys` requirements.
 - Run it with `cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest` (optionally setting `CRITERION_HOME` as above).
@@ -77,7 +84,7 @@ The harness also exposes SQLx-specific micro-benches:
 
 ## Interpreting results
 - Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
-- Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same dataset and decoding logic so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost.
+- Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same on-disk dataset and decoding logic, so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost.
 - Treat the SQLx harness output as a parallel data point for the same workload; compare its metrics with `rusqlite`/middleware results to gauge how your middleware stacks up against a modern async client.
 - When designing additional benchmarks, decide whether you want engine-level comparisons (like the bulk inserts) or API-level comparisons (like the single-row lookup) and structure the workload accordingly.
 

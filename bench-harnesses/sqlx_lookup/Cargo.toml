@@ -11,8 +11,11 @@ criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
 sqlx = { version = "0", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "derive"] }
-tempfile = "3"
 
 [[bench]]
 name = "sqlite_single_row_lookup_sqlx"
 harness = false
+
+[profile.bench]
+debug = true
+opt-level = 0
