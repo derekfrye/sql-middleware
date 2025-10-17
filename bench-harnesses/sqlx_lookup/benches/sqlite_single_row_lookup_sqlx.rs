@@ -156,13 +156,14 @@ fn benchmark_sqlx_query_as(
 
                 let mut total = Duration::default();
                 for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
                     let start = Instant::now();
                     for &id in &ids {
                         let row: BenchRow = sqlx::query_as(
                             "SELECT id, name, score, active FROM test WHERE id = ?1",
                         )
                         .bind(id)
-                        .fetch_one(&pool)
+                        .fetch_one(&mut *conn)
                         .await
                         .expect("sqlx fetch");
                         std::hint::black_box(row);
@@ -243,11 +244,12 @@ fn benchmark_sqlx_query_raw(
 
                 let mut total = Duration::default();
                 for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
                     let start = Instant::now();
                     for &id in &ids {
                         let row = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1")
                             .bind(id)
-                            .fetch_one(&pool)
+                            .fetch_one(&mut *conn)
                             .await
                             .expect("sqlx fetch");
                         black_box(row);
