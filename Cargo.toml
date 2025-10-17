@@ -11,6 +11,9 @@ homepage = "https://github.com/derekfrye/sql-middleware"
 keywords = ["sql", "sqlx", "sqlite", "postgres", "sqlserver", "postgresql", "sql server", "libsql", "turso"]
 documentation = "https://docs.rs/sql-middleware"
 
+[lints.rust]
+unsafe_code = "deny"
+
 [features]
 default = ["sqlite", "postgres"]
 sqlite = ["deadpool-sqlite"]
