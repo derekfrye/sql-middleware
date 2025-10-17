@@ -78,6 +78,11 @@ harness = false
 name = "bench_rusqlite_single_row_lookup"
 harness = false
 
+[[bench]]
+name = "bench_turso_single_row_lookup"
+harness = false
+required-features = ["turso"]
+
 [profile.bench]
 debug = true
 opt-level = 0
