@@ -72,13 +72,13 @@ Additional micro-benches in the same Criterion group isolate specific parts of t
 
 ### SQLx harness (`bench-harnesses/sqlx_lookup`)
 - Rebuilds the same on-disk dataset (`benchmark_sqlite_single_lookup.db` in the repo root) using SQLx with the identical seed and schema.
-- Benchmarks `SqlitePool` + `query_as` lookups over the shuffled id list.
+- Times `SqlitePool` plus a raw `query()` fetch while manually decoding each `SqliteRow` into `BenchRow`, matching the middleware benchmark’s decoding work for a fair comparison.
 - Lives outside the main crate so it can track the latest SQLx release without conflicting with `rusqlite`'s `libsqlite3-sys` requirements.
 - Run it with `cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest` (optionally setting `CRITERION_HOME` as above).
 
 The harness also exposes SQLx-specific micro-benches:
-- `sqlx_query_raw` – fetches rows as `SqliteRow` without `FromRow` mapping.
-- `sqlx` – the full `query_as` baseline (identical workload to the middleware bench).
+- `sqlx` – raw `query()` fetch with manual `SqliteRow` → `BenchRow` decoding, mirroring the middleware benchmark.
+- `sqlx_query_raw` – fetches rows as `SqliteRow` and stops before decoding to isolate driver overhead.
 - `sqlx_pool_acquire` – isolates connection acquisition overhead.
 - `sqlx_param_bind` – records the cost of constructing and binding parameters on the query builder.
 

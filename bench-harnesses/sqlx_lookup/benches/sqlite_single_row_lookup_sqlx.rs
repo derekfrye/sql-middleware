@@ -2,7 +2,10 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use sqlx::{ConnectOptions, FromRow, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
+    ConnectOptions, Row,
+};
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -10,7 +13,7 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
-#[derive(Debug, FromRow)]
+#[derive(Debug)]
 #[allow(dead_code)]
 struct BenchRow {
     id: i64,
@@ -129,7 +132,21 @@ async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sql
     Ok(())
 }
 
-fn benchmark_sqlx_query_as(
+fn bench_row_from_sqlite_row(row: SqliteRow) -> BenchRow {
+    // Manual decode keeps the SQLx path aligned with middleware's CustomDbRow extraction so the comparison stays fair.
+    BenchRow {
+        id: row.try_get(0).expect("extract id"),
+        name: row.try_get(1).expect("extract name"),
+        score: row.try_get(2).expect("extract score"),
+        active: row
+            .try_get::<i64, _>(3)
+            .map(|value| value != 0)
+            .or_else(|_| row.try_get(3))
+            .expect("extract active"),
+    }
+}
+
+fn benchmark_sqlx_manual_decode(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
     let dataset = &*DATASET;
@@ -159,13 +176,13 @@ fn benchmark_sqlx_query_as(
                     let mut conn = pool.acquire().await.expect("acquire connection");
                     let start = Instant::now();
                     for &id in &ids {
-                        let row: BenchRow = sqlx::query_as(
-                            "SELECT id, name, score, active FROM test WHERE id = ?1",
-                        )
-                        .bind(id)
-                        .fetch_one(&mut *conn)
-                        .await
-                        .expect("sqlx fetch");
+                        let row = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1")
+                            .bind(id)
+                            .fetch_one(&mut *conn)
+                            .await
+                            .expect("sqlx fetch");
+                        let row = bench_row_from_sqlite_row(row);
+                        // Black-box the decoded struct to mirror the middleware benchmark exactly.
                         std::hint::black_box(row);
                     }
                     total += start.elapsed();
@@ -252,6 +269,7 @@ fn benchmark_sqlx_query_raw(
                             .fetch_one(&mut *conn)
                             .await
                             .expect("sqlx fetch");
+                        // Leave this variant focused on raw row materialisation so we can see the driver-only cost.
                         black_box(row);
                     }
                     total += start.elapsed();
@@ -293,7 +311,7 @@ fn sqlite_single_row_lookup_sqlx(c: &mut Criterion) {
     let mut group = c.benchmark_group("sqlite_single_row_lookup_sqlx");
     group.throughput(Throughput::Elements(DATASET.ids().len() as u64));
 
-    benchmark_sqlx_query_as(&mut group);
+    benchmark_sqlx_manual_decode(&mut group);
     benchmark_sqlx_query_raw(&mut group);
     benchmark_sqlx_pool_acquire(&mut group);
     benchmark_sqlx_param_bind(&mut group);
