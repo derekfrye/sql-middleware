@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
-    ConnectOptions, Row,
+    ConnectOptions, Executor, Row, Statement,
 };
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
@@ -174,9 +174,15 @@ fn benchmark_sqlx_manual_decode(
                 let mut total = Duration::default();
                 for _ in 0..iters {
                     let mut conn = pool.acquire().await.expect("acquire connection");
+                    // Prepare once per iteration to mirror the middleware benchmark; typical SQLx users rely on the driver-managed cache instead.
+                    let stmt = conn
+                        .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
+                        .await
+                        .expect("prepare statement");
                     let start = Instant::now();
                     for &id in &ids {
-                        let row = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1")
+                        let row = stmt
+                            .query()
                             .bind(id)
                             .fetch_one(&mut *conn)
                             .await
@@ -262,9 +268,15 @@ fn benchmark_sqlx_query_raw(
                 let mut total = Duration::default();
                 for _ in 0..iters {
                     let mut conn = pool.acquire().await.expect("acquire connection");
+                    // Prepare once per iteration to match the middleware flow, even though most SQLx code leans on implicit caching.
+                    let stmt = conn
+                        .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
+                        .await
+                        .expect("prepare statement");
                     let start = Instant::now();
                     for &id in &ids {
-                        let row = sqlx::query("SELECT id, name, score, active FROM test WHERE id = ?1")
+                        let row = stmt
+                            .query()
                             .bind(id)
                             .fetch_one(&mut *conn)
                             .await
