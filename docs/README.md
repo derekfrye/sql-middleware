@@ -4,7 +4,7 @@
 
 Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), experimental [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling (except Turso, which doesn't have deadpool backend yet), and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
 
-Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. 
+Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. It seems our SQLite perf is about 14% faster than similar SQLite via SQlx for at least some workloads, despite me trying multiple ways to get SQLx to go quicker. That could just be my misunderstanding of SQLx rather than an inherent performance difference. For evidence, see [our SQLite benchmark result](./bench_results/sqlite_single_row_lookup/report/index.html) vs. [our SQlite via SQLx benchmark result](./bench_results/sqlite_single_row_lookup_sqlx/report/index.html).
 
 ## Goals
 * Convenience functions for common SQL query patterns
@@ -316,6 +316,17 @@ let rows = match &mut conn {
 if let Sqlite(_) = &mut conn {
     let prepared = conn
         .prepare_sqlite_statement("SELECT name FROM users WHERE id = ?1")
+        .await?;
+    for user_id in ids {
+        let result = prepared.query(&[RowValues::Int(*user_id)]).await?;
+        // ...
+    }
+}
+
+// Turso connections now expose the same prepared-statement helper.
+if let Turso(_) = &mut conn {
+    let prepared = conn
+        .prepare_turso_statement("SELECT name FROM users WHERE id = ?1")
         .await?;
     for user_id in ids {
         let result = prepared.query(&[RowValues::Int(*user_id)]).await?;

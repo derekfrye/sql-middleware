@@ -4,16 +4,16 @@
 //! sql-middleware abstraction. Structured to mirror
 //! `bench_rusqlite_single_row_lookup` so results stay comparable.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use rand::seq::SliceRandom;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rand::SeedableRng;
+use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
+use sql_middleware::AsyncDatabaseExecutor;
+use sql_middleware::turso::{Params as TursoParams, build_result_set as turso_build_result_set};
 use sql_middleware::{
     ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, ParamConverter,
     RowValues, SqlMiddlewareDbError,
 };
-use sql_middleware::AsyncDatabaseExecutor;
-use sql_middleware::turso::{build_result_set as turso_build_result_set, Params as TursoParams};
 use std::fs;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
@@ -207,7 +207,7 @@ impl BenchRow {
     }
 }
 
-/// Middleware benchmark that goes through Turso `execute_select`.
+/// Middleware benchmark that goes through the Turso prepared-statement helper.
 /// should be similar to rusqlite `benchmark_middleware` in structure.
 fn benchmark_middleware(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
@@ -235,39 +235,37 @@ fn benchmark_middleware(
                     let mut conn = MiddlewarePool::get_connection(&pool)
                         .await
                         .expect("acquire middleware connection");
+                    let prepared = conn
+                        .prepare_turso_statement(
+                            "SELECT id, name, score, active FROM test WHERE id = ?1",
+                        )
+                        .await
+                        .expect("prepare middleware statement");
                     let mut params = vec![RowValues::Int(0)];
                     let start = Instant::now();
                     for &id in &ids {
                         params[0] = RowValues::Int(id);
                         if let Some(stats) = breakdown.as_mut() {
                             let query_start = Instant::now();
-                            let result = conn
-                                .execute_select(
-                                    "SELECT id, name, score, active FROM test WHERE id = ?1",
-                                    &params,
-                                )
+                            let result = prepared
+                                .query(&params)
                                 .await
                                 .expect("execute middleware select");
                             let query_elapsed = query_start.elapsed();
 
                             let decode_start = Instant::now();
-                            let row =
-                                result.results.first().expect("expected row in result set");
+                            let row = result.results.first().expect("expected row in result set");
                             let data = BenchRow::from_result_row(row);
                             black_box(data);
                             let decode_elapsed = decode_start.elapsed();
 
                             stats.record_row(query_elapsed, decode_elapsed, result.results.len());
                         } else {
-                            let result = conn
-                                .execute_select(
-                                    "SELECT id, name, score, active FROM test WHERE id = ?1",
-                                    &params,
-                                )
+                            let result = prepared
+                                .query(&params)
                                 .await
                                 .expect("execute middleware select");
-                            let row =
-                                result.results.first().expect("expected row in result set");
+                            let row = result.results.first().expect("expected row in result set");
                             let data = BenchRow::from_result_row(row);
                             black_box(data);
                         }
@@ -387,10 +385,7 @@ fn benchmark_middleware_marshalling(
                             .expect("convert params")
                             .0;
                             let start = Instant::now();
-                            let rows = stmt
-                                .query(converted)
-                                .await
-                                .expect("query turso statement");
+                            let rows = stmt.query(converted).await.expect("query turso statement");
                             let result = turso_build_result_set(rows, Some(cols_arc))
                                 .await
                                 .expect("build result set");

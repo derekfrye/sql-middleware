@@ -8,7 +8,7 @@ description = "Lightweight async wrappers for tokio-postgres, rusqlite, libsql, 
 repository = "https://github.com/derekfrye/sql-middleware"
 readme = "docs/README.md"
 homepage = "https://github.com/derekfrye/sql-middleware"
-keywords = ["sql", "sqlx", "sqlite", "postgres", "sqlserver", "postgresql", "sql server", "libsql", "turso"]
+keywords = ["sql", "sqlite", "postgresql", "libsql", "turso"]
 documentation = "https://docs.rs/sql-middleware"
 
 [lints.rust]
