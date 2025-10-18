@@ -16,8 +16,8 @@ Motivated from trying SQLx, not liking some issue [others already noted](https:/
 By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
 
 ```toml
-# Only include SQLite and LibSQL support
-sql-middleware = { version = "0", features = ["sqlite", "libsql"] }
+# Only include SQLite and Turso support
+sql-middleware = { version = "0", features = ["sqlite", "turso"] }
 ```
 
 Available features:

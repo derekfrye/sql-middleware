@@ -108,10 +108,10 @@ impl MiddlewarePool {
 }
 
 impl MiddlewarePoolConnection {
-    /// Run synchronous SQLite work on the underlying worker-owned connection.
+    /// Run synchronous `SQLite` work on the underlying worker-owned connection.
     ///
     /// # Errors
-    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not SQLite.
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not `SQLite`.
     #[cfg(feature = "sqlite")]
     pub async fn with_sqlite_connection<F, R>(&mut self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
@@ -128,7 +128,11 @@ impl MiddlewarePoolConnection {
         }
     }
 
-    /// Prepare a SQLite statement and obtain a reusable handle backed by the worker thread.
+    /// Prepare a `SQLite` statement and obtain a reusable handle backed by the worker thread.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the underlying connection is not
+    /// `SQLite`, or propagates any preparation error reported by the worker thread.
     #[cfg(feature = "sqlite")]
     pub async fn prepare_sqlite_statement(
         &mut self,
@@ -145,6 +149,10 @@ impl MiddlewarePoolConnection {
     }
 
     /// Prepare a Turso statement and obtain a reusable handle tied to the pooled connection.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not Turso-enabled,
+    /// or bubbles up any error returned while preparing the statement through Turso's client.
     #[cfg(feature = "turso")]
     pub async fn prepare_turso_statement(
         &mut self,

@@ -1,5 +1,3 @@
-#![cfg(feature = "test-utils-postgres")]
-
 use criterion::{BenchmarkId, Criterion};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};

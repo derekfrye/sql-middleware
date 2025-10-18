@@ -15,13 +15,17 @@ use crate::middleware::{ResultSet, SqlMiddlewareDbError};
 use super::prepared::SqlitePreparedStatement;
 use super::query::build_result_set;
 
-/// Owned SQLite connection backed by a dedicated worker thread.
+/// Owned `SQLite` connection backed by a dedicated worker thread.
 #[derive(Clone)]
 pub struct SqliteConnection {
     worker: Arc<SqliteWorker>,
 }
 
 impl SqliteConnection {
+    /// Construct a worker-backed `SQLite` connection handle.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if the background worker thread cannot be spawned.
     pub fn new(object: Object) -> Result<Self, SqlMiddlewareDbError> {
         let worker = SqliteWorker::spawn(object)?;
         Ok(Self {
@@ -29,10 +33,20 @@ impl SqliteConnection {
         })
     }
 
+    /// Execute a batch of SQL statements on the worker-owned connection.
+    ///
+    /// # Errors
+    /// Propagates any [`SqlMiddlewareDbError`] produced while dispatching the command or running
+    /// the query batch within the worker.
     pub async fn execute_batch(&self, query: String) -> Result<(), SqlMiddlewareDbError> {
         self.worker.execute_batch(query).await
     }
 
+    /// Execute a SQL query and return a [`ResultSet`] produced by the worker thread.
+    ///
+    /// # Errors
+    /// Returns any [`SqlMiddlewareDbError`] encountered while the worker prepares or evaluates the
+    /// statement, or if channel communication with the worker fails.
     pub async fn execute_select(
         &self,
         query: String,
@@ -41,6 +55,11 @@ impl SqliteConnection {
         self.worker.execute_select(query, params).await
     }
 
+    /// Execute a DML statement (INSERT/UPDATE/DELETE) and return the affected row count.
+    ///
+    /// # Errors
+    /// Returns any [`SqlMiddlewareDbError`] reported by the worker while executing the statement or
+    /// relaying the result back to the caller.
     pub async fn execute_dml(
         &self,
         query: String,
@@ -49,6 +68,11 @@ impl SqliteConnection {
         self.worker.execute_dml(query, params).await
     }
 
+    /// Run synchronous `rusqlite` logic against the underlying worker-owned connection.
+    ///
+    /// # Errors
+    /// Propagates any [`SqlMiddlewareDbError`] raised while executing the callback or interacting
+    /// with the worker.
     pub async fn with_connection<F, R>(&self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
@@ -57,6 +81,11 @@ impl SqliteConnection {
         self.worker.with_connection(func).await
     }
 
+    /// Prepare a cached statement on the worker and return a reusable handle.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if the worker fails to prepare the statement or if the
+    /// preparation channel is unexpectedly closed.
     pub async fn prepare_statement(
         &self,
         query: &str,
@@ -68,6 +97,11 @@ impl SqliteConnection {
         Ok(SqlitePreparedStatement::new(self.clone(), query_arc))
     }
 
+    /// Execute a previously prepared query statement on the worker.
+    ///
+    /// # Errors
+    /// Returns any [`SqlMiddlewareDbError`] produced while dispatching the command or running the
+    /// query on the worker connection.
     pub(crate) async fn execute_prepared_select(
         &self,
         query: Arc<String>,
@@ -76,6 +110,11 @@ impl SqliteConnection {
         self.worker.execute_prepared_select(query, params).await
     }
 
+    /// Execute a previously prepared DML statement on the worker.
+    ///
+    /// # Errors
+    /// Returns any [`SqlMiddlewareDbError`] encountered while the worker runs the statement or if
+    /// communication with the worker fails.
     pub(crate) async fn execute_prepared_dml(
         &self,
         query: Arc<String>,
@@ -111,7 +150,7 @@ impl SqliteWorker {
             .name(format!("sqlite-worker-{object_id}"))
             .spawn(move || {
                 let runtime_guard = handle.as_ref().map(|h| h.enter());
-                run_sqlite_worker(object, receiver);
+                run_sqlite_worker(&object, &receiver);
                 drop(runtime_guard);
             })
             .map_err(|err| {
@@ -298,11 +337,11 @@ enum Command {
     Shutdown,
 }
 
-fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
+fn run_sqlite_worker(object: &Object, receiver: &Receiver<Command>) {
     while let Ok(command) = receiver.recv() {
         match command {
             Command::ExecuteBatch { query, respond_to } => {
-                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                let outcome = with_connection(object, |conn| -> Result<_, SqlMiddlewareDbError> {
                     let tx = conn.transaction()?;
                     tx.execute_batch(&query)?;
                     tx.commit()?;
@@ -315,7 +354,7 @@ fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
                 params,
                 respond_to,
             } => {
-                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                let outcome = with_connection(object, |conn| -> Result<_, SqlMiddlewareDbError> {
                     let mut stmt = conn.prepare(&query)?;
                     build_result_set(&mut stmt, &params)
                 });
@@ -327,7 +366,7 @@ fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
                 respond_to,
             } => {
                 let outcome =
-                    with_connection(&object, |conn| -> Result<usize, SqlMiddlewareDbError> {
+                    with_connection(object, |conn| -> Result<usize, SqlMiddlewareDbError> {
                         let tx = conn.transaction()?;
                         let param_refs: Vec<&dyn ToSql> =
                             params.iter().map(|value| value as &dyn ToSql).collect();
@@ -341,7 +380,7 @@ fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
                 let _ = respond_to.send(outcome);
             }
             Command::PrepareStatement { query, respond_to } => {
-                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                let outcome = with_connection(object, |conn| -> Result<_, SqlMiddlewareDbError> {
                     let _ = conn.prepare_cached(&query)?;
                     Ok(())
                 });
@@ -352,7 +391,7 @@ fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
                 params,
                 respond_to,
             } => {
-                let outcome = with_connection(&object, |conn| -> Result<_, SqlMiddlewareDbError> {
+                let outcome = with_connection(object, |conn| -> Result<_, SqlMiddlewareDbError> {
                     let mut stmt = conn.prepare_cached(&query)?;
                     build_result_set(&mut stmt, &params)
                 });
@@ -364,7 +403,7 @@ fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
                 respond_to,
             } => {
                 let outcome =
-                    with_connection(&object, |conn| -> Result<usize, SqlMiddlewareDbError> {
+                    with_connection(object, |conn| -> Result<usize, SqlMiddlewareDbError> {
                         let tx = conn.transaction()?;
                         let param_refs: Vec<&dyn ToSql> =
                             params.iter().map(|value| value as &dyn ToSql).collect();
@@ -381,7 +420,7 @@ fn run_sqlite_worker(object: Object, receiver: Receiver<Command>) {
                 callback,
                 respond_to,
             } => {
-                let outcome = with_connection(&object, callback);
+                let outcome = with_connection(object, callback);
                 let _ = respond_to.send(outcome);
             }
             Command::Shutdown => break,

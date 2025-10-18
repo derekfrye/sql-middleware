@@ -25,6 +25,9 @@ pub struct TursoPreparedStatement {
 impl std::fmt::Debug for TursoPreparedStatement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TursoPreparedStatement")
+            .field("_connection", &"<turso::Connection>")
+            .field("statement", &"<turso::Statement>")
+            .field("columns", &self.columns)
             .field("sql", &self.sql)
             .finish()
     }
@@ -55,6 +58,10 @@ impl TursoPreparedStatement {
     }
 
     /// Execute the prepared statement as a query and materialise the rows into a [`ResultSet`].
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if parameter conversion fails, the Turso client reports an
+    /// execution error, or result decoding cannot be completed.
     pub async fn query(&self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
         let converted =
             <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
@@ -73,6 +80,10 @@ impl TursoPreparedStatement {
     }
 
     /// Execute the prepared statement as a DML (INSERT/UPDATE/DELETE) returning rows affected.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if parameter conversion fails, Turso returns an execution
+    /// error, or the affected-row count cannot be converted into `usize`.
     pub async fn execute(&self, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
         let converted =
             <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
@@ -94,6 +105,7 @@ impl TursoPreparedStatement {
     }
 
     /// Access the raw SQL string of the prepared statement.
+    #[must_use]
     pub fn sql(&self) -> &str {
         self.sql.as_str()
     }

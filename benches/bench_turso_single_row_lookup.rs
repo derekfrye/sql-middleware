@@ -1,4 +1,5 @@
 #![cfg(feature = "turso")]
+#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
 
 //! Criterion comparison of single-row SELECT latency for Turso via the
 //! sql-middleware abstraction. Structured to mirror

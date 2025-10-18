@@ -1,3 +1,5 @@
+#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
+
 //! Criterion comparison of single-row SELECT latency for raw `rusqlite` vs. the
 //! sql-middleware abstraction. Each iteration reuses the same seeded dataset so
 //! we focus on call overhead instead of storage effects.
@@ -135,7 +137,7 @@ fn lookup_row_count_to_run() -> usize {
         .unwrap_or(1000)
 }
 
-/// Create a fresh SQLite file with predictable contents for repeatable runs.
+/// Create a fresh `SQLite` file with predictable contents for repeatable runs.
 fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> rusqlite::Result<()> {
     if path.exists() {
         let _ = fs::remove_file(path);
@@ -245,7 +247,7 @@ fn benchmark_rusqlite_direct(
                 let start = Instant::now();
                 for &id in &ids {
                     let row = stmt
-                        .query_row([id], |row| BenchRow::from_rusqlite(row))
+                        .query_row([id], BenchRow::from_rusqlite)
                         .expect("query row");
                     black_box(row);
                 }
@@ -359,7 +361,7 @@ fn benchmark_pool_acquire(
     });
 }
 
-/// Measure the overhead of preparing a SQLite statement through the middleware.
+/// Measure the overhead of preparing a `SQLite` statement through the middleware.
 fn benchmark_middleware_prepare(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
