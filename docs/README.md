@@ -142,6 +142,7 @@ SQLite / LibSQL / Turso
 <td>
 
 ```rust
+use chrono::NaiveDateTime;
 // PostgreSQL uses $-style placeholders
 let q = QueryAndParams::new(
     "INSERT INTO test (espn_id, name
@@ -167,6 +168,7 @@ conn.execute_dml(&q.query, &q.params)
 <td>
 
 ```rust
+use chrono::NaiveDateTime;
 // SQLite-compatible backends use ? or ?N
 let q = QueryAndParams::new(
     "INSERT INTO test (espn_id, name
@@ -212,10 +214,10 @@ let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 Here, the APIs differ a bit, because the underlying libraries are different. It doesn't appear easy to make these consistent without hiding underlying library capabilities. This is the most similar way to do queries w this middleware if you need custom app logic between `transaction()` and `commit()`.
 
 See further examples in the tests directory:
-- [PostgreSQL](/tests/test5a_postgres.rs)
-- [LibSQL](/tests/test5b_libsql.rs)
-- [SQLite](/tests/test5c_sqlite.rs)
-- [Turso](/tests/test5d_turso.rs)
+- [SQLite test example](/tests/test5c_sqlite.rs), [SQLite bench example](../benches/bench_rusqlite_single_row_lookup.rs)
+- [Turso test example](/tests/test5d_turso.rs)
+- [PostgreSQL test example](/tests/test5a_postgres.rs)
+- [LibSQL test example](/tests/test5b_libsql.rs)
 
 <table>
 <tr>
@@ -357,7 +359,7 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
         // SQLite/LibSQL/Turso: "VALUES (?, ?)" or "VALUES (?1, ?2)"
         "INSERT INTO users (id, name) VALUES ($1, $2)",
         vec![
-            RowValues::Int(user_id),
+            RowValues::Int(i64::from(user_id)),
             RowValues::Text(name.to_string()),
         ]
     );
@@ -370,9 +372,12 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
 }
 ```
 
-## Design Documents
+## Our use of `[allow(...)]`s
 
-- **[Async Design Decisions](async.md)** - Explains why some functions are marked with `#[allow(clippy::unused_async)]` and our async API design philosophy.
+- `#[allow(clippy::unused_async)]` keeps public constructors async so the signature stays consistent even when the current body has no awaits. You’ll see this on `ConfigAndPool::new_postgres` (`src/postgres/config.rs:10`), `ConfigAndPool::new_mssql` (`src/mssql/config.rs:19`), and `MiddlewarePool::get` (`src/pool/types.rs:66`). We also call out the rationale in **[Async Design Decisions](async.md)**.
+- `#[allow(clippy::useless_conversion)]` is used once to satisfy `rusqlite::params_from_iter`, which requires an iterator type that Clippy would otherwise collapse away (`src/sqlite/params.rs:79`).
+- `#[allow(unreachable_patterns)]` guards catch-all branches that only fire when a backend feature is disabled, preventing false positives when matching on `MiddlewarePoolConnection` (`src/pool/connection.rs:102`, `src/executor.rs:64`, `src/executor.rs:97`, `src/executor.rs:130`, `src/pool/interaction.rs:40`, `src/pool/interaction.rs:78`).
+- `#[allow(unused_variables)]` appears around the interaction helpers because the higher-order functions take arguments that are only needed for certain backend combinations (`src/pool/interaction.rs:10`, `src/pool/interaction.rs:51`).
 
 ## Developing and Testing
 
