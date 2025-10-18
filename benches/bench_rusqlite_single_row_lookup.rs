@@ -16,7 +16,7 @@ use std::fs;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
@@ -66,6 +66,26 @@ static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> = LazyLock::new(|| {
     std::env::var("BENCH_TRACE")
         .map(|value| value != "0")
         .unwrap_or(false)
+});
+
+static MIDDLEWARE_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyLock::new(|| {
+    TOKIO_RUNTIME
+        .block_on(async {
+            let pool = MIDDLEWARE_CONFIG.pool.clone();
+            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let prepared = conn
+                .prepare_sqlite_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
+                .await?;
+            let params = [RowValues::Int(1)];
+            let result = prepared.query(&params).await?;
+            result.results.into_iter().next().ok_or_else(|| {
+                SqlMiddlewareDbError::ExecutionError(
+                    "sample row expected for middleware decode benchmark".to_string(),
+                )
+            })
+        })
+        .map(Arc::new)
+        .expect("load sample SQLite middleware row for decode benchmark")
 });
 
 #[derive(Default)]
@@ -312,14 +332,14 @@ fn benchmark_middleware(
 }
 
 /// Measure the cost of checking out and dropping a middleware connection.
-fn benchmark_middleware_checkout(
+fn benchmark_pool_acquire(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
     let runtime = &*TOKIO_RUNTIME;
     let config_and_pool = MIDDLEWARE_CONFIG.clone();
     let lookup_len = DATASET.ids().len();
 
-    group.bench_function(BenchmarkId::new("middleware_checkout", lookup_len), |b| {
+    group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
             let pool = config_and_pool.pool.clone();
@@ -332,6 +352,41 @@ fn benchmark_middleware_checkout(
                         .expect("checkout connection");
                     drop(conn);
                     total += start.elapsed();
+                }
+                total
+            }
+        });
+    });
+}
+
+/// Measure the overhead of preparing a SQLite statement through the middleware.
+fn benchmark_middleware_prepare(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let runtime = &*TOKIO_RUNTIME;
+    let config_and_pool = MIDDLEWARE_CONFIG.clone();
+    let lookup_len = DATASET.ids().len();
+
+    group.bench_function(BenchmarkId::new("middleware_prepare", lookup_len), |b| {
+        let config_and_pool = config_and_pool.clone();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.pool.clone();
+            async move {
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = MiddlewarePool::get_connection(&pool)
+                        .await
+                        .expect("checkout connection");
+                    let start = Instant::now();
+                    let prepared = conn
+                        .prepare_sqlite_statement(
+                            "SELECT id, name, score, active FROM test WHERE id = ?1",
+                        )
+                        .await
+                        .expect("prepare statement");
+                    total += start.elapsed();
+                    drop(prepared);
+                    drop(conn);
                 }
                 total
             }
@@ -409,6 +464,32 @@ fn benchmark_middleware_marshalling(
     });
 }
 
+/// Measure the cost of decoding a `CustomDbRow` into the bench struct.
+fn benchmark_middleware_decode(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let ids = DATASET.ids().to_vec();
+
+    group.bench_function(BenchmarkId::new("middleware_decode", ids.len()), |b| {
+        let ids = ids.clone();
+        let sample_row = MIDDLEWARE_SAMPLE_ROW.clone();
+        b.iter_custom(move |iters| {
+            let ids = ids.clone();
+            let sample_row = sample_row.clone();
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                for _ in &ids {
+                    let start = Instant::now();
+                    let data = BenchRow::from_result_row(&sample_row);
+                    black_box(data);
+                    total += start.elapsed();
+                }
+            }
+            total
+        });
+    });
+}
+
 /// Measure parameter conversion cost for the middleware.
 fn benchmark_middleware_param_conversion(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
@@ -447,9 +528,11 @@ fn sqlite_single_row_lookup(c: &mut Criterion) {
 
     benchmark_rusqlite_direct(&mut group);
     benchmark_middleware(&mut group);
-    benchmark_middleware_checkout(&mut group);
+    benchmark_pool_acquire(&mut group);
+    benchmark_middleware_prepare(&mut group);
     benchmark_middleware_interact_only(&mut group);
     benchmark_middleware_marshalling(&mut group);
+    benchmark_middleware_decode(&mut group);
     benchmark_middleware_param_conversion(&mut group);
 
     group.finish();
