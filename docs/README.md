@@ -4,36 +4,20 @@
 
 Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), experimental [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling (except Turso, which doesn't have deadpool backend yet), and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
 
-Motivated from trying SQLx, not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192), and wanting an alternative. It seems our SQLite perf is about 14% faster than similar SQLite via SQlx for at least some workloads, despite me trying multiple ways to get SQLx to go quicker. That could just be my misunderstanding of SQLx rather than an inherent performance difference. For evidence, see our [benchmark results](./bench_results/index.md).
+Motivated from trying SQLx and not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192). 
+
+This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. That could just be my misunderstanding of SQLx rather than an inherent performance difference. For current evidence, see our [benchmark results](./bench_results/index.md).
 
 ## Goals
-* Convenience functions for common SQL query patterns
-* Keep underlying flexibility of `deadpool`
-* Minimal overhead (ideally, just syntaxs sugar/wrapper fns)
-
-## Feature Flags
-
-By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
-
-```toml
-# Only include SQLite and Turso support
-sql-middleware = { version = "0", features = ["sqlite", "turso"] }
-```
-
-Available features:
-- `sqlite`: Enables SQLite support
-- `postgres`: Enables PostgreSQL support
-- `mssql`: Enables SQL Server support
-- `libsql`: Enables LibSQL support (local or remote)
-- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. No deadpool support (yet).
-- `default`: Enables common backends (sqlite, postgres). Enable others as needed.
-- `test-utils`: Enables test utilities for internal testing
+* Convenience functions for common async SQL query patterns
+* Keep underlying flexibility of `deadpool` connection pooling
+* Minimal overhead (ideally, just syntax sugar/wrapper fns)
 
 ## Examples
 
-More examples available in the [tests dir](../tests/), and this is in-use with a tiny little website app, [rusty-golf](https://github.com/derekfrye/rusty-golf).
+More examples available in [tests](../tests/). Also in-use with a tiny little personal website app, [rusty-golf](https://github.com/derekfrye/rusty-golf).
 
-Looking for performance numbers? See [Benchmarks](./Benchmarks.md) for details on the existing Criterion suites and what they measure today.
+See [Benchmarks](./Benchmarks.md) for details on performance testing.
 
 ### Importing
 
@@ -41,6 +25,53 @@ You can use the prelude to import everything you need, or import item by item.
 
 ```rust
 use sql_middleware::prelude::*;
+```
+
+### Multi-database support without copy/pasting query logic
+
+An example using multiple different backends (sqlite, postgres, turso). Notice the need to not repeat the query logic regardless of backend connection type. 
+
+```rust
+use sql_middleware::prelude::*;
+
+pub async fn get_scores_from_db(
+    config_and_pool: &sql_middleware::pool::ConfigAndPool,
+    event_id: i32,
+) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
+    let pool = config_and_pool.pool.get().await?;
+    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let query = match &conn {
+        MiddlewarePoolConnection::Postgres(_) => {
+            "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names($1) ORDER BY grp, eup_id"
+        }
+        MiddlewarePoolConnection::Sqlite(_) | MiddlewarePoolConnection::Turso(_) => {
+            include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+        }
+    };
+    let params = vec![RowValues::Int(i64::from(event_id))];
+    let res = conn.execute_select(query, &params).await?;
+
+    let z: Result<Vec<Scores>, SqlMiddlewareDbError> = res
+        .results
+        .iter()
+        .map(|row| {
+            Ok(Scores {
+                golfer_name: row
+                    .get("golfername")
+                    .and_then(|v| v.as_text())
+                    .unwrap_or_default()
+                    .to_string(),
+                detailed_statistics: Statistic {
+                    ...<more retrieved fields here>
+                },
+            })
+        })
+        .collect::<Result<Vec<Scores>, SqlMiddlewareDbError>>();
+
+    Ok(ScoresAndLastRefresh {
+        score_struct: z?,
+    })
+}
 ```
 
 ### Get a connection from the pool
@@ -115,7 +146,7 @@ Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the construc
 
 ### Batch query w/o params
 
-Same api regardless of db backend.
+Same api regardless of db backend. Use `execute_batch` when you have no parameters to pass. 
 
 ```rust
 // simple api for batch queries
@@ -125,9 +156,9 @@ conn.execute_batch(&ddl_query).await?;
 ```
 
 
-### Parameterized Queries
+### Parameterized queries for reading or changing data
 
-Consistent API using `QueryAndParams`. Only the placeholder syntax differs.
+Consistent API using `QueryAndParams` and `execute_select` (reading data) or `execute_dml` (changing data). Only the parameter syntax differs.
 
 <table>
 <tr>
@@ -194,14 +225,13 @@ conn.execute_dml(&q.query, &q.params)
 </tr>
 </table>
 
-Note: For LibSQL, construct with `ConfigAndPool::new_libsql(path)`. For Turso, use `ConfigAndPool::new_turso(path)`; there is no deadpool pooling for Turso — `get_connection` creates a new connection.
-
 ### Queries without parameters
 
 You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, LibSQL, and Turso:
 
 ```rust
 // Either build a QueryAndParams
+// And you could structure like previous example to pass param values
 let query = QueryAndParams::new_without_params("SELECT * FROM users");
 let results = conn.execute_select(&query.query, &[]).await?;
 
@@ -211,7 +241,7 @@ let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 
 ### Transactions with custom logic
 
-Here, the APIs differ a bit, because the underlying libraries are different. It doesn't appear easy to make these consistent without hiding underlying library capabilities. This is the most similar way to do queries w this middleware if you need custom app logic between `transaction()` and `commit()`.
+Here, because the underlying libraries are different, unfortunately, if you need custom app logic between `transaction()` and `commit()`, the code will become a bit more repetitive.
 
 See further examples in the tests directory:
 - [SQLite test example](/tests/test5c_sqlite.rs), [SQLite bench example](../benches/bench_rusqlite_single_row_lookup.rs)
@@ -233,7 +263,7 @@ SQLite
 
 ```rust
 // Get db-specific connection
-let pg_conn = match &conn {
+let pg_conn = match &mut conn {
     Postgres(pg)
         => pg,
     _ => panic!("Expected connection"),
@@ -241,7 +271,6 @@ let pg_conn = match &conn {
 
 // Get client
 // (N/A for Turso; no deadpool yet)
-sql_middleware::turso::begin_transaction(t)
 let client: &mut tokio_postgres::Client 
     = pg_conn.as_mut();
 
@@ -342,9 +371,110 @@ if let Turso(_) = &mut conn {
 </tr>
 </table>
 
+### Example function with custom logic transaction
+
+This variant mirrors the earlier multi-backend example but expands it with backend-specific transaction steps so you can insert bespoke logic between `BEGIN` and `COMMIT`.
+
+```rust
+use sql_middleware::conversion::convert_sql_params;
+use sql_middleware::exports::PostgresParams;
+use sql_middleware::libsql::{begin_transaction as begin_libsql_tx, Params as LibsqlParams};
+use sql_middleware::prelude::*;
+use sql_middleware::turso::{begin_transaction, Params as TursoParams};
+
+pub async fn get_scores_from_db(
+    config_and_pool: &ConfigAndPool,
+    event_id: i64,
+) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
+    let pool = config_and_pool.pool.get().await?;
+    let mut conn = MiddlewarePool::get_connection(pool).await?;
+
+    let turso_query = "SELECT grp, golfername, playername, eup_id, espn_id \
+                       FROM sp_get_player_names(?1) ORDER BY grp, eup_id";
+    let postgres_query = "SELECT grp, golfername, playername, eup_id, espn_id \
+                          FROM sp_get_player_names($1) ORDER BY grp, eup_id";
+
+// Run some custom Rust code to fetch parameters.
+            // Or do whatever custom code you wanted in here
+            let dynamic_params: Vec<RowValues> =
+                todo!("fetch parameters for event_id {event_id}");
+
+    let rows = match &mut conn {
+        MiddlewarePoolConnection::Turso(client) => {
+            let mut tx = begin_transaction(client).await?;
+            let mut stmt = tx.prepare(turso_query).await?;
+
+            
+
+            let _converted_params =
+                convert_sql_params::<TursoParams>(&dynamic_params, ConversionMode::Query)?;
+
+            let result = tx
+                .query_prepared(&mut stmt, &dynamic_params)
+                .await?;
+            tx.commit().await?;
+            result
+        }
+        MiddlewarePoolConnection::Postgres(pg_conn) => {
+            let mut tx = pg_conn.transaction().await?;
+            let stmt = tx.prepare(postgres_query).await?;
+
+            let converted_params =
+                convert_sql_params::<PostgresParams>(&dynamic_params, ConversionMode::Query)?;
+
+            let result = sql_middleware::postgres::build_result_set(
+                &stmt,
+                converted_params.as_refs(),
+                &tx,
+            )
+            .await?;
+            tx.commit().await?;
+            result
+        }
+        MiddlewarePoolConnection::Libsql(conn) => {
+            let tx = begin_libsql_tx(conn).await?;
+            let prepared = tx.prepare(turso_query)?;
+
+            let _converted_params =
+                convert_sql_params::<LibsqlParams>(&dynamic_params, ConversionMode::Query)?;
+
+            let result = tx.query_prepared(&prepared, &dynamic_params).await?;
+            tx.commit().await?;
+            result
+        }
+        _ => {
+            return Err(SqlMiddlewareDbError::Unimplemented(
+                "expected Turso, Postgres, or LibSQL connection".to_string(),
+            ));
+        }
+    };
+
+    let parsed_scores = rows
+        .results
+        .iter()
+        .map(|row| {
+            Ok(Scores {
+                golfer_name: row
+                    .get("golfername")
+                    .and_then(|v| v.as_text())
+                    .unwrap_or_default()
+                    .to_string(),
+                detailed_statistics: Statistic {
+                    /* fetch additional fields */
+                },
+            })
+        })
+        .collect::<Result<Vec<Scores>, SqlMiddlewareDbError>>()?;
+
+    Ok(ScoresAndLastRefresh {
+        score_struct: parsed_scores,
+    })
+}
+```
+
 ### Using the AsyncDatabaseExecutor trait
 
-The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations:
+The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations if you prefer designing this way.
 
 ```rust
 // This works for PostgreSQL, SQLite, LibSQL, and Turso connections
@@ -372,20 +502,39 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
 }
 ```
 
-## Our use of `[allow(...)]`s
+## Feature Flags
 
-- `#[allow(clippy::unused_async)]` keeps public constructors async so the signature stays consistent even when the current body has no awaits. You’ll see this on `ConfigAndPool::new_postgres` (`src/postgres/config.rs:10`), `ConfigAndPool::new_mssql` (`src/mssql/config.rs:19`), and `MiddlewarePool::get` (`src/pool/types.rs:66`). We also call out the rationale in **[Async Design Decisions](async.md)**.
-- `#[allow(clippy::useless_conversion)]` is used once to satisfy `rusqlite::params_from_iter`, which requires an iterator type that Clippy would otherwise collapse away (`src/sqlite/params.rs:79`).
-- `#[allow(unreachable_patterns)]` guards catch-all branches that only fire when a backend feature is disabled, preventing false positives when matching on `MiddlewarePoolConnection` (`src/pool/connection.rs:102`, `src/executor.rs:64`, `src/executor.rs:97`, `src/executor.rs:130`, `src/pool/interaction.rs:40`, `src/pool/interaction.rs:78`).
-- `#[allow(unused_variables)]` appears around the interaction helpers because the higher-order functions take arguments that are only needed for certain backend combinations (`src/pool/interaction.rs:10`, `src/pool/interaction.rs:51`).
+By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
+
+```toml
+# Only include SQLite and Turso support
+sql-middleware = { version = "0", features = ["sqlite", "turso"] }
+```
+
+Available features:
+- `sqlite`: Enables SQLite support
+- `postgres`: Enables PostgreSQL support
+- `mssql`: Enables SQL Server support
+- `libsql`: Enables LibSQL support (local or remote)
+- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. No deadpool support (yet).
+- `default`: Enables common backends (sqlite, postgres). Enable others as needed.
+- `test-utils`: Enables test utilities for internal testing
 
 ## Developing and Testing
 
 - Build with defaults (sqlite, postgres): `cargo build`
 - Include Turso backend: `cargo build --features turso`
-- Run tests (defaults): `cargo test`
+- Run tests (defaults): `cargo test` or `cargo nextest run`
+    - Notice that `test4_trait` does have hard-coded testing postgres connection strings. I can't get codex to work with postgres embedded anymore, so when working on this test w codex I've hardcoded those values so I can work around it's lack of network connectivity. You'll have to change them if you want that test to compile in your environment. 
 - Run with Turso: `cargo test --features turso`
 - Run with LibSQL: `cargo test --features libsql`
+
+### Our use of `[allow(...)]`s
+
+- `#[allow(clippy::unused_async)]` keeps public constructors async so the signature stays consistent even when the current body has no awaits. You’ll see this on `ConfigAndPool::new_postgres` (`src/postgres/config.rs:10`), `ConfigAndPool::new_mssql` (`src/mssql/config.rs:19`), and `MiddlewarePool::get` (`src/pool/types.rs:66`). We also call out the rationale in **[Async Design Decisions](async.md)**.
+- `#[allow(clippy::useless_conversion)]` is used once to satisfy `rusqlite::params_from_iter`, which requires an iterator type that Clippy would otherwise collapse away (`src/sqlite/params.rs:79`).
+- `#[allow(unreachable_patterns)]` guards catch-all branches that only fire when a backend feature is disabled, preventing false positives when matching on `MiddlewarePoolConnection` (`src/pool/connection.rs:102`, `src/executor.rs:64`, `src/executor.rs:97`, `src/executor.rs:130`, `src/pool/interaction.rs:40`, `src/pool/interaction.rs:78`).
+- `#[allow(unused_variables)]` appears around the interaction helpers because the higher-order functions take arguments that are only needed for certain backend combinations (`src/pool/interaction.rs:10`, `src/pool/interaction.rs:51`).
 
 ## Release Notes
 
