@@ -26,9 +26,11 @@ impl SqliteWorker {
         thread::Builder::new()
             .name(format!("sqlite-worker-{object_id}"))
             .spawn(move || {
-                let runtime_guard = handle.as_ref().map(|h| h.enter());
+                let _runtime_guard = handle.as_ref().map(|h| h.enter());
+                let object = object;
+                let receiver = receiver;
                 run_sqlite_worker(&object, &receiver);
-                drop(runtime_guard);
+                // locals drop here in reverse order: receiver, object, then _runtime_guard.
             })
             .map_err(|err| {
                 SqlMiddlewareDbError::ConnectionError(format!(

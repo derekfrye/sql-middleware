@@ -1,11 +1,3 @@
-// use rusty_golf::controller::score;
-// use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
-
-// use deadpool_sqlite::rusqlite::{ self, params };
-#[cfg(all(feature = "postgres", feature = "test-utils"))]
-use sql_middleware::test_utils::testing_postgres::{
-    setup_postgres_container, stop_postgres_container,
-};
 use sql_middleware::{
     PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery,
     convert_sql_params,
@@ -38,49 +30,6 @@ impl Drop for FileCleanup {
     }
 }
 
-#[cfg(all(feature = "postgres", feature = "test-utils"))]
-type PostgresGuard = sql_middleware::test_utils::testing_postgres::EmbeddedPostgres;
-#[cfg(not(all(feature = "postgres", feature = "test-utils")))]
-type PostgresGuard = ();
-
-#[cfg(all(feature = "postgres", feature = "test-utils"))]
-fn setup_postgres_case(
-    test_cases: &mut Vec<TestCase>,
-) -> Result<Option<PostgresGuard>, Box<dyn std::error::Error>> {
-    let db_user = "test_user";
-    // don't use @ or # in here, it fails
-    // https://github.com/launchbadge/sqlx/issues/1624
-    let db_pass = "test_passwordx(!323341";
-    let db_name = "test_db";
-    
-    let mut cfg = deadpool_postgres::Config::new();
-    cfg.dbname = Some(db_name.to_string());
-    cfg.host = Some("localhost".to_string());
-    cfg.user = Some(db_user.to_string());
-    cfg.password = Some(db_pass.to_string());
-
-    let postgres = setup_postgres_container(&cfg)?;
-    test_cases.push(TestCase::Postgres(postgres.config.clone()));
-    Ok(Some(postgres))
-}
-
-#[cfg(not(all(feature = "postgres", feature = "test-utils")))]
-fn setup_postgres_case(
-    _test_cases: &mut Vec<TestCase>,
-) -> Result<Option<PostgresGuard>, Box<dyn std::error::Error>> {
-    Ok(None)
-}
-
-#[cfg(all(feature = "postgres", feature = "test-utils"))]
-fn teardown_postgres(guard: Option<PostgresGuard>) {
-    if let Some(pg) = guard {
-        stop_postgres_container(pg);
-    }
-}
-
-#[cfg(not(all(feature = "postgres", feature = "test-utils")))]
-fn teardown_postgres(_: Option<PostgresGuard>) {}
-
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(unused_mut)]
@@ -88,7 +37,16 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
     ];
-    let postgres_guard = setup_postgres_case(&mut test_cases)?;
+    #[cfg(feature = "postgres")]
+    {
+        let mut cfg = deadpool_postgres::Config::new();
+        cfg.dbname = Some("testing".to_string());
+        cfg.host = Some("10.3.0.201".to_string());
+        cfg.port = Some(5432);
+        cfg.user = Some("testuser".to_string());
+        cfg.password = Some(String::new());
+        test_cases.push(TestCase::Postgres(cfg));
+    }
     #[cfg(feature = "turso")]
     {
         test_cases.push(TestCase::Turso(":memory:".to_string()));
@@ -136,7 +94,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 //         let _ = std::fs::remove_file(&connection_string);
                 //     }
                 // }
-                #[cfg(all(feature = "postgres", feature = "test-utils"))]
+                #[cfg(feature = "postgres")]
                 TestCase::Postgres(_) => {
                     db_type = DatabaseType::Postgres;
                     None
@@ -155,7 +113,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
                 }
-                #[cfg(all(feature = "postgres", feature = "test-utils"))]
+                #[cfg(feature = "postgres")]
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
                     let config_and_pool = ConfigAndPool2::new_postgres(cfg).await?;
@@ -173,6 +131,20 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     conn = MiddlewarePool::get_connection(pool).await?;
                 }
             }
+            if db_type == DatabaseType::Postgres {
+                // Ensure a clean slate when reusing a shared Postgres instance.
+                conn.execute_batch(
+                    r#"
+                    DROP TABLE IF EXISTS eup_statistic CASCADE;
+                    DROP TABLE IF EXISTS event_user_player CASCADE;
+                    DROP TABLE IF EXISTS bettor CASCADE;
+                    DROP TABLE IF EXISTS golfer CASCADE;
+                    DROP TABLE IF EXISTS event CASCADE;
+                    DROP TABLE IF EXISTS test CASCADE;
+                    "#,
+                )
+                .await?;
+            }
             run_test_logic(&mut conn, db_type).await?;
         }
 
@@ -181,14 +153,13 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
         // ... rest of your test code ...
     })?;
-    teardown_postgres(postgres_guard);
 
     Ok(())
 }
 
 enum TestCase {
     Sqlite(String),
-    #[cfg(all(feature = "postgres", feature = "test-utils"))]
+    #[cfg(feature = "postgres")]
     Postgres(deadpool_postgres::Config),
     #[cfg(feature = "turso")]
     Turso(String),
