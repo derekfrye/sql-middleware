@@ -2,7 +2,7 @@
 // use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
 
 // use deadpool_sqlite::rusqlite::{ self, params };
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "postgres", feature = "test-utils"))]
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
@@ -38,30 +38,57 @@ impl Drop for FileCleanup {
     }
 }
 
-#[test]
-fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
+#[cfg(all(feature = "postgres", feature = "test-utils"))]
+type PostgresGuard = sql_middleware::test_utils::testing_postgres::EmbeddedPostgres;
+#[cfg(not(all(feature = "postgres", feature = "test-utils")))]
+type PostgresGuard = ();
+
+#[cfg(all(feature = "postgres", feature = "test-utils"))]
+fn setup_postgres_case(
+    test_cases: &mut Vec<TestCase>,
+) -> Result<Option<PostgresGuard>, Box<dyn std::error::Error>> {
     let db_user = "test_user";
     // don't use @ or # in here, it fails
     // https://github.com/launchbadge/sqlx/issues/1624
     let db_pass = "test_passwordx(!323341";
     let db_name = "test_db";
-
+    
     let mut cfg = deadpool_postgres::Config::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());
-    // cfg.port = Some(port);
-
     cfg.user = Some(db_user.to_string());
     cfg.password = Some(db_pass.to_string());
-    let postgres_stuff = setup_postgres_container(&cfg)?;
-    cfg.port = Some(postgres_stuff.port);
 
+    let postgres = setup_postgres_container(&cfg)?;
+    test_cases.push(TestCase::Postgres(postgres.config.clone()));
+    Ok(Some(postgres))
+}
+
+#[cfg(not(all(feature = "postgres", feature = "test-utils")))]
+fn setup_postgres_case(
+    _test_cases: &mut Vec<TestCase>,
+) -> Result<Option<PostgresGuard>, Box<dyn std::error::Error>> {
+    Ok(None)
+}
+
+#[cfg(all(feature = "postgres", feature = "test-utils"))]
+fn teardown_postgres(guard: Option<PostgresGuard>) {
+    if let Some(pg) = guard {
+        stop_postgres_container(pg);
+    }
+}
+
+#[cfg(not(all(feature = "postgres", feature = "test-utils")))]
+fn teardown_postgres(_: Option<PostgresGuard>) {}
+
+#[test]
+fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(unused_mut)]
     let mut test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
-        TestCase::Postgres(&cfg),
     ];
+    let postgres_guard = setup_postgres_case(&mut test_cases)?;
     #[cfg(feature = "turso")]
     {
         test_cases.push(TestCase::Turso(":memory:".to_string()));
@@ -76,7 +103,6 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-
         let mut db_type: DatabaseType;
 
         // Drop guard to clean up file-backed DBs even on failure
@@ -91,22 +117,18 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = std::fs::remove_file(connection_string);
                         Some(FileCleanup(vec![connection_string.clone()]))
                     }
-                    
                 }
                 #[cfg(feature = "turso")]
                 TestCase::Turso(connection_string) => {
                     db_type = DatabaseType::Turso;
                     if connection_string == ":memory:" {
-                        
                         None
                     } else {
-                    
                         let _ = std::fs::remove_file(connection_string);
                         let _ = std::fs::remove_file(format!("{connection_string}-wal"));
                         let _ = std::fs::remove_file(format!("{connection_string}-shm"));
                         Some(FileCleanup(vec![connection_string.clone()]))
                     }
-                    
                 }
                 // #[cfg(feature = "libsql")]
                 // TestCase::Libsql(connection_string) => {
@@ -114,9 +136,11 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 //         let _ = std::fs::remove_file(&connection_string);
                 //     }
                 // }
+                #[cfg(all(feature = "postgres", feature = "test-utils"))]
                 TestCase::Postgres(_) => {
                     db_type = DatabaseType::Postgres;
-                    None},
+                    None
+                }
             };
 
             let mut conn: MiddlewarePoolConnection;
@@ -126,16 +150,17 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     // Initialize Sqlite pool
                     let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
                     pool = config_and_pool.pool.get().await?;
-                     conn = MiddlewarePool::get_connection(pool).await?;
+                    conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
                 }
+                #[cfg(all(feature = "postgres", feature = "test-utils"))]
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
-                    let config_and_pool = ConfigAndPool2::new_postgres(cfg.clone()).await?;
-                     pool = config_and_pool.pool.get().await?;
-                     conn = MiddlewarePool::get_connection(pool).await?;
+                    let config_and_pool = ConfigAndPool2::new_postgres(cfg).await?;
+                    pool = config_and_pool.pool.get().await?;
+                    conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Postgres).await?;
@@ -144,21 +169,9 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 TestCase::Turso(connection_string) => {
                     // Initialize Turso connection (no deadpool pooling)
                     let config_and_pool = ConfigAndPool2::new_turso(connection_string).await?;
-                     pool = config_and_pool.pool.get().await?;
-                     conn = MiddlewarePool::get_connection(pool).await?;
-
-                    // Execute test logic
-                    // run_test_logic(&mut conn, DatabaseType::Turso).await?;
-                } // #[cfg(feature = "libsql")]
-                  // TestCase::Libsql(connection_string) => {
-                  //     // Initialize Libsql pool
-                  //     let config_and_pool = ConfigAndPool2::new_libsql(connection_string).await?;
-                  //     let pool = config_and_pool.pool.get().await?;
-                  //     let mut conn = MiddlewarePool::get_connection(&pool).await?;
-
-                  //     // Execute test logic
-                  //     run_test_logic(&mut conn, DatabaseType::Libsql).await?;
-                  // }
+                    pool = config_and_pool.pool.get().await?;
+                    conn = MiddlewarePool::get_connection(pool).await?;
+                }
             }
             run_test_logic(&mut conn, db_type).await?;
         }
@@ -168,14 +181,15 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
         // ... rest of your test code ...
     })?;
-    stop_postgres_container(postgres_stuff);
+    teardown_postgres(postgres_guard);
 
     Ok(())
 }
 
-enum TestCase<'a> {
+enum TestCase {
     Sqlite(String),
-    Postgres(&'a deadpool_postgres::Config),
+    #[cfg(all(feature = "postgres", feature = "test-utils"))]
+    Postgres(deadpool_postgres::Config),
     #[cfg(feature = "turso")]
     Turso(String),
     // #[cfg(feature = "libsql")]
@@ -452,7 +466,7 @@ async fn run_test_logic(
                 .await?;
             res?;
         }
-        DatabaseType::Mssql | DatabaseType::Turso | DatabaseType::Libsql  => {
+        DatabaseType::Mssql | DatabaseType::Turso | DatabaseType::Libsql => {
             // For MS SQL, insert data using the middleware connection
             for param in params {
                 conn.execute_dml(parameterized_query, &param).await?;
@@ -541,7 +555,7 @@ async fn run_test_logic(
                 })
                 .await?)
         }
-        
+
         MiddlewarePoolConnection::Libsql(_) | MiddlewarePoolConnection::Turso(_) => {
             // For LibSQL, just execute the query using the middleware
             conn.execute_dml(&query_and_params.query, &query_and_params.params)
