@@ -16,6 +16,10 @@ sqlx = { version = "0", default-features = false, features = ["runtime-tokio", "
 name = "sqlite_single_row_lookup_sqlx"
 harness = false
 
+[[bench]]
+name = "bench_sqlx_multithread_pool_checkout"
+harness = false
+
 [profile.bench]
 debug = true
 opt-level = 0
