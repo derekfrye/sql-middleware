@@ -239,148 +239,35 @@ let results = conn.execute_select(&query.query, &[]).await?;
 let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
 ```
 
-### Transactions with custom logic
+### Custom logic in between transactions
 
-Here, because the underlying libraries are different, unfortunately, if you need custom app logic between `transaction()` and `commit()`, the code will become a bit more repetitive.
-
-See further examples in the tests directory:
-- [SQLite test example](/tests/test5c_sqlite.rs), [SQLite bench example](../benches/bench_rusqlite_single_row_lookup.rs)
-- [Turso test example](/tests/test5d_turso.rs)
-- [PostgreSQL test example](/tests/test5a_postgres.rs)
-- [LibSQL test example](/tests/test5b_libsql.rs)
-
-<table>
-<tr>
-<th>
-PostgreSQL / LibSQL / Turso
-</th>
-<th>
-SQLite
-</th>
-</tr>
-<tr>
-<td>
+Here, because the underlying libraries are different, unfortunately, if you need custom app logic between `transaction()` and `commit()`, the code becomes a little less DRY.
 
 ```rust
-// Get db-specific connection
-let pg_conn = match &mut conn {
-    Postgres(pg)
-        => pg,
-    _ => panic!("Expected connection"),
-};
-
-// Get client
-// (N/A for Turso; no deadpool yet)
-let client: &mut tokio_postgres::Client 
-    = pg_conn.as_mut();
-
-// Begin transaction
-// Turso: `let tx = 
-//  turso::begin_transaction(t).await?;`
-let tx = client.transaction().await?;
-
-// could run custom logic between stmts
-
-// Prepare statement
-// Turso: `let mut stmt 
-//    = tx.prepare("... ?1, ?2 ...").await?;`
-let stmt = tx.prepare(&q.query).await?;
-
-// Convert params (Postgres)
-// Turso/LibSQL not necessary
-let converted_params = 
-    convert_sql_params::<PostgresParams>(
-        &q.params,
-        ConversionMode::Execute
-    )?;
-
-// Execute query
-// Turso: `tx.execute_prepared(
-//  &mut stmt, &q.params).await?;`
-// LibSQL: `tx.execute_prepared(
-//  &stmt, &q.params).await?;`
-let rows = tx.execute(
-    &stmt, 
-    converted_params.as_refs()
-).await?;
-
-// Commit
-tx.commit().await?;
-```
-
-</td>
-<td>
-
-```rust
-// Use the helper to run blocking SQLite code
-let rows = match &mut conn {
-    Sqlite(_) => conn
-        .with_sqlite_connection(move |conn| {
-            let tx = conn.transaction()?;
-            
-            // Convert parameters
-            let converted_params = 
-                convert_sql_params::
-                <SqliteParamsExecute>(
-                &q.params,
-                ConversionMode::Execute
-            )?;
-            
-            // could run custom logic between stmts
-
-            // Prepare and execute
-            let rows = {
-                let mut stmt = tx.prepare(
-                    &q.query)?;
-                stmt.execute(converted_params.0)?
-            };
-            
-            tx.commit()?;
-            
-            Ok::<_, SqlMiddlewareDbError>(rows)
-        })
-        .await?,
-    _ => panic!("Expected connection"),
-};
-
-// Or prepare once and reuse the compiled statement across many calls
-if let Sqlite(_) = &mut conn {
-    let prepared = conn
-        .prepare_sqlite_statement("SELECT name FROM users WHERE id = ?1")
-        .await?;
-    for user_id in ids {
-        let result = prepared.query(&[RowValues::Int(*user_id)]).await?;
-        // ...
-    }
-}
-
-// Turso connections now expose the same prepared-statement helper.
-if let Turso(_) = &mut conn {
-    let prepared = conn
-        .prepare_turso_statement("SELECT name FROM users WHERE id = ?1")
-        .await?;
-    for user_id in ids {
-        let result = prepared.query(&[RowValues::Int(*user_id)]).await?;
-        // ...
-    }
-}
-```
-
-</td>
-
-</tr>
-</table>
-
-### Example function with custom logic transaction
-
-This variant mirrors the earlier multi-backend example but expands it with backend-specific transaction steps so you can insert bespoke logic between `BEGIN` and `COMMIT`.
-
-```rust
+use deadpool_postgres::Transaction as PgTransaction;
 use sql_middleware::conversion::convert_sql_params;
 use sql_middleware::exports::PostgresParams;
-use sql_middleware::libsql::{begin_transaction as begin_libsql_tx, Params as LibsqlParams};
+use sql_middleware::libsql::{
+    begin_transaction as begin_libsql_tx, Params as LibsqlParams, Prepared as LibsqlPrepared,
+    Tx as LibsqlTx,
+};
 use sql_middleware::prelude::*;
-use sql_middleware::turso::{begin_transaction, Params as TursoParams};
+use sql_middleware::turso::{
+    begin_transaction, Params as TursoParams, Prepared as TursoPrepared, Tx as TursoTx,
+};
+use tokio_postgres::Statement as PgStatement;
+
+enum BackendTx<'conn> {
+    Turso(TursoTx<'conn>),
+    Postgres(PgTransaction<'conn>),
+    Libsql(LibsqlTx<'conn>),
+}
+
+enum PreparedStmt {
+    Turso(TursoPrepared),
+    Postgres(PgStatement),
+    Libsql(LibsqlPrepared),
+}
 
 pub async fn get_scores_from_db(
     config_and_pool: &ConfigAndPool,
@@ -393,32 +280,44 @@ pub async fn get_scores_from_db(
                        FROM sp_get_player_names(?1) ORDER BY grp, eup_id";
     let postgres_query = "SELECT grp, golfername, playername, eup_id, espn_id \
                           FROM sp_get_player_names($1) ORDER BY grp, eup_id";
-
-// Run some custom Rust code to fetch parameters.
-            // Or do whatever custom code you wanted in here
-            let dynamic_params: Vec<RowValues> =
-                todo!("fetch parameters for event_id {event_id}");
-
-    let rows = match &mut conn {
+    let (tx, stmt) = match &mut conn {
         MiddlewarePoolConnection::Turso(client) => {
-            let mut tx = begin_transaction(client).await?;
-            let mut stmt = tx.prepare(turso_query).await?;
-
-            
-
-            let _converted_params =
-                convert_sql_params::<TursoParams>(&dynamic_params, ConversionMode::Query)?;
-
-            let result = tx
-                .query_prepared(&mut stmt, &dynamic_params)
-                .await?;
-            tx.commit().await?;
-            result
+            let tx = begin_transaction(client).await?;
+            let stmt = tx.prepare(turso_query).await?;
+            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
         }
         MiddlewarePoolConnection::Postgres(pg_conn) => {
             let mut tx = pg_conn.transaction().await?;
             let stmt = tx.prepare(postgres_query).await?;
+            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
+        }
+        MiddlewarePoolConnection::Libsql(conn) => {
+            let tx = begin_libsql_tx(conn).await?;
+            let stmt = tx.prepare(turso_query)?;
+            (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
+        }
+        _ => {
+            return Err(SqlMiddlewareDbError::Unimplemented(
+                "expected Turso, Postgres, or LibSQL connection".to_string(),
+            ));
+        }
+    };
 
+    // Run some custom Rust code to fetch parameters.
+    // Or do whatever custom code you wanted in here.
+    let dynamic_params: Vec<RowValues> =
+        todo!("fetch parameters for event_id {event_id}");
+
+    let rows = match (tx, stmt) {
+        (BackendTx::Turso(tx), PreparedStmt::Turso(mut stmt)) => {
+            let _converted_params =
+                convert_sql_params::<TursoParams>(&dynamic_params, ConversionMode::Query)?;
+
+            let result = tx.query_prepared(&mut stmt, &dynamic_params).await?;
+            tx.commit().await?;
+            result
+        }
+        (BackendTx::Postgres(mut tx), PreparedStmt::Postgres(stmt)) => {
             let converted_params =
                 convert_sql_params::<PostgresParams>(&dynamic_params, ConversionMode::Query)?;
 
@@ -431,22 +330,15 @@ pub async fn get_scores_from_db(
             tx.commit().await?;
             result
         }
-        MiddlewarePoolConnection::Libsql(conn) => {
-            let tx = begin_libsql_tx(conn).await?;
-            let prepared = tx.prepare(turso_query)?;
-
+        (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
             let _converted_params =
                 convert_sql_params::<LibsqlParams>(&dynamic_params, ConversionMode::Query)?;
 
-            let result = tx.query_prepared(&prepared, &dynamic_params).await?;
+            let result = tx.query_prepared(&stmt, &dynamic_params).await?;
             tx.commit().await?;
             result
         }
-        _ => {
-            return Err(SqlMiddlewareDbError::Unimplemented(
-                "expected Turso, Postgres, or LibSQL connection".to_string(),
-            ));
-        }
+        _ => unreachable!("transaction and statement variants always align"),
     };
 
     let parsed_scores = rows
@@ -501,6 +393,14 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
     Ok(())
 }
 ```
+
+### Further examples
+
+See further examples in the tests directory:
+- [SQLite test example](/tests/test5c_sqlite.rs), [SQLite bench example 1](../benches/bench_rusqlite_single_row_lookup.rs), [SQLite bench example 2](../benches/bench_rusqlite_multithread_pool_checkout.rs)
+- [Turso test example](/tests/test5d_turso.rs), [Turso bench example 1](../benches/bench_turso_single_row_lookup.rs)
+- [PostgreSQL test example](/tests/test5a_postgres.rs)
+- [LibSQL test example](/tests/test5b_libsql.rs)
 
 ## Feature Flags
 
