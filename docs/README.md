@@ -6,7 +6,7 @@ Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crate
 
 Motivated from trying SQLx and not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192). 
 
-This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. That could just be my misunderstanding of SQLx rather than an inherent performance difference. For current evidence, see our [benchmark results](./bench_results/index.md).
+This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. (That could be my misunderstanding of SQLx rather than an inherent performance difference.) For current evidence, see our [benchmark results](./bench_results/index.md).
 
 ## Goals
 * Convenience functions for common async SQL query patterns

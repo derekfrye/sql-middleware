@@ -1,22 +1,29 @@
 # Benchmarks
 
-The project ships a small set of Criterion benchmarks that target two different questions.
+The project ships a small set of Criterion benchmarks that target three complementary questions.
 
 - **Bulk insert throughput** for each backend (`benches/database_benchmark.rs`).
-- **Single-row lookup overhead** comparing raw `rusqlite` usage with the middleware surface (`benches/bench_rusqlite_single_row_lookup.rs`), and to SQLx through a stand-alone harness (`bench-harnesses/sqlx_lookup`).
+- **Single-row lookup overhead** comparing raw `rusqlite` usage with the middleware surface (`benches/bench_rusqlite_single_row_lookup.rs`) and the SQLx harness (`bench-harnesses/sqlx_lookup`).
+- **Connection pool fan-out** measuring multi-threaded checkout/query patterns through the middleware and SQLx mirrors (`benches/bench_rusqlite_multithread_pool_checkout.rs`, `bench-harnesses/sqlx_lookup/benches/bench_sqlx_multithread_pool_checkout.rs`).
 
 Use this guide to see how each target is wired, which parts of the stack they exercise, and the adjustments available when running `cargo bench`.
 
 ## Benchmark targets
 - `database_benchmark` – runs the traditional bulk insert groups for SQLite and PostgreSQL (LibSQL remains opt-in behind the `libsql` feature).
 - `bench_rusqlite_single_row_lookup` – measures repeated `SELECT ... WHERE id = ?` calls through raw rusqlite and the middleware abstraction (sqlite and turso).
-- `sqlx_lookup_bench` (stand-alone crate) – measures the same lookup workload using SQLx in isolation.
+- `bench_rusqlite_multithread_pool_checkout` – fans out the same lookup workload across multiple async workers to isolate connection checkout overheads.
+- `bench_turso_single_row_lookup` – covers the Turso deployment path for the single-row lookup scenario.
+- SQLx harness targets (stand-alone crate):
+  - `sqlite_single_row_lookup_sqlx` – mirrors the single-row lookup benchmark using SQLx.
+  - `bench_sqlx_multithread_pool_checkout` – mirrors the multi-thread pool checkout benchmark using SQLx.
 
-Run the bundled benches with `cargo bench`, or focus on a single target via `CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest`. Criterion substring filters work, e.g. `cargo bench --bench database_benchmark -- sqlite`. To capture middleware & SQLx numbers, we also need the harness crate (since it reuqires a conflicting libsqlite version): 
+Run the bundled benches with `cargo bench`, or focus on a single target via `CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest`. Criterion substring filters work, e.g. `cargo bench --bench database_benchmark -- sqlite`. To capture middleware & SQLx numbers, we also need the harness crate (since it requires a conflicting libsqlite version):
 
 ```shell
 CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_single_row_lookup -- --save-baseline latest
+CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_rusqlite_multithread_pool_checkout -- --save-baseline latest
 CRITERION_HOME=$(pwd)/bench_results cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest
+CRITERION_HOME=$(pwd)/bench_results cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml --bench bench_sqlx_multithread_pool_checkout -- --save-baseline latest
 CRITERION_HOME=$(pwd)/bench_results cargo bench --bench bench_turso_single_row_lookup -- --save-baseline latest
 ```
 
@@ -24,13 +31,16 @@ Or, to generate flamegraphs:
 
 ```shell
 CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 cargo flamegraph --bench bench_rusqlite_single_row_lookup -- --bench middleware
+CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 BENCH_CONCURRENCY=8 cargo flamegraph --bench bench_rusqlite_multithread_pool_checkout -- --bench middleware_parallel
 CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 cargo flamegraph --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml --bench sqlite_single_row_lookup_sqlx -- --bench sqlx
+CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 BENCH_CONCURRENCY=8 cargo flamegraph --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml --bench bench_sqlx_multithread_pool_checkout -- --bench sqlx_parallel
 CRITERION_HOME=$(pwd)/bench_results BENCH_LOOKUPS=1000 cargo flamegraph --bench bench_turso_single_row_lookup -- --bench middleware
 ```
 
 ## Adjustment knobs
 - `BENCH_ROWS` controls the number of rows generated for bulk insert runs (default `10`).
 - `BENCH_LOOKUPS` controls how many ids are exercised per iteration in the single-row lookup benchmark (falls back to `BENCH_ROWS`, default `1_000`).
+- `BENCH_CONCURRENCY` controls the number of worker tasks used in the multi-thread pool checkout benchmarks (default `8`).
 
 ## Single-row lookup benchmark flow (`benches/bench_rusqlite_single_row_lookup.rs`)
 Current [overall results](../bench_results/index.md). This comparison focuses on per-call overhead for the rusqlite baseline versus the middleware when fetching individual rows by primary key:
@@ -54,11 +64,11 @@ Additional micro-benches in the same Criterion group isolate specific parts of t
 - Middleware iterations run through `MiddlewarePool` (backed by `deadpool_sqlite`) with a single pooled connection and can emit `BENCH_TRACE` timing breakdowns, whereas the SQLx run uses an `SqlitePool` with up to five connections and no per-row tracing.
 
 ### SQLx harness (`bench-harnesses/sqlx_lookup`)
-- Rebuilds the same on-disk dataset (`benchmark_sqlite_single_lookup.db` in the repo root) using SQLx with the identical seed and schema.
-- Times `SqlitePool` plus an explicit `prepare()` + manual `SqliteRow` → `BenchRow` decode, so the hot loop mirrors the middleware benchmark’s prepared-statement reuse.
+- Rebuilds the same on-disk datasets as the middleware benches (`benchmark_sqlite_single_lookup.db` for single-row, `benchmark_sqlite_multithread_lookup.db` for multi-thread) using SQLx with identical seeds and schemas.
+- Times `SqlitePool` plus explicit `prepare()` calls and manual `SqliteRow` → `BenchRow` decoding so the hot loops mirror the middleware benchmarks.
 - Lives outside the main crate so it can track the latest SQLx release without conflicting with `rusqlite`'s `libsqlite3-sys` requirements.
-- Named `sqlx` – explicit prepared statement + manual `SqliteRow` → `BenchRow` decoding, mirroring the middleware benchmark. This is functionally equivalent to middleware overall results benchmark `middleware`.
-- Run it with `cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest` (optionally setting `CRITERION_HOME` as above). 
+- Exposes two primary Criterion groups: `sqlite_single_row_lookup_sqlx` (single-thread lookup) and `sqlite_multithread_pool_checkout_sqlx` (multi-thread fan-out). Each group contains SQLx variants that correspond to the middleware baselines.
+- Run them with `cargo bench --manifest-path bench-harnesses/sqlx_lookup/Cargo.toml -- --save-baseline latest` (optionally setting `CRITERION_HOME` as above). Target a specific benchmark binary with `--bench sqlite_single_row_lookup_sqlx` or `--bench bench_sqlx_multithread_pool_checkout`. 
 
 The harness also exposes SQLx-specific micro-benches:
 - `sqlx_pool_acquire` – isolates connection acquisition overhead. This is functionally equivalent to middleware micro-benchmark `pool_acquire`.
@@ -72,6 +82,16 @@ The harness also exposes SQLx-specific micro-benches:
 - SQLx fetches a single `SqliteRow` per query and decodes immediately, whereas middleware calls populate a vector of `CustomDbRow` values before picking the first entry to decode. This part of the benchmark favors SQLx and is likely more similar to how SQLx users would query the data. 
 - SQLx parameter binding relies on the builder API (`query().bind(id)`) each iteration; middleware benchmarks mutate one reusable `RowValues` array so conversion happens in place. Adopt that approach in production only when profiling shows its worth addressing.
 - SQLx benches use an `SqlitePool` with a higher max connection count and no optional tracing, while middleware benches run through `MiddlewarePool` (deadpool-based) and can record per-row query/decode timings when `BENCH_TRACE` is enabled.
+
+## Multi-thread pool checkout benchmark flow (`benches/bench_rusqlite_multithread_pool_checkout.rs`)
+This group extends the lookup scenario to measure how the middleware and a blocking rusqlite baseline behave when multiple async workers hammer the pool at once:
+1. Prepare a shared `benchmark_sqlite_multithread_lookup.db` with deterministic rows and a shuffled id list (reused across runs).
+2. Read `BENCH_LOOKUPS` to size the dataset and `BENCH_CONCURRENCY` to decide how many tasks to spawn per iteration.
+3. `middleware_parallel_select` – each worker borrows a pooled connection, reuses a prepared statement, and cycles through its chunk of ids. Reflects end-to-end overhead in an async workload.
+4. `middleware_pool_checkout` – focuses solely on connection checkout/drop cost by borrowing and returning pooled connections without querying.
+5. `rusqlite_blocking` – mirrors the workload with a simple blocking pool to highlight the baseline cost of skipping the middleware entirely.
+
+SQLx mirrors live in `bench-harnesses/sqlx_lookup/benches/bench_sqlx_multithread_pool_checkout.rs` with the same dataset, concurrency controls, and Criterion group name (`sqlite_multithread_pool_checkout_sqlx`). Use those numbers when you need another middleware's reference point.
 
 ## Bulk insert benchmark flow (`benches/database_benchmark.rs`)
 The insert-oriented groups follow the same high-level pattern:
@@ -99,6 +119,7 @@ Because the timed section delegates directly to the backend driver (rusqlite, to
 ## Interpreting results
 - Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
 - Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same on-disk dataset and decoding logic, so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost. Treat the SQLx harness output as a parallel data point for the same workload; compare its metrics with `rusqlite`/middleware results.
+- Treat `bench_rusqlite_multithread_pool_checkout` output (and the SQLx mirror) as a measure of how checkout/prepare/query costs scale with concurrency. Look at the sub-benchmarks to separate pure checkout overhead from full query execution.
 
 ## An observed complex task for llms:
 ```shell
