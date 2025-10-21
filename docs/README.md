@@ -12,12 +12,11 @@ This middleware performance is about 14% faster than SQlx for at least some SQLi
 * Convenience functions for common async SQL query patterns
 * Keep underlying flexibility of `deadpool` connection pooling
 * Minimal overhead (ideally, just syntax sugar/wrapper fns)
+* See [Benchmarks](./Benchmarks.md) for details on performance testing.
 
 ## Examples
 
 More examples available in [tests](../tests/). Also in-use with a tiny little personal website app, [rusty-golf](https://github.com/derekfrye/rusty-golf).
-
-See [Benchmarks](./Benchmarks.md) for details on performance testing.
 
 ### Importing
 
@@ -158,72 +157,55 @@ conn.execute_batch(&ddl_query).await?;
 
 ### Parameterized queries for reading or changing data
 
-Consistent API using `QueryAndParams` and `execute_select` (reading data) or `execute_dml` (changing data). Only the parameter syntax differs.
-
-<table>
-<tr>
-<th>
-PostgreSQL
-</th>
-<th>
-SQLite / LibSQL / Turso
-</th>
-</tr>
-<tr>
-<td>
+`QueryAndParams` gives you a single API for both `execute_select` (reads) and `execute_dml` (writes); the only thing that changes per backend is the placeholder syntax you drop into the SQL string. Here is the same function updating scores across PostgreSQL, SQLite, LibSQL, or Turso without duplicating binding logic.
 
 ```rust
 use chrono::NaiveDateTime;
-// PostgreSQL uses $-style placeholders
-let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name
-        , ins_ts) VALUES ($1, $2, $3)",
-    vec![
-        RowValues::Int(123456),
-        RowValues::Text(
-            "test name".to_string()),
-        RowValues::Timestamp(
-            parse_from_str(
-            "2021-08-06 16:00:00",
-            "%Y-%m-%d %H:%M:%S",
-        )?),
-    ],
-);
+use sql_middleware::prelude::*;
 
-// Execute directly with RowValues
-conn.execute_dml(&q.query, &q.params)
-    .await?;
+pub struct ScoreChange {
+    pub espn_id: i64,
+    pub score: i32,
+    pub updated_at: NaiveDateTime,
+}
+
+pub async fn set_scores_in_db(
+    config_and_pool: &sql_middleware::pool::ConfigAndPool,
+    updates: &[ScoreChange],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let pool = config_and_pool.pool.get().await?;
+    let mut conn = MiddlewarePool::get_connection(pool).await?;
+
+    let (insert_sql, fetch_sql) = match &conn {
+        MiddlewarePoolConnection::Postgres(_) => (
+            "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)",
+            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1",
+        ),
+        MiddlewarePoolConnection::Sqlite(_)
+        | MiddlewarePoolConnection::Libsql(_)
+        | MiddlewarePoolConnection::Turso(_) => (
+            "INSERT INTO scores (espn_id, score, updated_at) VALUES (?1, ?2, ?3)",
+            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT ?1",
+        ),
+    };
+
+    for change in updates {
+        let params = vec![
+            RowValues::Int(change.espn_id),
+            RowValues::Int(i64::from(change.score)),
+            RowValues::Timestamp(change.updated_at),
+        ];
+        let bound = QueryAndParams::new(insert_sql, params);
+        conn.execute_dml(&bound.query, &bound.params).await?;
+    }
+
+    let limit = (updates.len().max(1)) as i64;
+    let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
+    let rows = conn.execute_select(&latest.query, &latest.params).await?;
+
+    Ok(rows)
+}
 ```
-
-</td>
-<td>
-
-```rust
-use chrono::NaiveDateTime;
-// SQLite-compatible backends use ? or ?N
-let q = QueryAndParams::new(
-    "INSERT INTO test (espn_id, name
-        , ins_ts) VALUES (?1, ?2, ?3)",
-    vec![
-        RowValues::Int(123456),
-        RowValues::Text(
-            "test name".to_string()),
-        RowValues::Timestamp(
-            parse_from_str(
-            "2021-08-06 16:00:00",
-            "%Y-%m-%d %H:%M:%S",
-        )?),
-    ],
-);
-
-// The same for all `sqlite` variants
-conn.execute_dml(&q.query, &q.params)
-    .await?;
-```
-
-</td>
-</tr>
-</table>
 
 ### Queries without parameters
 
