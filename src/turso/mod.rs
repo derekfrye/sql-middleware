@@ -9,11 +9,13 @@
 pub mod config;
 pub mod executor;
 pub mod params;
+pub mod prepared;
 pub mod query;
 pub mod transaction;
 
 // Re-export the public API for convenience
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
+pub use prepared::TursoPreparedStatement;
 pub use query::build_result_set;
 pub use transaction::{Prepared, Tx, begin_transaction, with_transaction};

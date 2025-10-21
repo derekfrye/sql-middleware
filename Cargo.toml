@@ -1,6 +1,6 @@
 [package]
 name = "sql-middleware"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
@@ -11,6 +11,9 @@ homepage = "https://github.com/derekfrye/sql-middleware"
 keywords = ["sql", "sqlite", "postgresql", "libsql", "turso"]
 documentation = "https://docs.rs/sql-middleware"
 
+[lints.rust]
+unsafe_code = "deny"
+
 [features]
 default = ["sqlite", "postgres"]
 sqlite = ["deadpool-sqlite"]
@@ -18,7 +21,8 @@ postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
 libsql = ["deadpool-libsql"]
 turso = ["dep:turso"]
-test-utils = ["dep:postgresql_embedded"]
+test-utils-postgres = ["dep:postgresql_embedded"]
+test-utils = ["test-utils-postgres"]
 benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
 
 [dependencies]
@@ -49,7 +53,7 @@ rand_chacha = { version = "0", optional = true }
 # LibSQL dependencies
 deadpool-libsql = { version = "0", optional = true }
 # turso deps
-turso = { version = "0.1.5", optional = true }
+turso = { version = "0.2.2", optional = true }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--deny", "unsafe_code"]
@@ -63,11 +67,25 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", features = ["test-utils", "benchmarks", "mssql", "libsql", "turso"] }
+sql-middleware = { path = ".", features = ["benchmarks", "mssql", "libsql", "turso", "test-utils"] }
+rusqlite = "0"
 
 [[bench]]
 name = "database_benchmark"
 harness = false
+
+[[bench]]
+name = "bench_rusqlite_single_row_lookup"
+harness = false
+
+[[bench]]
+name = "bench_rusqlite_multithread_pool_checkout"
+harness = false
+
+[[bench]]
+name = "bench_turso_single_row_lookup"
+harness = false
+required-features = ["turso"]
 
 [profile.bench]
 debug = true

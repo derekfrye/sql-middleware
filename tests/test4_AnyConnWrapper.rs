@@ -1,11 +1,3 @@
-// use rusty_golf::controller::score;
-// use rusty_golf::{controller::score::get_data_for_scores_page, model::CacheMap};
-
-// use deadpool_sqlite::rusqlite::{ self, params };
-#[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::testing_postgres::{
-    setup_postgres_container, stop_postgres_container,
-};
 use sql_middleware::{
     PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery,
     convert_sql_params,
@@ -40,28 +32,21 @@ impl Drop for FileCleanup {
 
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
-    let db_user = "test_user";
-    // don't use @ or # in here, it fails
-    // https://github.com/launchbadge/sqlx/issues/1624
-    let db_pass = "test_passwordx(!323341";
-    let db_name = "test_db";
-
-    let mut cfg = deadpool_postgres::Config::new();
-    cfg.dbname = Some(db_name.to_string());
-    cfg.host = Some("localhost".to_string());
-    // cfg.port = Some(port);
-
-    cfg.user = Some(db_user.to_string());
-    cfg.password = Some(db_pass.to_string());
-    let postgres_stuff = setup_postgres_container(&cfg)?;
-    cfg.port = Some(postgres_stuff.port);
-
     #[allow(unused_mut)]
     let mut test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
         TestCase::Sqlite(unique_path("test_sqlite")),
-        TestCase::Postgres(&cfg),
     ];
+    #[cfg(feature = "postgres")]
+    {
+        let mut cfg = deadpool_postgres::Config::new();
+        cfg.dbname = Some("testing".to_string());
+        cfg.host = Some("10.3.0.201".to_string());
+        cfg.port = Some(5432);
+        cfg.user = Some("testuser".to_string());
+        cfg.password = Some(String::new());
+        test_cases.push(TestCase::Postgres(cfg));
+    }
     #[cfg(feature = "turso")]
     {
         test_cases.push(TestCase::Turso(":memory:".to_string()));
@@ -76,11 +61,14 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
+        let mut db_type: DatabaseType;
+
         // Drop guard to clean up file-backed DBs even on failure
         for test_case in test_cases {
             // Clean up database files if they exist, and register cleanup guard
             let _cleanup_guard = match &test_case {
                 TestCase::Sqlite(connection_string) => {
+                    db_type = DatabaseType::Sqlite;
                     if connection_string == "file::memory:?cache=shared" {
                         None
                     } else {
@@ -90,6 +78,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 #[cfg(feature = "turso")]
                 TestCase::Turso(connection_string) => {
+                    db_type = DatabaseType::Turso;
                     if connection_string == ":memory:" {
                         None
                     } else {
@@ -105,48 +94,58 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 //         let _ = std::fs::remove_file(&connection_string);
                 //     }
                 // }
-                TestCase::Postgres(_) => None,
+                #[cfg(feature = "postgres")]
+                TestCase::Postgres(_) => {
+                    db_type = DatabaseType::Postgres;
+                    None
+                }
             };
 
+            let mut conn: MiddlewarePoolConnection;
+            let pool: &MiddlewarePool;
             match test_case {
                 TestCase::Sqlite(connection_string) => {
                     // Initialize Sqlite pool
                     let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
-                    let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(pool).await?;
+                    pool = config_and_pool.pool.get().await?;
+                    conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
-                    run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
+                    // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
                 }
+                #[cfg(feature = "postgres")]
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
-                    let config_and_pool = ConfigAndPool2::new_postgres(cfg.clone()).await?;
-                    let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(pool).await?;
+                    let config_and_pool = ConfigAndPool2::new_postgres(cfg).await?;
+                    pool = config_and_pool.pool.get().await?;
+                    conn = MiddlewarePool::get_connection(pool).await?;
 
                     // Execute test logic
-                    run_test_logic(&mut conn, DatabaseType::Postgres).await?;
+                    // run_test_logic(&mut conn, DatabaseType::Postgres).await?;
                 }
                 #[cfg(feature = "turso")]
                 TestCase::Turso(connection_string) => {
                     // Initialize Turso connection (no deadpool pooling)
                     let config_and_pool = ConfigAndPool2::new_turso(connection_string).await?;
-                    let pool = config_and_pool.pool.get().await?;
-                    let mut conn = MiddlewarePool::get_connection(pool).await?;
-
-                    // Execute test logic
-                    run_test_logic(&mut conn, DatabaseType::Turso).await?;
-                } // #[cfg(feature = "libsql")]
-                  // TestCase::Libsql(connection_string) => {
-                  //     // Initialize Libsql pool
-                  //     let config_and_pool = ConfigAndPool2::new_libsql(connection_string).await?;
-                  //     let pool = config_and_pool.pool.get().await?;
-                  //     let mut conn = MiddlewarePool::get_connection(&pool).await?;
-
-                  //     // Execute test logic
-                  //     run_test_logic(&mut conn, DatabaseType::Libsql).await?;
-                  // }
+                    pool = config_and_pool.pool.get().await?;
+                    conn = MiddlewarePool::get_connection(pool).await?;
+                }
             }
+            if db_type == DatabaseType::Postgres {
+                // Ensure a clean slate when reusing a shared Postgres instance.
+                conn.execute_batch(
+                    r#"
+                    DROP TABLE IF EXISTS eup_statistic CASCADE;
+                    DROP TABLE IF EXISTS event_user_player CASCADE;
+                    DROP TABLE IF EXISTS bettor CASCADE;
+                    DROP TABLE IF EXISTS golfer CASCADE;
+                    DROP TABLE IF EXISTS event CASCADE;
+                    DROP TABLE IF EXISTS test CASCADE;
+                    "#,
+                )
+                .await?;
+            }
+            run_test_logic(&mut conn, db_type).await?;
         }
 
         // Ok(())
@@ -154,14 +153,14 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
         // ... rest of your test code ...
     })?;
-    stop_postgres_container(postgres_stuff);
 
     Ok(())
 }
 
-enum TestCase<'a> {
+enum TestCase {
     Sqlite(String),
-    Postgres(&'a deadpool_postgres::Config),
+    #[cfg(feature = "postgres")]
+    Postgres(deadpool_postgres::Config),
     #[cfg(feature = "turso")]
     Turso(String),
     // #[cfg(feature = "libsql")]
@@ -438,21 +437,8 @@ async fn run_test_logic(
                 .await?;
             res?;
         }
-        DatabaseType::Mssql => {
+        DatabaseType::Mssql | DatabaseType::Turso | DatabaseType::Libsql => {
             // For MS SQL, insert data using the middleware connection
-            for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
-            }
-        }
-                #[cfg(feature = "turso")]
-                DatabaseType::Turso => {
-                    for param in params {
-                        conn.execute_dml(parameterized_query, &param).await?;
-                    }
-                }
-        #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => {
-            // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
                 conn.execute_dml(parameterized_query, &param).await?;
             }
@@ -495,62 +481,54 @@ async fn run_test_logic(
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Sqlite(xx) => {
-            let xx = &mut *xx;
-            xx.interact(move |xxx| {
-                let tx = xxx.transaction()?;
-                {
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params.params,
-                        ConversionMode::Query,
-                    )?;
-                    let mut stmt = tx.prepare(&query_and_params.query)?;
-                    sqlite_build_result_set(&mut stmt, &converted_params.0)?;
-                }
-                // should be able to read that val even tho we're not done w tx
-                {
-                    let query_and_params_vec = QueryAndParams {
-                        query: "select count(*) as cnt from test;".to_string(),
-                        params: vec![],
-                    };
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params_vec.params,
-                        ConversionMode::Query,
-                    )?;
-                    let mut stmt = tx.prepare(&query_and_params_vec.query)?;
-                    let result_set = {
-                        sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?
-                    };
-                    assert_eq!(result_set.results.len(), 1);
-                    assert_eq!(
-                        *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
-                        401
-                    );
-                }
-                {
-                    let converted_params = convert_sql_params::<SqliteParamsQuery>(
-                        &query_and_params.params,
-                        ConversionMode::Query,
-                    )?;
-                    let mut stmt = tx.prepare(&query_and_params.query)?;
-                    sqlite_build_result_set(&mut stmt, &converted_params.0)?;
-                }
-                tx.commit()?;
-                Ok::<_, SqlMiddlewareDbError>(result_set)
-            })
-            .await?
+        MiddlewarePoolConnection::Sqlite(_) => {
+            Ok(conn
+                .with_sqlite_connection(move |xxx| {
+                    let tx = xxx.transaction()?;
+                    {
+                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                            &query_and_params.params,
+                            ConversionMode::Query,
+                        )?;
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                    }
+                    // should be able to read that val even tho we're not done w tx
+                    {
+                        let query_and_params_vec = QueryAndParams {
+                            query: "select count(*) as cnt from test;".to_string(),
+                            params: vec![],
+                        };
+                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                            &query_and_params_vec.params,
+                            ConversionMode::Query,
+                        )?;
+                        let mut stmt = tx.prepare(&query_and_params_vec.query)?;
+                        let result_set = {
+                            sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?
+                        };
+                        assert_eq!(result_set.results.len(), 1);
+                        assert_eq!(
+                            *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
+                            401
+                        );
+                    }
+                    {
+                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                            &query_and_params.params,
+                            ConversionMode::Query,
+                        )?;
+                        let mut stmt = tx.prepare(&query_and_params.query)?;
+                        sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                    }
+                    tx.commit()?;
+                    Ok::<_, SqlMiddlewareDbError>(result_set)
+                })
+                .await?)
         }
-        #[cfg(feature = "libsql")]
-        MiddlewarePoolConnection::Libsql(_) => {
+
+        MiddlewarePoolConnection::Libsql(_) | MiddlewarePoolConnection::Turso(_) => {
             // For LibSQL, just execute the query using the middleware
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
-                .await?;
-            Ok::<_, SqlMiddlewareDbError>(result_set)
-        }
-        // todo: should align w postgres style above
-        #[cfg(feature = "turso")]
-        MiddlewarePoolConnection::Turso(_) => {
-            // Execute twice (align with Postgres/SQLite behavior in this section)
             conn.execute_dml(&query_and_params.query, &query_and_params.params)
                 .await?;
             conn.execute_dml(&query_and_params.query, &query_and_params.params)

@@ -14,13 +14,13 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")
             .await?;
 
-        if let MiddlewarePoolConnection::Sqlite(sqlite_obj) = &mut conn {
-            let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
-            let converted =
-                convert_sql_params::<SqliteParamsExecute>(&params, ConversionMode::Execute)?;
+        match &mut conn {
+            MiddlewarePoolConnection::Sqlite(_) => {
+                let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
+                let converted =
+                    convert_sql_params::<SqliteParamsExecute>(&params, ConversionMode::Execute)?;
 
-            let _ = sqlite_obj
-                .interact(move |raw| {
+                conn.with_sqlite_connection(move |raw| {
                     let tx = raw.transaction()?;
                     {
                         let mut stmt = tx.prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")?;
@@ -31,8 +31,8 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
                     Ok::<(), SqlMiddlewareDbError>(())
                 })
                 .await?;
-        } else {
-            panic!("Expected SQLite connection");
+            }
+            _ => panic!("Expected SQLite connection"),
         }
 
         let rs = conn
@@ -40,6 +40,20 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         assert_eq!(
             rs.results[0].get("name").unwrap().as_text().unwrap(),
+            "alice"
+        );
+
+        // Exercise the prepared statement API to reuse the compiled select.
+        let prepared = conn
+            .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
+            .await?;
+        let result_set = prepared.query(&[RowValues::Int(1)]).await?;
+        assert_eq!(
+            result_set.results[0]
+                .get("name")
+                .unwrap()
+                .as_text()
+                .unwrap(),
             "alice"
         );
         Ok::<(), SqlMiddlewareDbError>(())

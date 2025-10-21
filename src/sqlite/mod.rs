@@ -9,9 +9,13 @@
 pub mod config;
 pub mod executor;
 pub mod params;
+pub mod prepared;
 pub mod query;
+pub mod worker;
 
 // Re-export the public API
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::{SqliteParamsExecute, SqliteParamsQuery};
+pub use prepared::SqlitePreparedStatement;
 pub use query::build_result_set;
+pub use worker::SqliteConnection;

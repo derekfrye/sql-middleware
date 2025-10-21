@@ -4,6 +4,20 @@ Targets
 - Keep files ≤ 200 LOC where practical.
 - Keep functions ≤ 50 LOC where practical.
 
+Backend Duplication Hotspots
+- Repeated `ConfigAndPool::new_*` constructors across backends (`src/sqlite/config.rs`, `src/libsql/config.rs`, `src/postgres/config.rs`, `src/mssql/config.rs`, `src/turso/config.rs`) follow the same pool-init + smoke-test pattern with backend-specific wiring.
+- Execution helpers (`execute_batch`, `execute_select`, `execute_dml`) share nearly identical control flow in `src/*/executor.rs`, differing mostly in adapter calls and error wording.
+- Parameter conversion layers duplicate the mapping from `RowValues` into driver-native types and timestamp formatting logic in `src/*/params.rs`.
+- Result-set builders mirror each other when walking columns/rows to populate `ResultSet` (`src/*/query.rs`).
+- Transaction wrappers for libsql-like engines (`src/libsql/transaction.rs`, `src/turso/transaction.rs`) expose the same BEGIN/COMMIT/ROLLBACK and prepared-statement surface.
+- Module scaffolding (`src/*/mod.rs`) re-exports the same API sets with only backend names changed.
+
+Proposed Next Steps
+- Extract shared traits/helpers for pool creation and CRUD execution paths so backends only provide driver-specific pieces (e.g., pool builder + type aliases).
+- Centralise `RowValues` conversion and timestamp formatting into reusable helpers to avoid diverging behaviour between adapters.
+- Consolidate result-set assembly into backend-agnostic utilities (parameterised by column/value extractor) to trim repeated loops.
+- Explore a lightweight macro or template to cut down on the identical `mod.rs` re-export boilerplate per backend.
+
 Scan Summary
 - Files > 200 LOC
   - 493 lines — `tests/test4_AnyConnWrapper.rs`
@@ -123,3 +137,41 @@ LibSQL prepared (wrapper) note
 - Our current `libsql::Prepared` is a thin wrapper around the SQL string and executes via the pooled connection.
 - If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
 - Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
+
+- ✅ Added `MiddlewarePoolConnection::with_sqlite_connection` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
+- ✅ Introduced `prepare_sqlite_statement` + `SqlitePreparedStatement` for explicit prepared-statement reuse via the worker queue.
+- If we add the guard, benchmark loops would switch from repeated `execute_select`
+  calls to something like:
+  ```rust
+  MiddlewarePool::with_sqlite_connection(&pool, |conn| {
+      let mut stmt = conn.prepare_cached(query)?;
+      let mut params = [RowValues::Int(0)];
+      for &id in &ids {
+          params[0] = RowValues::Int(id);
+          let result = sqlite_execute_select_sync(&mut stmt, &params)?;
+          let row = result.results.first().unwrap();
+          let data = BenchRow::from_result_row(row);
+          std::hint::black_box(data);
+      }
+      Ok(())
+  }).await?
+  ```
+  so the async↔blocking hand-off happens once per batch instead of once per
+  lookup.
+- ✅ Swapped `deadpool_sqlite::Object::interact` for a per-connection worker task
+  (see `src/sqlite/worker.rs`). `ConfigAndPool::new_sqlite` now wraps pooled
+  objects in `SqliteConnection`, and `execute_*` routes through the worker queue.
+  Added `with_connection` helper for bulk callers.
+- Investigate the pool layer in `MiddlewarePool::get_connection` to see if we can
+  approach SQLx’s ~8 µs checkout cost.
+  - Idea: profile the checkout hot path with Criterion’s `--profile-time` and a
+    `perf` flamegraph; *pro*: immediately shows where time is spent in worker vs
+    `tokio`; *con*: needs Linux tooling and careful interpretation of async
+    frames.
+  - Idea: add lightweight timing spans inside the pool checkout/drop code
+    (bench-only build flag); *pro*: portable and quick to iterate; *con*: adds
+    instrumentation overhead that can skew very short measurements.
+  - Idea: prototype a fast-path that bypasses the worker queue for cached
+    statements using `try_acquire` on the underlying deadpool object; *pro*:
+    could cut scheduler hops entirely; *con*: risks starving other tasks and
+    needs careful error/backoff handling.

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Index - Criterion.rs</title>
+    <style type="text/css">
+        body {
+            font: 14px Helvetica Neue;
+            text-rendering: optimizelegibility;
+        }
+
+        .body {
+            width: 960px;
+            margin: auto;
+        }
+
+        a:link {
+            color: #1F78B4;
+            text-decoration: none;
+        }
+
+        h2 {
+            font-size: 36px;
+            font-weight: 300;
+        }
+
+        h3 {
+            font-size: 24px;
+            font-weight: 300;
+        }
+
+        #footer {
+            height: 40px;
+            background: #888;
+            color: white;
+            font-size: larger;
+            font-weight: 300;
+        }
+
+        #footer a {
+            color: white;
+            text-decoration: underline;
+        }
+
+        #footer p {
+            text-align: center
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid #888;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="body">
+        <h2>Criterion.rs Benchmark Index</h2>
+        See individual benchmark pages below for more details.
+        <ul>
+            <li><a href="../sqlite_single_row_lookup/report/index.html">sqlite_single_row_lookup</a></li>
+            
+            <ul>
+                <li>
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>middleware</th>
+                            <th>middleware_checkout</th>
+                            <th>middleware_decode</th>
+                            <th>middleware_interact</th>
+                            <th>middleware_marshalling</th>
+                            <th>middleware_param_convert</th>
+                            <th>middleware_prepare</th>
+                            <th>rusqlite</th>
+                        </tr>
+                        <tr>
+                            <th><a href="../sqlite_single_row_lookup/1000/report/index.html">1000</a></th>
+                            <td><a href="../sqlite_single_row_lookup/middleware/1000/report/index.html">sqlite_single_row_lookup/middleware/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/middleware_checkout/1000/report/index.html">sqlite_single_row_lookup/middleware_checkout/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/middleware_decode/1000/report/index.html">sqlite_single_row_lookup/middleware_decode/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/middleware_interact/1000/report/index.html">sqlite_single_row_lookup/middleware_interact/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/middleware_marshalling/1000/report/index.html">sqlite_single_row_lookup/middleware_marshalling/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/middleware_param_convert/1000/report/index.html">sqlite_single_row_lookup/middleware_param_convert/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/middleware_prepare/1000/report/index.html">sqlite_single_row_lookup/middleware_prepare/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup/rusqlite/1000/report/index.html">sqlite_single_row_lookup/rusqlite/1000</a></td>
+                        </tr>
+                    </table>
+                </li>
+            </ul>
+            <li><a href="../sqlite_single_row_lookup_sqlx/report/index.html">sqlite_single_row_lookup_sqlx</a></li>
+            
+            <ul>
+                <li>
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>sqlx</th>
+                            <th>sqlx_decode</th>
+                            <th>sqlx_param_bind</th>
+                            <th>sqlx_pool_acquire</th>
+                            <th>sqlx_prepare</th>
+                            <th>sqlx_query_raw</th>
+                        </tr>
+                        <tr>
+                            <th><a href="../sqlite_single_row_lookup_sqlx/1000/report/index.html">1000</a></th>
+                            <td><a href="../sqlite_single_row_lookup_sqlx/sqlx/1000/report/index.html">sqlite_single_row_lookup_sqlx/sqlx/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup_sqlx/sqlx_decode/1000/report/index.html">sqlite_single_row_lookup_sqlx/sqlx_decode/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup_sqlx/sqlx_param_bind/1000/report/index.html">sqlite_single_row_lookup_sqlx/sqlx_param_bind/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup_sqlx/sqlx_pool_acquire/1000/report/index.html">sqlite_single_row_lookup_sqlx/sqlx_pool_acquire/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup_sqlx/sqlx_prepare/1000/report/index.html">sqlite_single_row_lookup_sqlx/sqlx_prepare/1000</a></td>
+                            <td><a href="../sqlite_single_row_lookup_sqlx/sqlx_query_raw/1000/report/index.html">sqlite_single_row_lookup_sqlx/sqlx_query_raw/1000</a></td>
+                        </tr>
+                    </table>
+                </li>
+            </ul>
+            <li><a href="../turso_single_row_lookup/report/index.html">turso_single_row_lookup</a></li>
+            
+            <ul>
+                <li>
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>middleware</th>
+                            <th>middleware_checkout</th>
+                            <th>middleware_decode</th>
+                            <th>middleware_interact</th>
+                            <th>middleware_marshalling</th>
+                            <th>middleware_param_convert</th>
+                            <th>middleware_prepare</th>
+                        </tr>
+                        <tr>
+                            <th><a href="../turso_single_row_lookup/1000/report/index.html">1000</a></th>
+                            <td><a href="../turso_single_row_lookup/middleware/1000/report/index.html">turso_single_row_lookup/middleware/1000</a></td>
+                            <td><a href="../turso_single_row_lookup/middleware_checkout/1000/report/index.html">turso_single_row_lookup/middleware_checkout/1000</a></td>
+                            <td><a href="../turso_single_row_lookup/middleware_decode/1000/report/index.html">turso_single_row_lookup/middleware_decode/1000</a></td>
+                            <td><a href="../turso_single_row_lookup/middleware_interact/1000/report/index.html">turso_single_row_lookup/middleware_interact/1000</a></td>
+                            <td><a href="../turso_single_row_lookup/middleware_marshalling/1000/report/index.html">turso_single_row_lookup/middleware_marshalling/1000</a></td>
+                            <td><a href="../turso_single_row_lookup/middleware_param_convert/1000/report/index.html">turso_single_row_lookup/middleware_param_convert/1000</a></td>
+                            <td><a href="../turso_single_row_lookup/middleware_prepare/1000/report/index.html">turso_single_row_lookup/middleware_prepare/1000</a></td>
+                        </tr>
+                    </table>
+                </li>
+            </ul>
+        </ul>
+    </div>
+    <div id="footer">
+        <p>This report was generated by
+            <a href="https://github.com/bheisler/criterion.rs">Criterion.rs</a>, a statistics-driven benchmarking
+            library in Rust.</p>
+    </div>
+</body>
+</html>

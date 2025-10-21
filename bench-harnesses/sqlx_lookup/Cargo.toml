@@ -1,0 +1,25 @@
+[package]
+name = "sqlx_lookup_bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+criterion = { version = "0", features = ["async_tokio"] }
+rand = "0"
+rand_chacha = "0"
+sqlx = { version = "0", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "derive"] }
+
+[[bench]]
+name = "sqlite_single_row_lookup_sqlx"
+harness = false
+
+[[bench]]
+name = "bench_sqlx_multithread_pool_checkout"
+harness = false
+
+[profile.bench]
+debug = true
+opt-level = 0

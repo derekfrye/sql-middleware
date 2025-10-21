@@ -2,8 +2,14 @@
 use deadpool_postgres::Object as PostgresObject;
 
 #[cfg(feature = "sqlite")]
+use crate::sqlite::{SqliteConnection, SqlitePreparedStatement};
+#[cfg(feature = "sqlite")]
 use deadpool_sqlite::Object as SqliteObject;
+#[cfg(feature = "sqlite")]
+use deadpool_sqlite::rusqlite;
 
+#[cfg(feature = "turso")]
+use crate::turso::TursoPreparedStatement;
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Object as LibsqlObject;
 #[cfg(feature = "turso")]
@@ -16,7 +22,7 @@ pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
     Postgres(PostgresObject),
     #[cfg(feature = "sqlite")]
-    Sqlite(SqliteObject),
+    Sqlite(SqliteConnection),
     #[cfg(feature = "mssql")]
     Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
     #[cfg(feature = "libsql")]
@@ -69,7 +75,8 @@ impl MiddlewarePool {
                     .get()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
-                Ok(MiddlewarePoolConnection::Sqlite(conn))
+                let worker_conn = SqliteConnection::new(conn)?;
+                Ok(MiddlewarePoolConnection::Sqlite(worker_conn))
             }
             #[cfg(feature = "mssql")]
             MiddlewarePool::Mssql(pool) => {
@@ -95,6 +102,68 @@ impl MiddlewarePool {
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),
+            )),
+        }
+    }
+}
+
+impl MiddlewarePoolConnection {
+    /// Run synchronous `SQLite` work on the underlying worker-owned connection.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not `SQLite`.
+    #[cfg(feature = "sqlite")]
+    pub async fn with_sqlite_connection<F, R>(&mut self, func: F) -> Result<R, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
+        R: Send + 'static,
+    {
+        match self {
+            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+                sqlite_conn.with_connection(func).await
+            }
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "with_sqlite_connection is only available for SQLite connections".to_string(),
+            )),
+        }
+    }
+
+    /// Prepare a `SQLite` statement and obtain a reusable handle backed by the worker thread.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the underlying connection is not
+    /// `SQLite`, or propagates any preparation error reported by the worker thread.
+    #[cfg(feature = "sqlite")]
+    pub async fn prepare_sqlite_statement(
+        &mut self,
+        query: &str,
+    ) -> Result<SqlitePreparedStatement, SqlMiddlewareDbError> {
+        match self {
+            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+                sqlite_conn.prepare_statement(query).await
+            }
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "prepare_sqlite_statement is only available for SQLite connections".to_string(),
+            )),
+        }
+    }
+
+    /// Prepare a Turso statement and obtain a reusable handle tied to the pooled connection.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not Turso-enabled,
+    /// or bubbles up any error returned while preparing the statement through Turso's client.
+    #[cfg(feature = "turso")]
+    pub async fn prepare_turso_statement(
+        &mut self,
+        query: &str,
+    ) -> Result<TursoPreparedStatement, SqlMiddlewareDbError> {
+        match self {
+            MiddlewarePoolConnection::Turso(turso_conn) => {
+                TursoPreparedStatement::prepare(turso_conn.clone(), query).await
+            }
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "prepare_turso_statement is only available for Turso connections".to_string(),
             )),
         }
     }
