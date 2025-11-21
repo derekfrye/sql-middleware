@@ -80,7 +80,7 @@ impl ResultSet {
                         column_names
                             .iter()
                             .enumerate()
-                            .map(|(i, name)| (name.to_string(), i))
+                            .map(|(i, name)| (name.clone(), i))
                             .collect::<std::collections::HashMap<_, _>>(),
                     )
                 });

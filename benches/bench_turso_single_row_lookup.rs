@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
+use turso::Value as TursoValue;
 
 /// Holds the reusable database path plus deterministic id workload.
 struct Dataset {
@@ -226,6 +227,106 @@ impl BenchRow {
             active,
         }
     }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn from_turso_row(row: &turso::Row) -> Self {
+        let id = match row
+            .get_value(0)
+            .expect("expected integer id column from turso row")
+        {
+            TursoValue::Integer(value) => value,
+            TursoValue::Real(value) => value as i64,
+            other => panic!("unexpected id column type from turso row: {other:?}"),
+        };
+
+        let name = match row
+            .get_value(1)
+            .expect("expected text name column from turso row")
+        {
+            TursoValue::Text(text) => text,
+            other => panic!("unexpected name column type from turso row: {other:?}"),
+        };
+
+        let score = match row
+            .get_value(2)
+            .expect("expected numeric score column from turso row")
+        {
+            TursoValue::Real(value) => value,
+            TursoValue::Integer(value) => value as f64,
+            other => panic!("unexpected score column type from turso row: {other:?}"),
+        };
+
+        let active = match row
+            .get_value(3)
+            .expect("expected boolean active column from turso row")
+        {
+            TursoValue::Integer(value) => value != 0,
+            TursoValue::Real(value) => value != 0.0,
+            TursoValue::Null => false,
+            other => panic!("unexpected active column type from turso row: {other:?}"),
+        };
+
+        Self {
+            id,
+            name,
+            score,
+            active,
+        }
+    }
+}
+
+/// Raw Turso baseline using a direct connection and cached statement.
+fn benchmark_turso_raw(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+    let db_handle = Arc::new(runtime.block_on(async {
+        turso::Builder::new_local(dataset.path())
+            .build()
+            .await
+            .expect("create raw Turso database handle")
+    }));
+
+    group.bench_function(BenchmarkId::new("turso_raw", ids.len()), |b| {
+        let ids = ids.clone();
+        let db_handle = db_handle.clone();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let db_handle = db_handle.clone();
+            async move {
+                let mut total = Duration::default();
+                let conn = db_handle.connect().expect("connect raw Turso database");
+                let mut stmt = conn
+                    .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
+                    .await
+                    .expect("prepare raw Turso statement");
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let mut rows = stmt.query([id]).await.expect("execute raw Turso select");
+                        let row = rows
+                            .next()
+                            .await
+                            .expect("fetch raw Turso row")
+                            .expect("expected row from raw Turso select");
+                        let bench_row = BenchRow::from_turso_row(&row);
+                        black_box(bench_row);
+                        while rows
+                            .next()
+                            .await
+                            .expect("drain remaining raw Turso rows")
+                            .is_some()
+                        {}
+                        stmt.reset();
+                    }
+                    total += start.elapsed();
+                }
+                total
+            }
+        });
+    });
 }
 
 /// Middleware benchmark that goes through the Turso prepared-statement helper.
@@ -519,6 +620,7 @@ fn turso_single_row_lookup(c: &mut Criterion) {
     let lookup_count = DATASET.ids().len() as u64;
     group.throughput(Throughput::Elements(lookup_count));
 
+    benchmark_turso_raw(&mut group);
     benchmark_middleware(&mut group);
     benchmark_pool_acquire(&mut group);
     benchmark_middleware_prepare(&mut group);

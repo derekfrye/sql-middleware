@@ -134,14 +134,14 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
             if db_type == DatabaseType::Postgres {
                 // Ensure a clean slate when reusing a shared Postgres instance.
                 conn.execute_batch(
-                    r#"
+                    r"
                     DROP TABLE IF EXISTS eup_statistic CASCADE;
                     DROP TABLE IF EXISTS event_user_player CASCADE;
                     DROP TABLE IF EXISTS bettor CASCADE;
                     DROP TABLE IF EXISTS golfer CASCADE;
                     DROP TABLE IF EXISTS event CASCADE;
                     DROP TABLE IF EXISTS test CASCADE;
-                    "#,
+                    ",
                 )
                 .await?;
             }

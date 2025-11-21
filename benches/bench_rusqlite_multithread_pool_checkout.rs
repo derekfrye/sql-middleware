@@ -21,7 +21,7 @@ use tokio::task::JoinSet;
 
 const SQLITE_SELECT: &str = "SELECT id, name, score, active FROM test WHERE id = ?1";
 
-/// Holds the reusable on-disk SQLite dataset plus deterministic lookup IDs.
+/// Holds the reusable on-disk `SQLite` dataset plus deterministic lookup IDs.
 struct Dataset {
     path: String,
     ids: Vec<i64>,
@@ -104,7 +104,7 @@ struct BlockingConnectionGuard<'a> {
     conn: Option<deadpool_sqlite::rusqlite::Connection>,
 }
 
-impl<'a> BlockingConnectionGuard<'a> {
+impl BlockingConnectionGuard<'_> {
     fn connection(&mut self) -> &mut deadpool_sqlite::rusqlite::Connection {
         self.conn
             .as_mut()
@@ -112,7 +112,7 @@ impl<'a> BlockingConnectionGuard<'a> {
     }
 }
 
-impl<'a> Drop for BlockingConnectionGuard<'a> {
+impl Drop for BlockingConnectionGuard<'_> {
     fn drop(&mut self) {
         if let Some(conn) = self.conn.take() {
             self.pool
@@ -174,7 +174,7 @@ fn concurrency_to_run() -> usize {
         .unwrap_or(8)
 }
 
-/// Create a fresh SQLite file with predictable contents for repeatable runs.
+/// Create a fresh `SQLite` file with predictable contents for repeatable runs.
 fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> deadpool_sqlite::rusqlite::Result<()> {
     if path.exists() {
         let _ = fs::remove_file(path);
@@ -206,7 +206,7 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> deadpool_sqlite::rus
                 id,
                 name,
                 score,
-                active as i32
+                i32::from(active)
             ])?;
         }
     }
@@ -219,7 +219,7 @@ fn chunk_size(total: usize, concurrency: usize) -> usize {
     if concurrency == 0 {
         return total.max(1);
     }
-    (total + concurrency - 1) / concurrency
+    total.div_ceil(concurrency)
 }
 
 async fn middleware_parallel_select(
