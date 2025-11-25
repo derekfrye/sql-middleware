@@ -40,6 +40,27 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     }
 
     /// Override translation mode directly.
+    ///
+    /// Warning: translation skips placeholders inside quoted strings, comments, and dollar-quoted
+    /// blocks via a lightweight state machine; it may miss edge cases in complex SQL (e.g.,
+    /// PL/pgSQL bodies). Prefer backend-specific SQL instead of relying on translation:
+    /// ```rust
+    /// # use sql_middleware::prelude::*;
+    /// # async fn demo(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMiddlewareDbError> {
+    /// let query = match conn {
+    ///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
+    /// BEGIN
+    ///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
+    /// END;
+    /// $function$"#,
+    ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
+    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+    ///     }
+    /// };
+    /// # let _ = query;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn translation(mut self, translation: TranslationMode) -> Self {
         self.options.translation = translation;

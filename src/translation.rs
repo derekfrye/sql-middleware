@@ -55,6 +55,26 @@ impl QueryOptions {
 
 /// Translate placeholders between Postgres-style `$N` and SQLite-style `?N`.
 ///
+/// Warning: translation skips quoted strings, comments, and dollar-quoted blocks via a lightweight
+/// state machine; it may still miss edge cases in complex SQL. For dialect-specific SQL (e.g.,
+/// PL/pgSQL bodies), prefer backend-specific SQL instead of relying on translation:
+/// ```rust
+/// # use sql_middleware::prelude::*;
+/// # async fn demo(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMiddlewareDbError> {
+/// let query = match conn {
+///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
+/// BEGIN
+///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
+/// END;
+/// $function$"#,
+///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
+///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+///     }
+/// };
+/// # let _ = query;
+/// # Ok(())
+/// # }
+/// ```
 /// Returns a borrowed `Cow` when no changes are needed.
 #[must_use]
 pub fn translate_placeholders(

@@ -13,6 +13,23 @@ impl ConfigAndPool {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if database creation or connection test fails.
+    ///
+    /// Warning: translation skips placeholders inside quoted strings, comments, and dollar-quoted
+    /// blocks via a lightweight state machine; it may miss edge cases in complex SQL. Prefer
+    /// backend-specific SQL instead of relying on translation:
+    /// ```rust
+    /// # use sql_middleware::prelude::*;
+    /// let query = match &conn {
+    ///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
+    /// BEGIN
+    ///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
+    /// END;
+    /// $function$"#,
+    ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
+    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+    ///     }
+    /// };
+    /// ```
     pub async fn new_turso_with_translation(
         db_path: String,
         translate_placeholders: bool,

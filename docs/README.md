@@ -26,6 +26,58 @@ You can use the prelude to import everything you need, or import item by item.
 use sql_middleware::prelude::*;
 ```
 
+
+### Parameterized queries for reading or changing data
+
+`QueryAndParams` gives you a single API for both reads and writes through the query builder. The query builder optionally supports same SQL regardless of backend, even with different parameter placeholders ([`$1` or `?1`, with some limitations](#placeholder-translation)). Here is an example that supports PostgreSQL, SQLite, LibSQL, or Turso without duplicating logic.
+
+```rust
+use chrono::NaiveDateTime;
+use sql_middleware::prelude::*;
+
+pub struct ScoreChange {
+    pub espn_id: i64,
+    pub score: i32,
+    pub updated_at: NaiveDateTime,
+}
+
+pub async fn set_scores_in_db(
+    config_and_pool: &sql_middleware::pool::ConfigAndPool,
+    updates: &[ScoreChange],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let mut conn = config_and_pool.get_connection().await?;
+
+    // Author once; translation rewrites placeholders as needed across backends.
+    let insert_sql = "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)";
+    let fetch_sql = "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1";
+
+    for change in updates {
+        let params = vec![
+            RowValues::Int(change.espn_id),
+            RowValues::Int(i64::from(change.score)),
+            RowValues::Timestamp(change.updated_at),
+        ];
+        let bound = QueryAndParams::new(insert_sql, params);
+        conn.query(&bound.query)
+            .translation(TranslationMode::ForceOn)
+            .params(&bound.params)
+            .dml()
+            .await?;
+    }
+
+    let limit = (updates.len().max(1)) as i64;
+    let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
+    let rows = conn
+        .query(&latest.query)
+        .translation(TranslationMode::ForceOn)
+        .params(&latest.params)
+        .select()
+        .await?;
+
+    Ok(rows)
+}
+```
+
 ### Multi-database support without copy/pasting query logic
 
 An example using multiple different backends (sqlite, postgres, turso). Notice the need to not repeat the query logic regardless of backend connection type. 
@@ -152,59 +204,6 @@ let ddl_query =
     include_str!("/path/to/test1.sql");
 conn.execute_batch(&ddl_query).await?;
 ```
-
-
-### Parameterized queries for reading or changing data
-
-`QueryAndParams` gives you a single API for both reads and writes through the fluent query builder. The only thing that changes per backend is the placeholder syntax you drop into the SQL string. Here is the same function updating scores across PostgreSQL, SQLite, LibSQL, or Turso without duplicating binding logic.
-
-```rust
-use chrono::NaiveDateTime;
-use sql_middleware::prelude::*;
-
-pub struct ScoreChange {
-    pub espn_id: i64,
-    pub score: i32,
-    pub updated_at: NaiveDateTime,
-}
-
-pub async fn set_scores_in_db(
-    config_and_pool: &sql_middleware::pool::ConfigAndPool,
-    updates: &[ScoreChange],
-) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let mut conn = config_and_pool.get_connection().await?;
-
-    // Author once; translation rewrites placeholders as needed across backends.
-    let insert_sql = "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)";
-    let fetch_sql = "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1";
-
-    for change in updates {
-        let params = vec![
-            RowValues::Int(change.espn_id),
-            RowValues::Int(i64::from(change.score)),
-            RowValues::Timestamp(change.updated_at),
-        ];
-        let bound = QueryAndParams::new(insert_sql, params);
-        conn.query(&bound.query)
-            .translation(TranslationMode::ForceOn)
-            .params(&bound.params)
-            .dml()
-            .await?;
-    }
-
-    let limit = (updates.len().max(1)) as i64;
-    let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
-    let rows = conn
-        .query(&latest.query)
-        .translation(TranslationMode::ForceOn)
-        .params(&latest.params)
-        .select()
-        .await?;
-
-    Ok(rows)
-}
-```
-
 ### Queries without parameters
 
 You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, LibSQL, and Turso:
@@ -386,8 +385,8 @@ See further examples in the tests directory:
 - Default off. Enable at pool creation with the `*_with_translation(..., true)` constructors (or by toggling `translate_placeholders` on `ConfigAndPool`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
 - Override per call via the query builder: `.translation(TranslationMode::ForceOff | ForceOn)` or `.options(...)`.
 - Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
-- Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched.
-- Design notes and edge cases live in `docs/feat_translation.md`.
+- *Limitations*: Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched. Basically, don't rely on this to try to translate `?X` to `$X` in complicated, per-dialect specific stuff (like `$tag$...$tag$` in postgres, this translation is meant to cover 90% of use cases).
+- More design notes and edge cases live in [documentation of the feature](./docs/feat_translation.md).
 
 ```rust
 use sql_middleware::prelude::*;
