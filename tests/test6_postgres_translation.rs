@@ -113,3 +113,63 @@ fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn s
     })?;
     Ok(())
 }
+
+#[test]
+fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std::error::Error>> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let mut cfg = deadpool_postgres::Config::new();
+        cfg.dbname = Some("testing".to_string());
+        cfg.host = Some("10.3.0.201".to_string());
+        cfg.port = Some(5432);
+        cfg.user = Some("testuser".to_string());
+        cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
+
+        let cap = ConfigAndPool::new_postgres_with_translation(cfg, false).await?;
+        let mut conn = cap.get_connection().await?;
+
+        // Comment should not be translated; ?1 outside comment should be.
+        let rs = conn
+            .query(
+                "SELECT 1 -- $1 in comment\n                 + ?1 AS val;",
+            )
+            .translation(TranslationMode::ForceOn)
+            .params(&[RowValues::Int(1)])
+            .select()
+            .await?;
+
+        assert_eq!(rs.results.len(), 1);
+        assert_eq!(*rs.results[0].get("val").unwrap().as_int().unwrap(), 2);
+
+        // Literal containing ?1 stays untouched; ?2 outside literal translates.
+        let rs = conn
+            .query("SELECT 'O''Reilly || ?1' || ?2 AS val;")
+            .translation(TranslationMode::ForceOn)
+            .params(&[RowValues::Text("ignored".into()), RowValues::Text("X".into())])
+            .select()
+            .await?;
+
+        assert_eq!(rs.results.len(), 1);
+        assert_eq!(
+            rs.results[0].get("val").unwrap().as_text().unwrap(),
+            "O'Reilly || ?1X"
+        );
+
+        // Literal + param next to it should translate the param.
+        let rs = conn
+            .query("SELECT 'O''Reilly' || ?1 AS val;")
+            .translation(TranslationMode::ForceOn)
+            .params(&[RowValues::Text("X".into())])
+            .select()
+            .await?;
+
+        assert_eq!(rs.results.len(), 1);
+        assert_eq!(
+            rs.results[0].get("val").unwrap().as_text().unwrap(),
+            "O'ReillyX"
+        );
+
+        Ok::<(), SqlMiddlewareDbError>(())
+    })?;
+    Ok(())
+}

@@ -86,3 +86,57 @@ fn turso_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn std:
     })?;
     Ok(())
 }
+
+#[test]
+fn turso_translation_skips_comments_and_literals() -> Result<(), Box<dyn std::error::Error>> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        // Default off; override forces $n -> ?n for SQLite/Turso.
+        let cap = ConfigAndPool::new_turso_with_translation(":memory:".to_string(), false).await?;
+        let mut conn = cap.get_connection().await?;
+
+        // Comment should not be translated; $1 outside comment should be.
+        let rs = conn
+            .query(
+                "SELECT 1 /* ?1 in block comment */ + $1 -- $2 in line comment\n AS val;",
+            )
+            .translation(TranslationMode::ForceOn)
+            .params(&[RowValues::Int(3)])
+            .select()
+            .await?;
+
+        assert_eq!(rs.results.len(), 1);
+        assert_eq!(*rs.results[0].get("val").unwrap().as_int().unwrap(), 4);
+
+        // Literal containing $1 stays untouched; $2 outside literal translates.
+        let rs = conn
+            .query("SELECT 'O''Reilly || ?1$1' || $2 AS val;")
+            .translation(TranslationMode::ForceOn)
+            .params(&[RowValues::Text("ignored".into()), RowValues::Text("Y".into())])
+            .select()
+            .await?;
+
+        assert_eq!(rs.results.len(), 1);
+        assert_eq!(
+            rs.results[0].get("val").unwrap().as_text().unwrap(),
+            "O'Reilly || ?1$1Y"
+        );
+
+        // Literal + param next to it should translate the param.
+        let rs = conn
+            .query("SELECT 'O''Reilly' || $1 AS val;")
+            .translation(TranslationMode::ForceOn)
+            .params(&[RowValues::Text("Y".into())])
+            .select()
+            .await?;
+
+        assert_eq!(rs.results.len(), 1);
+        assert_eq!(
+            rs.results[0].get("val").unwrap().as_text().unwrap(),
+            "O'ReillyY"
+        );
+
+        Ok::<(), SqlMiddlewareDbError>(())
+    })?;
+    Ok(())
+}
