@@ -102,13 +102,11 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut conn: MiddlewarePoolConnection;
-            let pool: &MiddlewarePool;
             match test_case {
                 TestCase::Sqlite(connection_string) => {
                     // Initialize Sqlite pool
                     let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
-                    pool = config_and_pool.pool.get().await?;
-                    conn = MiddlewarePool::get_connection(pool).await?;
+                    conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
@@ -117,8 +115,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
                     let config_and_pool = ConfigAndPool2::new_postgres(cfg).await?;
-                    pool = config_and_pool.pool.get().await?;
-                    conn = MiddlewarePool::get_connection(pool).await?;
+                    conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Postgres).await?;
@@ -127,8 +124,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 TestCase::Turso(connection_string) => {
                     // Initialize Turso connection (no deadpool pooling)
                     let config_and_pool = ConfigAndPool2::new_turso(connection_string).await?;
-                    pool = config_and_pool.pool.get().await?;
-                    conn = MiddlewarePool::get_connection(pool).await?;
+                    conn = config_and_pool.get_connection().await?;
                 }
             }
             if db_type == DatabaseType::Postgres {
@@ -289,7 +285,10 @@ async fn run_test_logic(
 
     match db_type {
         DatabaseType::Postgres => {
-            if let MiddlewarePoolConnection::Postgres(pg_handle) = conn {
+            if let MiddlewarePoolConnection::Postgres {
+                client: pg_handle, ..
+            } = conn
+            {
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
@@ -367,7 +366,10 @@ async fn run_test_logic(
 
     match db_type {
         DatabaseType::Postgres => {
-            if let MiddlewarePoolConnection::Postgres(pg_handle) = conn {
+            if let MiddlewarePoolConnection::Postgres {
+                client: pg_handle, ..
+            } = conn
+            {
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
@@ -462,7 +464,7 @@ async fn run_test_logic(
     };
 
     (match &mut *conn {
-        MiddlewarePoolConnection::Postgres(xx) => {
+        MiddlewarePoolConnection::Postgres { client: xx, .. } => {
             let tx = xx.transaction().await?;
             let converted_params = PostgresParams::convert_for_batch(&query_and_params.params)?;
 
@@ -475,13 +477,13 @@ async fn run_test_logic(
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Mssql(_) => {
+        MiddlewarePoolConnection::Mssql { .. } => {
             // For MSSQL, just execute the query using the middleware
             conn.execute_dml(&query_and_params.query, &query_and_params.params)
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Sqlite(_) => {
+        MiddlewarePoolConnection::Sqlite { .. } => {
             Ok(conn
                 .with_sqlite_connection(move |xxx| {
                     let tx = xxx.transaction()?;
@@ -527,7 +529,7 @@ async fn run_test_logic(
                 .await?)
         }
 
-        MiddlewarePoolConnection::Libsql(_) | MiddlewarePoolConnection::Turso(_) => {
+        MiddlewarePoolConnection::Libsql { .. } | MiddlewarePoolConnection::Turso { .. } => {
             // For LibSQL, just execute the query using the middleware
             conn.execute_dml(&query_and_params.query, &query_and_params.params)
                 .await?;

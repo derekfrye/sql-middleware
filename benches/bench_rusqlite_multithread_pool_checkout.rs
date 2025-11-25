@@ -227,15 +227,14 @@ async fn middleware_parallel_select(
     ids: &[i64],
     concurrency: usize,
 ) -> Result<(), SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.clone();
     let per_worker = chunk_size(ids.len(), concurrency);
     let mut join_set = JoinSet::new();
 
     for chunk in ids.chunks(per_worker).filter(|chunk| !chunk.is_empty()) {
-        let pool = pool.clone();
+        let config_and_pool = config_and_pool.clone();
         let chunk = chunk.to_vec();
         join_set.spawn(async move {
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = config_and_pool.get_connection().await?;
             let prepared = conn.prepare_sqlite_statement(SQLITE_SELECT).await?;
             let mut params = vec![RowValues::Int(0)];
             for id in chunk {
@@ -261,14 +260,14 @@ async fn middleware_parallel_select(
 }
 
 async fn middleware_parallel_checkout(
-    pool: &MiddlewarePool,
+    config_and_pool: &ConfigAndPool,
     concurrency: usize,
 ) -> Result<(), SqlMiddlewareDbError> {
     let mut join_set = JoinSet::new();
     for _ in 0..concurrency.max(1) {
-        let pool = pool.clone();
+        let config_and_pool = config_and_pool.clone();
         join_set.spawn(async move {
-            let conn = MiddlewarePool::get_connection(&pool).await?;
+            let conn = config_and_pool.get_connection().await?;
             drop(conn);
             Ok::<(), SqlMiddlewareDbError>(())
         });
@@ -363,7 +362,7 @@ fn benchmark_middleware_pool_checkout(
                     let mut total = Duration::default();
                     for _ in 0..iters {
                         let start = Instant::now();
-                        middleware_parallel_checkout(&config.pool, concurrency)
+                        middleware_parallel_checkout(&config, concurrency)
                             .await
                             .expect("middleware pool checkout");
                         total += start.elapsed();

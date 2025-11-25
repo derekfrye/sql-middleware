@@ -15,12 +15,11 @@ mod libsql_tests {
             assert_eq!(config_and_pool.db_type, DatabaseType::Libsql);
             println!("✓ Created LibSQL connection pool");
 
-            let pool = config_and_pool.pool.get().await?;
-            let mut libsql_conn = MiddlewarePool::get_connection(pool).await?;
+            let mut libsql_conn = config_and_pool.get_connection().await?;
 
             // Verify we got the right connection type
             match &libsql_conn {
-                MiddlewarePoolConnection::Libsql(_) => {
+                MiddlewarePoolConnection::Libsql { .. } => {
                     println!("✓ Got LibSQL connection");
                 }
                 _ => panic!("Expected LibSQL connection"),

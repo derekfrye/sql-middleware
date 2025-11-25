@@ -43,10 +43,12 @@ pub async fn get_libsql_instance() -> ConfigAndPool {
 pub async fn clean_libsql_tables(
     config_and_pool: &ConfigAndPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(pool).await?;
+    let conn = config_and_pool.get_connection().await?;
 
-    if let MiddlewarePoolConnection::Libsql(libsql_conn) = conn {
+    if let MiddlewarePoolConnection::Libsql {
+        conn: libsql_conn, ..
+    } = conn
+    {
         libsql_conn.execute("DROP TABLE IF EXISTS test", ()).await?;
 
         let create_sql = "CREATE TABLE IF NOT EXISTS test (
@@ -80,10 +82,12 @@ async fn setup_libsql_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
         h text, i text, j text, k text, l text, m text, n text, o text, p text
     )";
 
-    let pool = config_and_pool.pool.get().await?;
-    let libsql_conn = MiddlewarePool::get_connection(pool).await?;
+    let libsql_conn = config_and_pool.get_connection().await?;
 
-    if let MiddlewarePoolConnection::Libsql(libsql_conn) = libsql_conn {
+    if let MiddlewarePoolConnection::Libsql {
+        conn: libsql_conn, ..
+    } = libsql_conn
+    {
         libsql_conn.execute(ddl, ()).await.map_err(|error| {
             SqlMiddlewareDbError::ExecutionError(format!("Failed to execute DDL: {error}"))
         })?;
@@ -119,16 +123,15 @@ pub fn benchmark_libsql(c: &mut Criterion) {
                         clean_libsql_tables(&config_and_pool)
                             .await
                             .expect("Failed to reset LibSQL tables");
-                        let pool = config_and_pool
-                            .pool
-                            .get()
-                            .await
-                            .expect("Failed to get pool");
-                        let libsql_conn = MiddlewarePool::get_connection(pool)
+                        let libsql_conn = config_and_pool
+                            .get_connection()
                             .await
                             .expect("Failed to get conn");
 
-                        if let MiddlewarePoolConnection::Libsql(libsql_conn) = libsql_conn {
+                        if let MiddlewarePoolConnection::Libsql {
+                            conn: libsql_conn, ..
+                        } = libsql_conn
+                        {
                             let start = std::time::Instant::now();
 
                             crate::libsql::execute_batch(&libsql_conn, &statements)

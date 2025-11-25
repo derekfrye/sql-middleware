@@ -78,10 +78,9 @@ pub(super) async fn ensure_target_user(
     admin_cfg.dbname = Some(String::from("postgres"));
 
     let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
-    let pool = admin_pool.pool.get().await?;
-    let admin_conn = MiddlewarePool::get_connection(pool).await?;
+    let admin_conn = admin_pool.get_connection().await?;
 
-    if let MiddlewarePoolConnection::Postgres(pgconn) = admin_conn {
+    if let MiddlewarePoolConnection::Postgres { client: pgconn, .. } = admin_conn {
         let create_user_sql =
             format!("CREATE USER \"{db_user}\" WITH PASSWORD '{db_pass}' CREATEDB SUPERUSER");
         pgconn
@@ -96,10 +95,12 @@ pub(super) async fn ensure_target_user(
 pub(super) async fn initialise_benchmark_schema(
     config_and_pool: &ConfigAndPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(pool).await?;
+    let conn = config_and_pool.get_connection().await?;
 
-    if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
+    if let MiddlewarePoolConnection::Postgres {
+        client: mut pgconn, ..
+    } = conn
+    {
         let tx = pgconn.transaction().await?;
         tx.batch_execute(POSTGRES_BENCH_DDL).await?;
         tx.commit().await?;

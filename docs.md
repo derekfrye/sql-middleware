@@ -48,18 +48,17 @@ pub async fn set_scores_in_db(
     updates: &[ScoreChange],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Acquire a pooled connection (Postgres, SQLite, LibSQL, or Turso).
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
 
     // Pick the appropriate placeholder syntax based on the backend.
     let (insert_sql, fetch_sql) = match &conn {
-        MiddlewarePoolConnection::Postgres(_) => (
+        MiddlewarePoolConnection::Postgres { .. } => (
             "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)",
             "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1",
         ),
-        MiddlewarePoolConnection::Sqlite(_)
-        | MiddlewarePoolConnection::Libsql(_)
-        | MiddlewarePoolConnection::Turso(_) => (
+        MiddlewarePoolConnection::Sqlite { .. }
+        | MiddlewarePoolConnection::Libsql { .. }
+        | MiddlewarePoolConnection::Turso { .. } => (
             "INSERT INTO scores (espn_id, score, updated_at) VALUES (?1, ?2, ?3)",
             "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT ?1",
         ),

@@ -76,8 +76,7 @@ static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> = LazyLock::new(|| {
 static TURSO_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyLock::new(|| {
     TOKIO_RUNTIME
         .block_on(async {
-            let pool = MIDDLEWARE_CONFIG.pool.clone();
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = MIDDLEWARE_CONFIG.get_connection().await?;
             let prepared = conn
                 .prepare_turso_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
                 .await?;
@@ -150,8 +149,7 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
     }
 
     let config = ConfigAndPool::new_turso(path.to_string_lossy().into_owned()).await?;
-    let pool = config.pool.clone();
-    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+    let mut conn = config.get_connection().await?;
 
     conn.execute_batch(
         "
@@ -353,8 +351,8 @@ fn benchmark_middleware(
                     if let Some(stats) = breakdown.as_mut() {
                         stats.record_iteration();
                     }
-                    let pool = config_and_pool.pool.clone();
-                    let mut conn = MiddlewarePool::get_connection(&pool)
+                    let mut conn = config_and_pool
+                        .get_connection()
                         .await
                         .expect("acquire middleware connection");
                     let prepared = conn
@@ -415,20 +413,18 @@ fn benchmark_pool_acquire(
 
     group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
-            async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    let conn = MiddlewarePool::get_connection(&pool)
-                        .await
-                        .expect("checkout connection");
-                    drop(conn);
-                    total += start.elapsed();
-                }
-                total
+        b.to_async(runtime).iter_custom(move |iters| async move {
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let start = Instant::now();
+                let conn = config_and_pool
+                    .get_connection()
+                    .await
+                    .expect("checkout connection");
+                drop(conn);
+                total += start.elapsed();
             }
+            total
         });
     });
 }
@@ -443,27 +439,25 @@ fn benchmark_middleware_prepare(
 
     group.bench_function(BenchmarkId::new("middleware_prepare", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
-            async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let mut conn = MiddlewarePool::get_connection(&pool)
-                        .await
-                        .expect("checkout connection");
-                    let start = Instant::now();
-                    let prepared = conn
-                        .prepare_turso_statement(
-                            "SELECT id, name, score, active FROM test WHERE id = ?1",
-                        )
-                        .await
-                        .expect("prepare statement");
-                    total += start.elapsed();
-                    drop(prepared);
-                    drop(conn);
-                }
-                total
+        b.to_async(runtime).iter_custom(move |iters| async move {
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let mut conn = config_and_pool
+                    .get_connection()
+                    .await
+                    .expect("checkout connection");
+                let start = Instant::now();
+                let prepared = conn
+                    .prepare_turso_statement(
+                        "SELECT id, name, score, active FROM test WHERE id = ?1",
+                    )
+                    .await
+                    .expect("prepare statement");
+                total += start.elapsed();
+                drop(prepared);
+                drop(conn);
             }
+            total
         });
     });
 }
@@ -478,24 +472,22 @@ fn benchmark_middleware_interact_only(
 
     group.bench_function(BenchmarkId::new("middleware_interact", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
-            async move {
-                let mut total = Duration::default();
-                let mut conn = MiddlewarePool::get_connection(&pool)
+        b.to_async(runtime).iter_custom(move |iters| async move {
+            let mut total = Duration::default();
+            let mut conn = config_and_pool
+                .get_connection()
+                .await
+                .expect("checkout connection");
+            for _ in 0..iters {
+                let start = Instant::now();
+                let _ = conn
+                    .execute_select("SELECT 1 WHERE 0 = 1", &[])
                     .await
-                    .expect("checkout connection");
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    let _ = conn
-                        .execute_select("SELECT 1 WHERE 0 = 1", &[])
-                        .await
-                        .expect("execute noop select");
-                    total += start.elapsed();
-                }
-                drop(conn);
-                total
+                    .expect("execute noop select");
+                total += start.elapsed();
             }
+            drop(conn);
+            total
         });
     });
 }
@@ -518,11 +510,14 @@ fn benchmark_middleware_marshalling(
             async move {
                 let mut total = Duration::default();
                 for _ in 0..iters {
-                    let pool = config_and_pool.pool.clone();
-                    let mut conn = MiddlewarePool::get_connection(&pool)
+                    let mut conn = config_and_pool
+                        .get_connection()
                         .await
                         .expect("checkout connection");
-                    if let MiddlewarePoolConnection::Turso(turso_conn) = &mut conn {
+                    if let MiddlewarePoolConnection::Turso {
+                        conn: turso_conn, ..
+                    } = &mut conn
+                    {
                         for &id in &ids {
                             let mut stmt = turso_conn
                                 .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")

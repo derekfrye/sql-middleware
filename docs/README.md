@@ -37,13 +37,12 @@ pub async fn get_scores_from_db(
     config_and_pool: &sql_middleware::pool::ConfigAndPool,
     event_id: i32,
 ) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
     let query = match &conn {
-        MiddlewarePoolConnection::Postgres(_) => {
+        MiddlewarePoolConnection::Postgres { .. } => {
             "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names($1) ORDER BY grp, eup_id"
         }
-        MiddlewarePoolConnection::Sqlite(_) | MiddlewarePoolConnection::Turso(_) => {
+        MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
             include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
         }
     };
@@ -173,17 +172,16 @@ pub async fn set_scores_in_db(
     config_and_pool: &sql_middleware::pool::ConfigAndPool,
     updates: &[ScoreChange],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
 
     let (insert_sql, fetch_sql) = match &conn {
-        MiddlewarePoolConnection::Postgres(_) => (
+        MiddlewarePoolConnection::Postgres { .. } => (
             "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)",
             "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1",
         ),
-        MiddlewarePoolConnection::Sqlite(_)
-        | MiddlewarePoolConnection::Libsql(_)
-        | MiddlewarePoolConnection::Turso(_) => (
+        MiddlewarePoolConnection::Sqlite { .. }
+        | MiddlewarePoolConnection::Libsql { .. }
+        | MiddlewarePoolConnection::Turso { .. } => (
             "INSERT INTO scores (espn_id, score, updated_at) VALUES (?1, ?2, ?3)",
             "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT ?1",
         ),
@@ -255,25 +253,26 @@ pub async fn get_scores_from_db(
     config_and_pool: &ConfigAndPool,
     event_id: i64,
 ) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
 
     let turso_query = "SELECT grp, golfername, playername, eup_id, espn_id \
                        FROM sp_get_player_names(?1) ORDER BY grp, eup_id";
     let postgres_query = "SELECT grp, golfername, playername, eup_id, espn_id \
                           FROM sp_get_player_names($1) ORDER BY grp, eup_id";
     let (tx, stmt) = match &mut conn {
-        MiddlewarePoolConnection::Turso(client) => {
+        MiddlewarePoolConnection::Turso { conn: client, .. } => {
             let tx = begin_transaction(client).await?;
             let stmt = tx.prepare(turso_query).await?;
             (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
         }
-        MiddlewarePoolConnection::Postgres(pg_conn) => {
+        MiddlewarePoolConnection::Postgres {
+            client: pg_conn, ..
+        } => {
             let mut tx = pg_conn.transaction().await?;
             let stmt = tx.prepare(postgres_query).await?;
             (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
         }
-        MiddlewarePoolConnection::Libsql(conn) => {
+        MiddlewarePoolConnection::Libsql { conn, .. } => {
             let tx = begin_libsql_tx(conn).await?;
             let stmt = tx.prepare(turso_query)?;
             (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
@@ -384,6 +383,23 @@ See further examples in the tests directory:
 - [PostgreSQL test example](/tests/test5a_postgres.rs)
 - [LibSQL test example](/tests/test5b_libsql.rs)
 
+## Placeholder Translation
+
+- Default off. Enable at pool creation with the `*_with_translation(..., true)` constructors (or by toggling `translate_placeholders` on `ConfigAndPool`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
+- Override per call via `execute_select_with_options` / `execute_dml_with_options` and `QueryOptions::default().with_translation(TranslationMode::ForceOff | ForceOn)`.
+- Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
+- Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched.
+
+```rust
+use sql_middleware::prelude::*;
+
+let mut conn = config_and_pool.get_connection().await?;
+let opts = QueryOptions::default().with_translation(TranslationMode::ForceOn);
+let rows = conn
+    .execute_select_with_options("select * from t where id = $1", &[RowValues::Int(1)], opts)
+    .await?;
+```
+
 ## Feature Flags
 
 By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
@@ -420,4 +436,4 @@ Available features:
 
 ## Release Notes
 
-- 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT and added third-party notice documentation.
+- 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).

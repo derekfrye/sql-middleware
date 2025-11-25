@@ -71,8 +71,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                 #[cfg(feature = "turso")]
                 TestCase::Turso(path) => ConfigAndPool::new_turso(path).await?,
             };
-            let pool = cap.pool.get().await?;
-            let mut conn = MiddlewarePool::get_connection(pool).await?;
+            let mut conn = cap.get_connection().await?;
 
             // Create table
             let ddl = r"

@@ -16,12 +16,11 @@ mod libsql_tests {
             let config_and_pool = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
             assert_eq!(config_and_pool.db_type, DatabaseType::Libsql);
 
-            let pool = config_and_pool.pool.get().await?;
-            let mut libsql_conn = MiddlewarePool::get_connection(pool).await?;
+            let mut libsql_conn = config_and_pool.get_connection().await?;
 
             // Verify we got the right connection type
             assert!(
-                matches!(&libsql_conn, MiddlewarePoolConnection::Libsql(_)),
+                matches!(&libsql_conn, MiddlewarePoolConnection::Libsql { .. }),
                 "Expected LibSQL connection"
             );
 
@@ -125,8 +124,7 @@ mod libsql_tests {
         let rt = Runtime::new()?;
         rt.block_on(async {
             let config_and_pool = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
-            let pool = config_and_pool.pool.get().await?;
-            let mut libsql_conn = MiddlewarePool::get_connection(pool).await?;
+            let mut libsql_conn = config_and_pool.get_connection().await?;
 
             // Create table
             libsql_conn
