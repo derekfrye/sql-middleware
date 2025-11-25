@@ -147,8 +147,9 @@ pub fn translate_placeholders<'a>(
             }
             State::DollarQuoted(ref tag) => {
                 if b == b'$' && matches_tag(bytes, idx, tag) {
+                    let tag_len = tag.len();
                     state = State::Normal;
-                    idx += tag.len();
+                    idx += tag_len;
                 }
             }
         }

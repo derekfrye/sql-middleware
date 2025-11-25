@@ -4,8 +4,8 @@
 //! to make it easier to get started with the library.
 
 pub use crate::middleware::{
-    AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, CustomDbRow,
-    DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, ResultSet, RowValues,
+    AnyConnWrapper, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool,
+    MiddlewarePoolConnection, QueryAndParams, QueryBuilder, ResultSet, RowValues,
     SqlMiddlewareDbError,
 };
 

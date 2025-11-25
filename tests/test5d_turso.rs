@@ -39,7 +39,9 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
 
         // Same SELECT placeholder style as LibSQL/SQLite
         let rs = conn
-            .execute_select("SELECT name FROM t WHERE id = ?1", &[RowValues::Int(1)])
+            .query("SELECT name FROM t WHERE id = ?1")
+            .params(&[RowValues::Int(1)])
+            .select()
             .await?;
         assert_eq!(
             rs.results[0].get("name").unwrap().as_text().unwrap(),

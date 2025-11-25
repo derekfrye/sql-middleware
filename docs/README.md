@@ -47,7 +47,7 @@ pub async fn get_scores_from_db(
         }
     };
     let params = vec![RowValues::Int(i64::from(event_id))];
-    let res = conn.execute_select(query, &params).await?;
+    let res = conn.query(query).params(&params).select().await?;
 
     let z: Result<Vec<Scores>, SqlMiddlewareDbError> = res
         .results
@@ -156,7 +156,7 @@ conn.execute_batch(&ddl_query).await?;
 
 ### Parameterized queries for reading or changing data
 
-`QueryAndParams` gives you a single API for both `execute_select` (reads) and `execute_dml` (writes); the only thing that changes per backend is the placeholder syntax you drop into the SQL string. Here is the same function updating scores across PostgreSQL, SQLite, LibSQL, or Turso without duplicating binding logic.
+`QueryAndParams` gives you a single API for both reads and writes through the fluent query builder. The only thing that changes per backend is the placeholder syntax you drop into the SQL string. Here is the same function updating scores across PostgreSQL, SQLite, LibSQL, or Turso without duplicating binding logic.
 
 ```rust
 use chrono::NaiveDateTime;
@@ -194,12 +194,19 @@ pub async fn set_scores_in_db(
             RowValues::Timestamp(change.updated_at),
         ];
         let bound = QueryAndParams::new(insert_sql, params);
-        conn.execute_dml(&bound.query, &bound.params).await?;
+        conn.query(&bound.query)
+            .params(&bound.params)
+            .dml()
+            .await?;
     }
 
     let limit = (updates.len().max(1)) as i64;
     let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
-    let rows = conn.execute_select(&latest.query, &latest.params).await?;
+    let rows = conn
+        .query(&latest.query)
+        .params(&latest.params)
+        .select()
+        .await?;
 
     Ok(rows)
 }
@@ -211,12 +218,11 @@ You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, Li
 
 ```rust
 // Either build a QueryAndParams
-// And you could structure like previous example to pass param values
 let query = QueryAndParams::new_without_params("SELECT * FROM users");
-let results = conn.execute_select(&query.query, &[]).await?;
+let results = conn.query(&query.query).select().await?;
 
 // Or pass the SQL string directly
-let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
+let results2 = conn.query("SELECT * FROM users").select().await?;
 ```
 
 ### Custom logic in between transactions
@@ -345,16 +351,14 @@ pub async fn get_scores_from_db(
 }
 ```
 
-### Using the AsyncDatabaseExecutor trait
-
-The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations if you prefer designing this way.
+### Using the query builder in helpers
 
 ```rust
 // This works for PostgreSQL, SQLite, LibSQL, and Turso connections
-async fn insert_user<T: AsyncDatabaseExecutor>(
-    conn: &mut T,
+async fn insert_user(
+    conn: &mut MiddlewarePoolConnection,
     user_id: i32,
-    name: &str
+    name: &str,
 ) -> Result<(), SqlMiddlewareDbError> {
     let query = QueryAndParams::new(
         // Use appropriate parameter syntax for your DB
@@ -364,13 +368,14 @@ async fn insert_user<T: AsyncDatabaseExecutor>(
         vec![
             RowValues::Int(i64::from(user_id)),
             RowValues::Text(name.to_string()),
-        ]
+        ],
     );
-    
-    // Execute query through the trait. Placeholder style in `query.query`
-    // must match the active backend.
-    conn.execute_dml(&query.query, &query.params).await?;
-    
+
+    conn.query(&query.query)
+        .params(&query.params)
+        .dml()
+        .await?;
+
     Ok(())
 }
 ```
@@ -386,7 +391,7 @@ See further examples in the tests directory:
 ## Placeholder Translation
 
 - Default off. Enable at pool creation with the `*_with_translation(..., true)` constructors (or by toggling `translate_placeholders` on `ConfigAndPool`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
-- Override per call via `execute_select_with_options` / `execute_dml_with_options` and `QueryOptions::default().with_translation(TranslationMode::ForceOff | ForceOn)`.
+- Override per call via the query builder: `.translation(TranslationMode::ForceOff | ForceOn)` or `.options(...)`.
 - Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
 - Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched.
 
@@ -394,9 +399,11 @@ See further examples in the tests directory:
 use sql_middleware::prelude::*;
 
 let mut conn = config_and_pool.get_connection().await?;
-let opts = QueryOptions::default().with_translation(TranslationMode::ForceOn);
 let rows = conn
-    .execute_select_with_options("select * from t where id = $1", &[RowValues::Int(1)], opts)
+    .query("select * from t where id = $1")
+    .translation(TranslationMode::ForceOn)
+    .params(&[RowValues::Int(1)])
+    .select()
     .await?;
 ```
 

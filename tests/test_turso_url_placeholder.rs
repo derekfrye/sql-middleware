@@ -10,19 +10,17 @@ fn turso_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error>> 
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE tbl (val TEXT);").await?;
-        conn.execute_dml(
-            "INSERT INTO tbl (val) VALUES (?1);",
-            &[RowValues::Text(
+        conn.query("INSERT INTO tbl (val) VALUES (?1);")
+            .params(&[RowValues::Text(
                 "https://example.com/?1=param1Value&2=param2&token=$123abc".into(),
-            )],
-        )
-        .await?;
+            )])
+            .dml()
+            .await?;
 
         let rs = conn
-            .execute_select(
-                "SELECT val FROM tbl WHERE val LIKE 'https://example.com/?1=' || ?1 || '%';",
-                &[RowValues::Text("param1Value".into())],
-            )
+            .query("SELECT val FROM tbl WHERE val LIKE 'https://example.com/?1=' || ?1 || '%';")
+            .params(&[RowValues::Text("param1Value".into())])
+            .select()
             .await?;
 
         assert_eq!(rs.results.len(), 1);

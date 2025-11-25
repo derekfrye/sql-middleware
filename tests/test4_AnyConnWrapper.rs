@@ -2,8 +2,8 @@ use sql_middleware::{
     PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery,
     convert_sql_params,
     middleware::{
-        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, ConversionMode,
-        DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+        AnyConnWrapper, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType,
+        MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
     postgres_build_result_set, sqlite_build_result_set,
 };
@@ -266,11 +266,11 @@ async fn run_test_logic(
     // lets first run this through 100 transactions, yikes
     for param in params {
         // println!("param: {:?}", param);
-        conn.execute_dml(parameterized_query, &param).await?;
+        conn.query(parameterized_query).params(&param).dml().await?;
     }
 
     let query = "select count(*) as cnt from test;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         100
@@ -331,26 +331,26 @@ async fn run_test_logic(
             // For this test, skip the MSSQL implementation
             // Simply insert the data using the middleware connection
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
         #[cfg(feature = "turso")]
         DatabaseType::Turso => {
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => {
             // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
     }
 
     let query = "select count(*) as cnt from test;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         200
@@ -442,13 +442,13 @@ async fn run_test_logic(
         DatabaseType::Mssql | DatabaseType::Turso | DatabaseType::Libsql => {
             // For MS SQL, insert data using the middleware connection
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
     }
 
     let query = "select count(*) as cnt from test;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         400
@@ -479,7 +479,9 @@ async fn run_test_logic(
         }
         MiddlewarePoolConnection::Mssql { .. } => {
             // For MSSQL, just execute the query using the middleware
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
@@ -531,9 +533,13 @@ async fn run_test_logic(
 
         MiddlewarePoolConnection::Libsql { .. } | MiddlewarePoolConnection::Turso { .. } => {
             // For LibSQL, just execute the query using the middleware
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
                 .await?;
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
@@ -543,7 +549,7 @@ async fn run_test_logic(
 
     // make sure to match the val from above
     let query = "select count(*) as cnt,name from test where id = 990 group by name;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     // theres two in here now, we inserted same val 2x above
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
@@ -559,7 +565,7 @@ async fn run_test_logic(
     );
 
     let query = "select count(*) as cnt from test ;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         402

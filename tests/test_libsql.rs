@@ -2,8 +2,7 @@
 mod libsql_tests {
     use serde_json::json;
     use sql_middleware::middleware::{
-        AsyncDatabaseExecutor, ConfigAndPool, DatabaseType, MiddlewarePool,
-        MiddlewarePoolConnection, RowValues,
+        ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolConnection, RowValues,
     };
     use tokio::runtime::Runtime;
 
@@ -51,7 +50,7 @@ mod libsql_tests {
                 RowValues::JSON(json!({"type": "user", "level": 1})),
             ];
 
-            let rows_affected = libsql_conn.execute_dml(insert_sql, &params).await?;
+            let rows_affected = libsql_conn.query(insert_sql).params(&params).dml().await?;
             assert_eq!(rows_affected, 1);
 
             // Insert another row
@@ -65,14 +64,18 @@ mod libsql_tests {
                 RowValues::JSON(json!({"type": "admin", "level": 5})),
             ];
 
-            let rows_affected2 = libsql_conn.execute_dml(insert_sql, &params2).await?;
+            let rows_affected2 = libsql_conn.query(insert_sql).params(&params2).dml().await?;
             assert_eq!(rows_affected2, 1);
 
             // Test SELECT operations
             let select_sql = "SELECT * FROM test_table WHERE id = ?";
             let select_params = vec![RowValues::Int(1)];
 
-            let result_set = libsql_conn.execute_select(select_sql, &select_params).await?;
+            let result_set = libsql_conn
+                .query(select_sql)
+                .params(&select_params)
+                .select()
+                .await?;
 
             // Verify results
             assert_eq!(result_set.results.len(), 1);
@@ -86,7 +89,7 @@ mod libsql_tests {
 
             // Test SELECT with multiple results
             let select_all_sql = "SELECT id, name, value FROM test_table ORDER BY id";
-            let all_results = libsql_conn.execute_select(select_all_sql, &[]).await?;
+            let all_results = libsql_conn.query(select_all_sql).select().await?;
 
             assert_eq!(all_results.results.len(), 2);
             assert_eq!(*all_results.results[0].get("id").unwrap().as_int().unwrap(), 1);
@@ -97,21 +100,33 @@ mod libsql_tests {
             // Test UPDATE operation
             let update_sql = "UPDATE test_table SET value = ? WHERE id = ?";
             let update_params = vec![RowValues::Float(99.9), RowValues::Int(1)];
-            let updated_rows = libsql_conn.execute_dml(update_sql, &update_params).await?;
+            let updated_rows = libsql_conn
+                .query(update_sql)
+                .params(&update_params)
+                .dml()
+                .await?;
             assert_eq!(updated_rows, 1);
 
             // Verify update worked
-            let verify_result = libsql_conn.execute_select(select_sql, &select_params).await?;
+            let verify_result = libsql_conn
+                .query(select_sql)
+                .params(&select_params)
+                .select()
+                .await?;
             assert_eq!(verify_result.results[0].get("value").unwrap().as_float().unwrap(), 99.9);
 
             // Test DELETE operation
             let delete_sql = "DELETE FROM test_table WHERE id = ?";
             let delete_params = vec![RowValues::Int(2)];
-            let deleted_rows = libsql_conn.execute_dml(delete_sql, &delete_params).await?;
+            let deleted_rows = libsql_conn
+                .query(delete_sql)
+                .params(&delete_params)
+                .dml()
+                .await?;
             assert_eq!(deleted_rows, 1);
 
             // Verify only one row remains
-            let final_results = libsql_conn.execute_select(select_all_sql, &[]).await?;
+            let final_results = libsql_conn.query(select_all_sql).select().await?;
             assert_eq!(final_results.results.len(), 1);
             assert_eq!(*final_results.results[0].get("id").unwrap().as_int().unwrap(), 1);
 
@@ -134,12 +149,15 @@ mod libsql_tests {
             // Insert row with NULL
             let insert_params = vec![RowValues::Int(1), RowValues::Null];
             libsql_conn
-                .execute_dml("INSERT INTO null_test VALUES (?, ?)", &insert_params)
+                .query("INSERT INTO null_test VALUES (?, ?)")
+                .params(&insert_params)
+                .dml()
                 .await?;
 
             // Query and verify NULL handling
             let results = libsql_conn
-                .execute_select("SELECT * FROM null_test", &[])
+                .query("SELECT * FROM null_test")
+                .select()
                 .await?;
             assert_eq!(results.results.len(), 1);
             assert_eq!(*results.results[0].get("id").unwrap().as_int().unwrap(), 1);

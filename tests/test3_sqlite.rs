@@ -1,7 +1,7 @@
 #![cfg(any(feature = "sqlite", feature = "turso"))]
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sql_middleware::middleware::{AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, RowValues};
+use sql_middleware::middleware::{ConfigAndPool, MiddlewarePool, RowValues};
 use tokio::runtime::Runtime;
 
 enum TestCase {
@@ -119,7 +119,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
             ];
 
             for (sql, params) in setup_queries.into_iter().zip(param_sets.into_iter()) {
-                conn.execute_dml(sql, &params).await?;
+                conn.query(sql).params(&params).dml().await?;
             }
 
             // Query a few rows
@@ -130,7 +130,11 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                 RowValues::Int(3),
                 RowValues::Int(10),
             ];
-            let res = conn.execute_select(select_sql, &select_params).await?;
+            let res = conn
+                .query(select_sql)
+                .params(&select_params)
+                .select()
+                .await?;
 
             // we expect 4 rows
             assert_eq!(res.results.len(), 4);

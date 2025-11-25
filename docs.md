@@ -87,6 +87,6 @@ pub async fn set_scores_in_db(
     conn.execute_select(&latest.query, &latest.params).await
 }
 
-// For more in-depth examples (batch queries, AsyncDatabaseExecutor usage, benchmarks),
+// For more in-depth examples (batch queries, query builder usage, benchmarks),
 // see the project README: https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md
 ```

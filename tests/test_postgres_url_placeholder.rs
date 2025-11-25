@@ -20,19 +20,19 @@ fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS tbl (val TEXT);")
             .await?;
-        conn.execute_dml(
-            "INSERT INTO tbl (val) VALUES ($1);",
-            &[RowValues::Text(
+        conn.query("INSERT INTO tbl (val) VALUES ($1);")
+            .params(&[RowValues::Text(
                 "https://example.com/?1=param1Value&2=param2&token=$123abc".into(),
-            )],
-        )
-        .await?;
+            )])
+            .dml()
+            .await?;
 
         let rs = conn
-            .execute_select(
+            .query(
                 "SELECT val FROM tbl WHERE val LIKE $tag$https://example.com/?1=$tag$ || $1 || '%';",
-                &[RowValues::Text("param1Value".into())],
             )
+            .params(&[RowValues::Text("param1Value".into())])
+            .select()
             .await?;
 
         assert_eq!(rs.results.len(), 1);

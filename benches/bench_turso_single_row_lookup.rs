@@ -9,7 +9,6 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
-use sql_middleware::AsyncDatabaseExecutor;
 use sql_middleware::turso::{Params as TursoParams, build_result_set as turso_build_result_set};
 use sql_middleware::{
     ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, ParamConverter,
@@ -173,10 +172,9 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
             RowValues::Bool(id % 2 == 0),
         ];
         let _ = conn
-            .execute_dml(
-                "INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)",
-                &params,
-            )
+            .query("INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)")
+            .params(&params)
+            .dml()
             .await?;
     }
 
@@ -481,7 +479,8 @@ fn benchmark_middleware_interact_only(
             for _ in 0..iters {
                 let start = Instant::now();
                 let _ = conn
-                    .execute_select("SELECT 1 WHERE 0 = 1", &[])
+                    .query("SELECT 1 WHERE 0 = 1")
+                    .select()
                     .await
                     .expect("execute noop select");
                 total += start.elapsed();

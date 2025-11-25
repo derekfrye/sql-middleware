@@ -26,11 +26,11 @@ Goal: optional, backend-aware translation between PostgreSQL-style placeholders 
 
 ## API Surface
 - Pool-level opt-in: add a flag to pool config/constructors (e.g., `translate_placeholders: bool`, default `false`) stored in `ConfigAndPool` so every connection knows the default behavior.
-- Per-call override: introduce an options type (e.g., `QueryOptions`/`ExecuteOptions`) with `translation: TranslationMode` where `TranslationMode = PoolDefault | ForceOn | ForceOff`. Existing `execute_select`/`execute_dml` keep current signatures; provide `*_with_options` variants to accept overrides.
+- Per-call override: include an options type (e.g., `QueryOptions`) with `translation: TranslationMode` where `TranslationMode = PoolDefault | ForceOn | ForceOff`. The fluent query builder can expose `.translation(...)` / `.options(...)` to override the pool default per call.
 - Manual prepare path: expose a public helper `translate_placeholders(sql: &str, target: PlaceholderStyle, enabled: bool) -> Cow<'_, str>` (or similar) re-exported from the prelude. Manual users can translate once before `prepare` and reuse the result.
 
 ## Wiring
-- Middleware paths (`execute_select`/`execute_dml`): just before prepare/execute, run translation if params are non-empty and translation is enabled (resolved via per-call override or pool default) based on the active `MiddlewarePoolConnection` variant.
+- Middleware paths (`select`/`dml` on the query builder): just before prepare/execute, run translation if params are non-empty and translation is enabled (resolved via per-call override or pool default) based on the active `MiddlewarePoolConnection` variant.
 - Store/propagate the pool default flag so connections can access it. Likely adjustments in `ConfigAndPool` and `MiddlewarePool::get_connection`.
 
 ## Tests (to add when implementing)
