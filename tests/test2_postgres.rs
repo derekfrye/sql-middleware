@@ -5,8 +5,7 @@ use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams,
-    RowValues,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, QueryAndParams, RowValues,
 };
 #[cfg(feature = "test-utils")]
 use sql_middleware::test_utils::testing_postgres::{

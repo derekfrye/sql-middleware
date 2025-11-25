@@ -3,7 +3,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
-use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
 use crate::test_utils::postgres::EmbeddedPostgres;
 
 use super::common::{generate_postgres_insert_statements, get_benchmark_rows};

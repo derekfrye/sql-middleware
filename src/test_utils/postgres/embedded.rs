@@ -1,5 +1,5 @@
 use super::super::SHARED_RUNTIME;
-use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
 
 #[cfg(feature = "test-utils")]
 use postgresql_embedded::PostgreSQL;

@@ -18,7 +18,8 @@ fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error
         let cap = ConfigAndPool::new_postgres(cfg).await?;
         let mut conn = cap.get_connection().await?;
 
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS tbl (val TEXT);")
+        // Drop and recreate to ensure no leftover rows from previous runs against the shared DB
+        conn.execute_batch("DROP TABLE IF EXISTS tbl; CREATE TABLE tbl (val TEXT);")
             .await?;
         conn.query("INSERT INTO tbl (val) VALUES ($1);")
             .params(&[RowValues::Text(

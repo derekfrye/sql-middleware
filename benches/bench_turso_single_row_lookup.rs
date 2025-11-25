@@ -11,8 +11,8 @@ use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use sql_middleware::turso::{Params as TursoParams, build_result_set as turso_build_result_set};
 use sql_middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, ParamConverter,
-    RowValues, SqlMiddlewareDbError,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, ParamConverter, RowValues,
+    SqlMiddlewareDbError,
 };
 use std::fs;
 use std::hint::black_box;
@@ -411,11 +411,13 @@ fn benchmark_pool_acquire(
 
     group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| async move {
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.clone();
+            async move {
             let mut total = Duration::default();
             for _ in 0..iters {
                 let start = Instant::now();
-                let conn = config_and_pool
+                let conn = pool
                     .get_connection()
                     .await
                     .expect("checkout connection");
@@ -423,6 +425,7 @@ fn benchmark_pool_acquire(
                 total += start.elapsed();
             }
             total
+            }
         });
     });
 }
@@ -437,10 +440,12 @@ fn benchmark_middleware_prepare(
 
     group.bench_function(BenchmarkId::new("middleware_prepare", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| async move {
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.clone();
+            async move {
             let mut total = Duration::default();
             for _ in 0..iters {
-                let mut conn = config_and_pool
+                let mut conn = pool
                     .get_connection()
                     .await
                     .expect("checkout connection");
@@ -456,6 +461,7 @@ fn benchmark_middleware_prepare(
                 drop(conn);
             }
             total
+            }
         });
     });
 }
@@ -470,9 +476,11 @@ fn benchmark_middleware_interact_only(
 
     group.bench_function(BenchmarkId::new("middleware_interact", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| async move {
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.clone();
+            async move {
             let mut total = Duration::default();
-            let mut conn = config_and_pool
+            let mut conn = pool
                 .get_connection()
                 .await
                 .expect("checkout connection");
@@ -487,6 +495,7 @@ fn benchmark_middleware_interact_only(
             }
             drop(conn);
             total
+            }
         });
     });
 }

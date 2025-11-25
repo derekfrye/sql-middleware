@@ -80,11 +80,9 @@ pub fn translate_placeholders<'a>(
                 b'"' => state = State::DoubleQuoted,
                 b'-' if bytes.get(idx + 1) == Some(&b'-') => {
                     state = State::LineComment;
-                    idx += 1;
                 }
                 b'/' if bytes.get(idx + 1) == Some(&b'*') => {
                     state = State::BlockComment(1);
-                    idx += 1;
                 }
                 b'$' => {
                     if let Some((tag, advance)) = try_start_dollar_quote(bytes, idx) {
@@ -135,14 +133,12 @@ pub fn translate_placeholders<'a>(
             State::BlockComment(depth) => {
                 if b == b'/' && bytes.get(idx + 1) == Some(&b'*') {
                     state = State::BlockComment(depth + 1);
-                    idx += 1;
                 } else if b == b'*' && bytes.get(idx + 1) == Some(&b'/') {
                     if depth == 1 {
                         state = State::Normal;
                     } else {
                         state = State::BlockComment(depth - 1);
                     }
-                    idx += 1;
                 }
             }
             State::DollarQuoted(ref tag) => {
@@ -240,7 +236,7 @@ mod tests {
     fn skips_inside_literals_and_comments() {
         let sql = "select '?1', $1 -- $2\n/* ?3 */ from t where a = $1";
         let res = translate_placeholders(sql, PlaceholderStyle::Sqlite, true);
-        assert_eq!(res, "select '?1', $1 -- $2\n/* ?3 */ from t where a = ?1");
+        assert_eq!(res, "select '?1', ?1 -- $2\n/* ?3 */ from t where a = ?1");
     }
 
     #[test]

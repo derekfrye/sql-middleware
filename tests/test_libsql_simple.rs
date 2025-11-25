@@ -1,7 +1,7 @@
 #[cfg(feature = "libsql")]
 mod libsql_tests {
     use sql_middleware::middleware::{
-        ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolConnection, RowValues,
+        ConfigAndPool, DatabaseType, MiddlewarePoolConnection, RowValues,
     };
     use tokio::runtime::Runtime;
 

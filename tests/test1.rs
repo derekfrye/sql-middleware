@@ -1,7 +1,7 @@
 #![cfg(any(feature = "sqlite", feature = "turso"))]
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sql_middleware::middleware::{ConfigAndPool, MiddlewarePool, RowValues};
+use sql_middleware::middleware::{ConfigAndPool, RowValues};
 use tokio::runtime::Runtime;
 
 enum TestCase {

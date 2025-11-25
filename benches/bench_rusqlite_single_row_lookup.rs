@@ -10,8 +10,8 @@ use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
 use sql_middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, RowValues,
-    SqlMiddlewareDbError, SqliteParamsQuery, sqlite_build_result_set, sqlite_convert_params,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, RowValues, SqlMiddlewareDbError,
+    SqliteParamsQuery, sqlite_build_result_set, sqlite_convert_params,
 };
 use std::cell::RefCell;
 use std::fs;
@@ -342,11 +342,13 @@ fn benchmark_pool_acquire(
 
     group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| async move {
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.clone();
+            async move {
             let mut total = Duration::default();
             for _ in 0..iters {
                 let start = Instant::now();
-                let conn = config_and_pool
+                let conn = pool
                     .get_connection()
                     .await
                     .expect("checkout connection");
@@ -354,6 +356,7 @@ fn benchmark_pool_acquire(
                 total += start.elapsed();
             }
             total
+            }
         });
     });
 }
@@ -368,10 +371,12 @@ fn benchmark_middleware_prepare(
 
     group.bench_function(BenchmarkId::new("middleware_prepare", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| async move {
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.clone();
+            async move {
             let mut total = Duration::default();
             for _ in 0..iters {
-                let mut conn = config_and_pool
+                let mut conn = pool
                     .get_connection()
                     .await
                     .expect("checkout connection");
@@ -387,6 +392,7 @@ fn benchmark_middleware_prepare(
                 drop(conn);
             }
             total
+            }
         });
     });
 }
@@ -401,9 +407,11 @@ fn benchmark_middleware_interact_only(
 
     group.bench_function(BenchmarkId::new("middleware_interact", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| async move {
+        b.to_async(runtime).iter_custom(move |iters| {
+            let pool = config_and_pool.clone();
+            async move {
             let mut total = Duration::default();
-            let mut conn = config_and_pool
+            let mut conn = pool
                 .get_connection()
                 .await
                 .expect("checkout connection");
@@ -418,6 +426,7 @@ fn benchmark_middleware_interact_only(
             }
             drop(conn);
             total
+            }
         });
     });
 }

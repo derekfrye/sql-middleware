@@ -2,7 +2,7 @@
 mod libsql_tests {
     use serde_json::json;
     use sql_middleware::middleware::{
-        ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolConnection, RowValues,
+        ConfigAndPool, DatabaseType, MiddlewarePoolConnection, RowValues,
     };
     use tokio::runtime::Runtime;
 

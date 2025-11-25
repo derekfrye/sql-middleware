@@ -10,7 +10,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
-use sql_middleware::{ConfigAndPool, MiddlewarePool, RowValues, SqlMiddlewareDbError};
+use sql_middleware::{ConfigAndPool, RowValues, SqlMiddlewareDbError};
 use std::fs;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};

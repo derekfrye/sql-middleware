@@ -6,7 +6,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     SqlMiddlewareDbError,
-    middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection},
+    middleware::{ConfigAndPool, MiddlewarePoolConnection},
 };
 
 use super::common::{generate_insert_statements, get_benchmark_rows};

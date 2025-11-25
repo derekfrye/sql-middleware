@@ -3,7 +3,7 @@ use sql_middleware::{
     convert_sql_params,
     middleware::{
         AnyConnWrapper, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType,
-        MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+        MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
     postgres_build_result_set, sqlite_build_result_set,
 };

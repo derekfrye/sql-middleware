@@ -1,4 +1,4 @@
-use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
 use postgresql_embedded::PostgreSQL;
 
 const POSTGRES_BENCH_DDL: &str = "CREATE TABLE IF NOT EXISTS test (
