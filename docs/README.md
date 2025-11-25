@@ -437,4 +437,5 @@ Available features:
 
 ## Release Notes
 
+- 0.3.0 (unreleased): Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
 - 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).
