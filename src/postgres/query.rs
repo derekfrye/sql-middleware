@@ -60,7 +60,17 @@ fn postgres_extract_value(
 
     // Match on the type based on PostgreSQL type OIDs or names
     // For simplicity, we'll handle common types. You may need to expand this.
-    if type_info.name() == "int4" || type_info.name() == "int8" {
+    if type_info.name() == "int2" {
+        let val: Option<i16> = row.try_get(idx)?;
+        Ok(val
+            .map(|v| RowValues::Int(i64::from(v)))
+            .unwrap_or(RowValues::Null))
+    } else if type_info.name() == "int4" {
+        let val: Option<i32> = row.try_get(idx)?;
+        Ok(val
+            .map(|v| RowValues::Int(i64::from(v)))
+            .unwrap_or(RowValues::Null))
+    } else if type_info.name() == "int8" {
         let val: Option<i64> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))
     } else if type_info.name() == "float4" || type_info.name() == "float8" {

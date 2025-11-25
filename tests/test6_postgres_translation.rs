@@ -102,7 +102,7 @@ fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn s
         let mut conn = cap.get_connection().await?;
 
         let res = conn
-            .query("SELECT ?1::INT")
+            .query("SELECT ?1")
             .translation(TranslationMode::ForceOff)
             .params(&[RowValues::Int(1)])
             .select()
@@ -125,14 +125,12 @@ fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std:
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        let cap = ConfigAndPool::new_postgres_with_translation(cfg, false).await?;
+        let cap = ConfigAndPool::new_postgres(cfg).await?;
         let mut conn = cap.get_connection().await?;
 
         // Comment should not be translated; ?1 outside comment should be.
         let rs = conn
-            .query(
-                "SELECT 1::BIGINT -- $1 in comment\n                 + (?1)::BIGINT AS val;",
-            )
+            .query("SELECT 1 -- $1 in comment\n                 + ?1 AS val;")
             .translation(TranslationMode::ForceOn)
             .params(&[RowValues::Int(1)])
             .select()
