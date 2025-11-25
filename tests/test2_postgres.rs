@@ -5,8 +5,7 @@ use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams,
-    RowValues,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, QueryAndParams, RowValues,
 };
 #[cfg(feature = "test-utils")]
 use sql_middleware::test_utils::testing_postgres::{
@@ -58,22 +57,21 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                     );";
 
         let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
-        let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
+        let conn = config_and_pool.get_connection().await?;
         let mut pgconn = match conn {
-            MiddlewarePoolConnection::Postgres(pgconn) => pgconn,
-            MiddlewarePoolConnection::Sqlite(_) => {
+            MiddlewarePoolConnection::Postgres { client, .. } => client,
+            MiddlewarePoolConnection::Sqlite { .. } => {
                 panic!("Only postgres is supported in this test");
             }
-            MiddlewarePoolConnection::Mssql(_) => {
+            MiddlewarePoolConnection::Mssql { .. } => {
                 panic!("Only postgres is supported in this test");
             }
             #[cfg(feature = "libsql")]
-            MiddlewarePoolConnection::Libsql(_) => {
+            MiddlewarePoolConnection::Libsql { .. } => {
                 panic!("Only postgres is supported in this test");
             }
             #[cfg(feature = "turso")]
-            MiddlewarePoolConnection::Turso(_) => {
+            MiddlewarePoolConnection::Turso { .. } => {
                 panic!("Only postgres is supported in this test");
             }
         };

@@ -8,14 +8,13 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string()).await?;
-        let pool = cap.pool.get().await?;
-        let mut conn = MiddlewarePool::get_connection(pool).await?;
+        let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")
             .await?;
 
         match &mut conn {
-            MiddlewarePoolConnection::Sqlite(_) => {
+            MiddlewarePoolConnection::Sqlite { .. } => {
                 let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
                 let converted =
                     convert_sql_params::<SqliteParamsExecute>(&params, ConversionMode::Execute)?;
@@ -36,7 +35,9 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let rs = conn
-            .execute_select("SELECT name FROM t WHERE id = ?1", &[RowValues::Int(1)])
+            .query("SELECT name FROM t WHERE id = ?1")
+            .params(&[RowValues::Int(1)])
+            .select()
             .await?;
         assert_eq!(
             rs.results[0].get("name").unwrap().as_text().unwrap(),

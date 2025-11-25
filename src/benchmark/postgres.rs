@@ -3,7 +3,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
-use crate::middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
 use crate::test_utils::postgres::EmbeddedPostgres;
 
 use super::common::{generate_postgres_insert_statements, get_benchmark_rows};
@@ -51,10 +51,9 @@ pub async fn get_postgres_instance() -> ConfigAndPool {
 pub async fn clean_postgres_tables(
     config_and_pool: &ConfigAndPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let pool = config_and_pool.pool.get().await?;
-    let conn = MiddlewarePool::get_connection(pool).await?;
+    let conn = config_and_pool.get_connection().await?;
 
-    if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
+    if let MiddlewarePoolConnection::Postgres { client: pgconn, .. } = conn {
         pgconn.execute("DROP TABLE IF EXISTS test", &[]).await?;
 
         let create_sql = "CREATE TABLE IF NOT EXISTS test (
@@ -126,16 +125,15 @@ pub fn benchmark_postgres(c: &mut Criterion, runtime: &Runtime) {
                         clean_postgres_tables(&config_and_pool)
                             .await
                             .expect("Failed to reset PostgreSQL tables");
-                        let pool = config_and_pool
-                            .pool
-                            .get()
-                            .await
-                            .expect("Failed to get pool");
-                        let conn = MiddlewarePool::get_connection(pool)
+                        let conn = config_and_pool
+                            .get_connection()
                             .await
                             .expect("Failed to get conn");
 
-                        if let MiddlewarePoolConnection::Postgres(mut pgconn) = conn {
+                        if let MiddlewarePoolConnection::Postgres {
+                            client: mut pgconn, ..
+                        } = conn
+                        {
                             let start = Instant::now();
 
                             let tx = pgconn.transaction().await.expect("Failed to open tx");

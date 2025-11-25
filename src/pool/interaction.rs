@@ -18,23 +18,25 @@ impl MiddlewarePoolConnection {
     {
         match self {
             #[cfg(feature = "postgres")]
-            MiddlewarePoolConnection::Postgres(pg_obj) => {
+            MiddlewarePoolConnection::Postgres { client: pg_obj, .. } => {
                 // Assuming PostgresObject dereferences to tokio_postgres::Client
                 let client: &mut tokio_postgres::Client = pg_obj.as_mut();
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
             #[cfg(feature = "mssql")]
-            MiddlewarePoolConnection::Mssql(mssql_obj) => {
+            MiddlewarePoolConnection::Mssql {
+                conn: mssql_obj, ..
+            } => {
                 // Get client from Object
                 let client = &mut **mssql_obj;
                 Ok(func(AnyConnWrapper::Mssql(client)).await)
             }
             #[cfg(feature = "libsql")]
-            MiddlewarePoolConnection::Libsql(libsql_obj) => {
-                Ok(func(AnyConnWrapper::Libsql(libsql_obj)).await)
-            }
+            MiddlewarePoolConnection::Libsql {
+                conn: libsql_obj, ..
+            } => Ok(func(AnyConnWrapper::Libsql(libsql_obj)).await),
             #[cfg(feature = "sqlite")]
-            MiddlewarePoolConnection::Sqlite(_) => Err(SqlMiddlewareDbError::Unimplemented(
+            MiddlewarePoolConnection::Sqlite { .. } => Err(SqlMiddlewareDbError::Unimplemented(
                 "interact_async is not supported for SQLite; use interact_sync instead".to_string(),
             )),
             #[allow(unreachable_patterns)]
@@ -56,7 +58,9 @@ impl MiddlewarePoolConnection {
     {
         match self {
             #[cfg(feature = "sqlite")]
-            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
+            MiddlewarePoolConnection::Sqlite {
+                conn: sqlite_conn, ..
+            } => {
                 sqlite_conn
                     .with_connection(move |conn| {
                         let wrapper = AnyConnWrapper::Sqlite(conn);
@@ -65,12 +69,12 @@ impl MiddlewarePoolConnection {
                     .await
             }
             #[cfg(feature = "postgres")]
-            MiddlewarePoolConnection::Postgres(_) => Err(SqlMiddlewareDbError::Unimplemented(
+            MiddlewarePoolConnection::Postgres { .. } => Err(SqlMiddlewareDbError::Unimplemented(
                 "interact_sync is not supported for Postgres; use interact_async instead"
                     .to_string(),
             )),
             #[cfg(feature = "mssql")]
-            MiddlewarePoolConnection::Mssql(_) => Err(SqlMiddlewareDbError::Unimplemented(
+            MiddlewarePoolConnection::Mssql { .. } => Err(SqlMiddlewareDbError::Unimplemented(
                 "interact_sync is not supported for SQL Server; use interact_async instead"
                     .to_string(),
             )),

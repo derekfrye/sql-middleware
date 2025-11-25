@@ -10,7 +10,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
-use sql_middleware::{ConfigAndPool, MiddlewarePool, RowValues, SqlMiddlewareDbError};
+use sql_middleware::{ConfigAndPool, RowValues, SqlMiddlewareDbError};
 use std::fs;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ use tokio::task::JoinSet;
 
 const SQLITE_SELECT: &str = "SELECT id, name, score, active FROM test WHERE id = ?1";
 
-/// Holds the reusable on-disk SQLite dataset plus deterministic lookup IDs.
+/// Holds the reusable on-disk `SQLite` dataset plus deterministic lookup IDs.
 struct Dataset {
     path: String,
     ids: Vec<i64>,
@@ -104,7 +104,7 @@ struct BlockingConnectionGuard<'a> {
     conn: Option<deadpool_sqlite::rusqlite::Connection>,
 }
 
-impl<'a> BlockingConnectionGuard<'a> {
+impl BlockingConnectionGuard<'_> {
     fn connection(&mut self) -> &mut deadpool_sqlite::rusqlite::Connection {
         self.conn
             .as_mut()
@@ -112,7 +112,7 @@ impl<'a> BlockingConnectionGuard<'a> {
     }
 }
 
-impl<'a> Drop for BlockingConnectionGuard<'a> {
+impl Drop for BlockingConnectionGuard<'_> {
     fn drop(&mut self) {
         if let Some(conn) = self.conn.take() {
             self.pool
@@ -174,7 +174,7 @@ fn concurrency_to_run() -> usize {
         .unwrap_or(8)
 }
 
-/// Create a fresh SQLite file with predictable contents for repeatable runs.
+/// Create a fresh `SQLite` file with predictable contents for repeatable runs.
 fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> deadpool_sqlite::rusqlite::Result<()> {
     if path.exists() {
         let _ = fs::remove_file(path);
@@ -206,7 +206,7 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> deadpool_sqlite::rus
                 id,
                 name,
                 score,
-                active as i32
+                i32::from(active)
             ])?;
         }
     }
@@ -219,7 +219,7 @@ fn chunk_size(total: usize, concurrency: usize) -> usize {
     if concurrency == 0 {
         return total.max(1);
     }
-    (total + concurrency - 1) / concurrency
+    total.div_ceil(concurrency)
 }
 
 async fn middleware_parallel_select(
@@ -227,15 +227,14 @@ async fn middleware_parallel_select(
     ids: &[i64],
     concurrency: usize,
 ) -> Result<(), SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.clone();
     let per_worker = chunk_size(ids.len(), concurrency);
     let mut join_set = JoinSet::new();
 
     for chunk in ids.chunks(per_worker).filter(|chunk| !chunk.is_empty()) {
-        let pool = pool.clone();
+        let config_and_pool = config_and_pool.clone();
         let chunk = chunk.to_vec();
         join_set.spawn(async move {
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = config_and_pool.get_connection().await?;
             let prepared = conn.prepare_sqlite_statement(SQLITE_SELECT).await?;
             let mut params = vec![RowValues::Int(0)];
             for id in chunk {
@@ -261,14 +260,14 @@ async fn middleware_parallel_select(
 }
 
 async fn middleware_parallel_checkout(
-    pool: &MiddlewarePool,
+    config_and_pool: &ConfigAndPool,
     concurrency: usize,
 ) -> Result<(), SqlMiddlewareDbError> {
     let mut join_set = JoinSet::new();
     for _ in 0..concurrency.max(1) {
-        let pool = pool.clone();
+        let config_and_pool = config_and_pool.clone();
         join_set.spawn(async move {
-            let conn = MiddlewarePool::get_connection(&pool).await?;
+            let conn = config_and_pool.get_connection().await?;
             drop(conn);
             Ok::<(), SqlMiddlewareDbError>(())
         });
@@ -363,7 +362,7 @@ fn benchmark_middleware_pool_checkout(
                     let mut total = Duration::default();
                     for _ in 0..iters {
                         let start = Instant::now();
-                        middleware_parallel_checkout(&config.pool, concurrency)
+                        middleware_parallel_checkout(&config, concurrency)
                             .await
                             .expect("middleware pool checkout");
                         total += start.elapsed();

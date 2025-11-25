@@ -28,8 +28,7 @@ async fn main() -> Result<(), Error> {
     let config = ConfigAndPool::new_postgres(pg_config).await?;
     
     // Step 2: User is ALREADY in async context for everything that follows:
-    let pool = config.pool.get().await?;                    // Could be sync
-    let conn = MiddlewarePool::get_connection(&pool).await?; // MUST be async (I/O)
+    let conn = config.get_connection().await?; // MUST be async (I/O)
     let results = conn.execute_select("SELECT ...", &[]).await?; // MUST be async (I/O)
     
     // Only NOW can they do sync operations on results
@@ -37,4 +36,3 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 ```
-

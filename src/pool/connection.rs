@@ -20,15 +20,30 @@ use crate::error::SqlMiddlewareDbError;
 
 pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
-    Postgres(PostgresObject),
+    Postgres {
+        client: PostgresObject,
+        translate_placeholders: bool,
+    },
     #[cfg(feature = "sqlite")]
-    Sqlite(SqliteConnection),
+    Sqlite {
+        conn: SqliteConnection,
+        translate_placeholders: bool,
+    },
     #[cfg(feature = "mssql")]
-    Mssql(deadpool::managed::Object<deadpool_tiberius::Manager>),
+    Mssql {
+        conn: deadpool::managed::Object<deadpool_tiberius::Manager>,
+        translate_placeholders: bool,
+    },
     #[cfg(feature = "libsql")]
-    Libsql(LibsqlObject),
+    Libsql {
+        conn: LibsqlObject,
+        translate_placeholders: bool,
+    },
     #[cfg(feature = "turso")]
-    Turso(TursoConnection),
+    Turso {
+        conn: TursoConnection,
+        translate_placeholders: bool,
+    },
 }
 
 // Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
@@ -36,18 +51,18 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             #[cfg(feature = "postgres")]
-            Self::Postgres(conn) => f.debug_tuple("Postgres").field(conn).finish(),
+            Self::Postgres { client, .. } => f.debug_tuple("Postgres").field(client).finish(),
             #[cfg(feature = "sqlite")]
-            Self::Sqlite(conn) => f.debug_tuple("Sqlite").field(conn).finish(),
+            Self::Sqlite { conn, .. } => f.debug_tuple("Sqlite").field(conn).finish(),
             #[cfg(feature = "mssql")]
-            Self::Mssql(_) => f
+            Self::Mssql { .. } => f
                 .debug_tuple("Mssql")
                 .field(&"<TiberiusConnection>")
                 .finish(),
             #[cfg(feature = "libsql")]
-            Self::Libsql(conn) => f.debug_tuple("Libsql").field(conn).finish(),
+            Self::Libsql { conn, .. } => f.debug_tuple("Libsql").field(conn).finish(),
             #[cfg(feature = "turso")]
-            Self::Turso(_) => f.debug_tuple("Turso").field(&"<Connection>").finish(),
+            Self::Turso { .. } => f.debug_tuple("Turso").field(&"<Connection>").finish(),
         }
     }
 }
@@ -59,6 +74,7 @@ impl MiddlewarePool {
     /// Returns `SqlMiddlewareDbError::PoolErrorPostgres` or `SqlMiddlewareDbError::PoolErrorSqlite` if the pool fails to provide a connection.
     pub async fn get_connection(
         pool: &MiddlewarePool,
+        translate_placeholders: bool,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         match pool {
             #[cfg(feature = "postgres")]
@@ -67,7 +83,10 @@ impl MiddlewarePool {
                     .get()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorPostgres)?;
-                Ok(MiddlewarePoolConnection::Postgres(conn))
+                Ok(MiddlewarePoolConnection::Postgres {
+                    client: conn,
+                    translate_placeholders,
+                })
             }
             #[cfg(feature = "sqlite")]
             MiddlewarePool::Sqlite(pool) => {
@@ -76,7 +95,10 @@ impl MiddlewarePool {
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
                 let worker_conn = SqliteConnection::new(conn)?;
-                Ok(MiddlewarePoolConnection::Sqlite(worker_conn))
+                Ok(MiddlewarePoolConnection::Sqlite {
+                    conn: worker_conn,
+                    translate_placeholders,
+                })
             }
             #[cfg(feature = "mssql")]
             MiddlewarePool::Mssql(pool) => {
@@ -84,7 +106,10 @@ impl MiddlewarePool {
                     .get()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
-                Ok(MiddlewarePoolConnection::Mssql(conn))
+                Ok(MiddlewarePoolConnection::Mssql {
+                    conn,
+                    translate_placeholders,
+                })
             }
             #[cfg(feature = "libsql")]
             MiddlewarePool::Libsql(pool) => {
@@ -92,12 +117,18 @@ impl MiddlewarePool {
                     .get()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorLibsql)?;
-                Ok(MiddlewarePoolConnection::Libsql(conn))
+                Ok(MiddlewarePoolConnection::Libsql {
+                    conn,
+                    translate_placeholders,
+                })
             }
             #[cfg(feature = "turso")]
             MiddlewarePool::Turso(db) => {
                 let conn: TursoConnection = db.connect().map_err(SqlMiddlewareDbError::from)?;
-                Ok(MiddlewarePoolConnection::Turso(conn))
+                Ok(MiddlewarePoolConnection::Turso {
+                    conn,
+                    translate_placeholders,
+                })
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
@@ -119,9 +150,7 @@ impl MiddlewarePoolConnection {
         R: Send + 'static,
     {
         match self {
-            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
-                sqlite_conn.with_connection(func).await
-            }
+            MiddlewarePoolConnection::Sqlite { conn, .. } => conn.with_connection(func).await,
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "with_sqlite_connection is only available for SQLite connections".to_string(),
             )),
@@ -139,9 +168,7 @@ impl MiddlewarePoolConnection {
         query: &str,
     ) -> Result<SqlitePreparedStatement, SqlMiddlewareDbError> {
         match self {
-            MiddlewarePoolConnection::Sqlite(sqlite_conn) => {
-                sqlite_conn.prepare_statement(query).await
-            }
+            MiddlewarePoolConnection::Sqlite { conn, .. } => conn.prepare_statement(query).await,
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "prepare_sqlite_statement is only available for SQLite connections".to_string(),
             )),
@@ -159,12 +186,44 @@ impl MiddlewarePoolConnection {
         query: &str,
     ) -> Result<TursoPreparedStatement, SqlMiddlewareDbError> {
         match self {
-            MiddlewarePoolConnection::Turso(turso_conn) => {
-                TursoPreparedStatement::prepare(turso_conn.clone(), query).await
-            }
+            MiddlewarePoolConnection::Turso {
+                conn: turso_conn, ..
+            } => TursoPreparedStatement::prepare(turso_conn.clone(), query).await,
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "prepare_turso_statement is only available for Turso connections".to_string(),
             )),
+        }
+    }
+
+    /// Pool-default translation toggle attached to this connection.
+    #[must_use]
+    pub fn translation_default(&self) -> bool {
+        match self {
+            #[cfg(feature = "postgres")]
+            MiddlewarePoolConnection::Postgres {
+                translate_placeholders,
+                ..
+            } => *translate_placeholders,
+            #[cfg(feature = "sqlite")]
+            MiddlewarePoolConnection::Sqlite {
+                translate_placeholders,
+                ..
+            } => *translate_placeholders,
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql {
+                translate_placeholders,
+                ..
+            } => *translate_placeholders,
+            #[cfg(feature = "libsql")]
+            MiddlewarePoolConnection::Libsql {
+                translate_placeholders,
+                ..
+            } => *translate_placeholders,
+            #[cfg(feature = "turso")]
+            MiddlewarePoolConnection::Turso {
+                translate_placeholders,
+                ..
+            } => *translate_placeholders,
         }
     }
 }

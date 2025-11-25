@@ -19,14 +19,13 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let cap = ConfigAndPool::new_postgres(real_cfg).await?;
-        let pool = cap.pool.get().await?;
-        let mut conn = MiddlewarePool::get_connection(pool).await?;
+        let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")
             .await?;
 
         // Get Postgres-specific client and start a transaction
-        let MiddlewarePoolConnection::Postgres(pg_obj) = &mut conn else {
+        let MiddlewarePoolConnection::Postgres { client: pg_obj, .. } = &mut conn else {
             panic!("Expected Postgres connection");
         };
         let tx = pg_obj.transaction().await?;
@@ -42,7 +41,9 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
 
         // Verify
         let rs = conn
-            .execute_select("SELECT name FROM t WHERE id = $1", &[RowValues::Int(1)])
+            .query("SELECT name FROM t WHERE id = $1")
+            .params(&[RowValues::Int(1)])
+            .select()
             .await?;
         assert_eq!(
             rs.results[0].get("name").unwrap().as_text().unwrap(),

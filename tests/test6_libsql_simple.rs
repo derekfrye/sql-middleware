@@ -1,8 +1,7 @@
 #[cfg(feature = "libsql")]
 mod libsql_tests {
     use sql_middleware::middleware::{
-        AsyncDatabaseExecutor, ConfigAndPool, DatabaseType, MiddlewarePool,
-        MiddlewarePoolConnection, RowValues,
+        ConfigAndPool, DatabaseType, MiddlewarePoolConnection, RowValues,
     };
     use tokio::runtime::Runtime;
 
@@ -15,12 +14,11 @@ mod libsql_tests {
             assert_eq!(config_and_pool.db_type, DatabaseType::Libsql);
             println!("✓ Created LibSQL connection pool");
 
-            let pool = config_and_pool.pool.get().await?;
-            let mut libsql_conn = MiddlewarePool::get_connection(pool).await?;
+            let mut libsql_conn = config_and_pool.get_connection().await?;
 
             // Verify we got the right connection type
             match &libsql_conn {
-                MiddlewarePoolConnection::Libsql(_) => {
+                MiddlewarePoolConnection::Libsql { .. } => {
                     println!("✓ Got LibSQL connection");
                 }
                 _ => panic!("Expected LibSQL connection"),
@@ -41,7 +39,7 @@ mod libsql_tests {
             let insert_sql = "INSERT INTO test_table (id, name) VALUES (?, ?)";
             let params = vec![RowValues::Int(1), RowValues::Text("Alice".to_string())];
 
-            let rows_affected = libsql_conn.execute_dml(insert_sql, &params).await?;
+            let rows_affected = libsql_conn.query(insert_sql).params(&params).dml().await?;
             assert_eq!(rows_affected, 1);
             println!("✓ Inserted row via DML execution");
 
@@ -50,7 +48,9 @@ mod libsql_tests {
             let select_params = vec![RowValues::Int(1)];
 
             let result_set = libsql_conn
-                .execute_select(select_sql, &select_params)
+                .query(select_sql)
+                .params(&select_params)
+                .select()
                 .await?;
 
             // Verify results

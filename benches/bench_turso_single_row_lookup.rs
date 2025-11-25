@@ -9,11 +9,10 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
-use sql_middleware::AsyncDatabaseExecutor;
 use sql_middleware::turso::{Params as TursoParams, build_result_set as turso_build_result_set};
 use sql_middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, ParamConverter,
-    RowValues, SqlMiddlewareDbError,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, ParamConverter, RowValues,
+    SqlMiddlewareDbError,
 };
 use std::fs;
 use std::hint::black_box;
@@ -21,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
+use turso::Value as TursoValue;
 
 /// Holds the reusable database path plus deterministic id workload.
 struct Dataset {
@@ -75,8 +75,7 @@ static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> = LazyLock::new(|| {
 static TURSO_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyLock::new(|| {
     TOKIO_RUNTIME
         .block_on(async {
-            let pool = MIDDLEWARE_CONFIG.pool.clone();
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = MIDDLEWARE_CONFIG.get_connection().await?;
             let prepared = conn
                 .prepare_turso_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
                 .await?;
@@ -149,8 +148,7 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
     }
 
     let config = ConfigAndPool::new_turso(path.to_string_lossy().into_owned()).await?;
-    let pool = config.pool.clone();
-    let mut conn = MiddlewarePool::get_connection(&pool).await?;
+    let mut conn = config.get_connection().await?;
 
     conn.execute_batch(
         "
@@ -174,10 +172,9 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
             RowValues::Bool(id % 2 == 0),
         ];
         let _ = conn
-            .execute_dml(
-                "INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)",
-                &params,
-            )
+            .query("INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)")
+            .params(&params)
+            .dml()
             .await?;
     }
 
@@ -226,6 +223,106 @@ impl BenchRow {
             active,
         }
     }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn from_turso_row(row: &turso::Row) -> Self {
+        let id = match row
+            .get_value(0)
+            .expect("expected integer id column from turso row")
+        {
+            TursoValue::Integer(value) => value,
+            TursoValue::Real(value) => value as i64,
+            other => panic!("unexpected id column type from turso row: {other:?}"),
+        };
+
+        let name = match row
+            .get_value(1)
+            .expect("expected text name column from turso row")
+        {
+            TursoValue::Text(text) => text,
+            other => panic!("unexpected name column type from turso row: {other:?}"),
+        };
+
+        let score = match row
+            .get_value(2)
+            .expect("expected numeric score column from turso row")
+        {
+            TursoValue::Real(value) => value,
+            TursoValue::Integer(value) => value as f64,
+            other => panic!("unexpected score column type from turso row: {other:?}"),
+        };
+
+        let active = match row
+            .get_value(3)
+            .expect("expected boolean active column from turso row")
+        {
+            TursoValue::Integer(value) => value != 0,
+            TursoValue::Real(value) => value != 0.0,
+            TursoValue::Null => false,
+            other => panic!("unexpected active column type from turso row: {other:?}"),
+        };
+
+        Self {
+            id,
+            name,
+            score,
+            active,
+        }
+    }
+}
+
+/// Raw Turso baseline using a direct connection and cached statement.
+fn benchmark_turso_raw(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+    let db_handle = Arc::new(runtime.block_on(async {
+        turso::Builder::new_local(dataset.path())
+            .build()
+            .await
+            .expect("create raw Turso database handle")
+    }));
+
+    group.bench_function(BenchmarkId::new("turso_raw", ids.len()), |b| {
+        let ids = ids.clone();
+        let db_handle = db_handle.clone();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let db_handle = db_handle.clone();
+            async move {
+                let mut total = Duration::default();
+                let conn = db_handle.connect().expect("connect raw Turso database");
+                let mut stmt = conn
+                    .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
+                    .await
+                    .expect("prepare raw Turso statement");
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let mut rows = stmt.query([id]).await.expect("execute raw Turso select");
+                        let row = rows
+                            .next()
+                            .await
+                            .expect("fetch raw Turso row")
+                            .expect("expected row from raw Turso select");
+                        let bench_row = BenchRow::from_turso_row(&row);
+                        black_box(bench_row);
+                        while rows
+                            .next()
+                            .await
+                            .expect("drain remaining raw Turso rows")
+                            .is_some()
+                        {}
+                        stmt.reset();
+                    }
+                    total += start.elapsed();
+                }
+                total
+            }
+        });
+    });
 }
 
 /// Middleware benchmark that goes through the Turso prepared-statement helper.
@@ -252,8 +349,8 @@ fn benchmark_middleware(
                     if let Some(stats) = breakdown.as_mut() {
                         stats.record_iteration();
                     }
-                    let pool = config_and_pool.pool.clone();
-                    let mut conn = MiddlewarePool::get_connection(&pool)
+                    let mut conn = config_and_pool
+                        .get_connection()
                         .await
                         .expect("acquire middleware connection");
                     let prepared = conn
@@ -315,18 +412,19 @@ fn benchmark_pool_acquire(
     group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
+            let pool = config_and_pool.clone();
             async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    let conn = MiddlewarePool::get_connection(&pool)
-                        .await
-                        .expect("checkout connection");
-                    drop(conn);
-                    total += start.elapsed();
-                }
-                total
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let start = Instant::now();
+                let conn = pool
+                    .get_connection()
+                    .await
+                    .expect("checkout connection");
+                drop(conn);
+                total += start.elapsed();
+            }
+            total
             }
         });
     });
@@ -343,25 +441,26 @@ fn benchmark_middleware_prepare(
     group.bench_function(BenchmarkId::new("middleware_prepare", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
+            let pool = config_and_pool.clone();
             async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let mut conn = MiddlewarePool::get_connection(&pool)
-                        .await
-                        .expect("checkout connection");
-                    let start = Instant::now();
-                    let prepared = conn
-                        .prepare_turso_statement(
-                            "SELECT id, name, score, active FROM test WHERE id = ?1",
-                        )
-                        .await
-                        .expect("prepare statement");
-                    total += start.elapsed();
-                    drop(prepared);
-                    drop(conn);
-                }
-                total
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let mut conn = pool
+                    .get_connection()
+                    .await
+                    .expect("checkout connection");
+                let start = Instant::now();
+                let prepared = conn
+                    .prepare_turso_statement(
+                        "SELECT id, name, score, active FROM test WHERE id = ?1",
+                    )
+                    .await
+                    .expect("prepare statement");
+                total += start.elapsed();
+                drop(prepared);
+                drop(conn);
+            }
+            total
             }
         });
     });
@@ -378,22 +477,24 @@ fn benchmark_middleware_interact_only(
     group.bench_function(BenchmarkId::new("middleware_interact", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
+            let pool = config_and_pool.clone();
             async move {
-                let mut total = Duration::default();
-                let mut conn = MiddlewarePool::get_connection(&pool)
+            let mut total = Duration::default();
+            let mut conn = pool
+                .get_connection()
+                .await
+                .expect("checkout connection");
+            for _ in 0..iters {
+                let start = Instant::now();
+                let _ = conn
+                    .query("SELECT 1 WHERE 0 = 1")
+                    .select()
                     .await
-                    .expect("checkout connection");
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    let _ = conn
-                        .execute_select("SELECT 1 WHERE 0 = 1", &[])
-                        .await
-                        .expect("execute noop select");
-                    total += start.elapsed();
-                }
-                drop(conn);
-                total
+                    .expect("execute noop select");
+                total += start.elapsed();
+            }
+            drop(conn);
+            total
             }
         });
     });
@@ -417,11 +518,14 @@ fn benchmark_middleware_marshalling(
             async move {
                 let mut total = Duration::default();
                 for _ in 0..iters {
-                    let pool = config_and_pool.pool.clone();
-                    let mut conn = MiddlewarePool::get_connection(&pool)
+                    let mut conn = config_and_pool
+                        .get_connection()
                         .await
                         .expect("checkout connection");
-                    if let MiddlewarePoolConnection::Turso(turso_conn) = &mut conn {
+                    if let MiddlewarePoolConnection::Turso {
+                        conn: turso_conn, ..
+                    } = &mut conn
+                    {
                         for &id in &ids {
                             let mut stmt = turso_conn
                                 .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
@@ -519,6 +623,7 @@ fn turso_single_row_lookup(c: &mut Criterion) {
     let lookup_count = DATASET.ids().len() as u64;
     group.throughput(Throughput::Elements(lookup_count));
 
+    benchmark_turso_raw(&mut group);
     benchmark_middleware(&mut group);
     benchmark_pool_acquire(&mut group);
     benchmark_middleware_prepare(&mut group);

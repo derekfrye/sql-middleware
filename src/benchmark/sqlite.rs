@@ -6,7 +6,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     SqlMiddlewareDbError,
-    middleware::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection},
+    middleware::{ConfigAndPool, MiddlewarePoolConnection},
 };
 
 use super::common::{generate_insert_statements, get_benchmark_rows};
@@ -44,10 +44,9 @@ pub async fn get_sqlite_instance() -> ConfigAndPool {
 pub async fn clean_sqlite_tables(
     config_and_pool: &ConfigAndPool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
 
-    if matches!(&conn, MiddlewarePoolConnection::Sqlite(_)) {
+    if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
         conn.with_sqlite_connection(move |connection| {
             connection.execute("DROP TABLE IF EXISTS test", [])?;
 
@@ -87,10 +86,9 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
         h text, i text, j text, k text, l text, m text, n text, o text, p text
     )";
 
-    let pool = config_and_pool.pool.get().await?;
-    let mut sqlite_conn = MiddlewarePool::get_connection(pool).await?;
+    let mut sqlite_conn = config_and_pool.get_connection().await?;
 
-    if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite(_)) {
+    if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite { .. }) {
         sqlite_conn
             .with_sqlite_connection(move |connection| {
                 let transaction = connection.transaction()?;
@@ -130,16 +128,12 @@ pub fn benchmark_sqlite(c: &mut Criterion, runtime: &Runtime) {
                         clean_sqlite_tables(&config_and_pool)
                             .await
                             .expect("Failed to reset SQLite tables");
-                        let pool = config_and_pool
-                            .pool
-                            .get()
-                            .await
-                            .expect("Failed to get pool");
-                        let mut sqlite_conn = MiddlewarePool::get_connection(pool)
+                        let mut sqlite_conn = config_and_pool
+                            .get_connection()
                             .await
                             .expect("Failed to get conn");
 
-                        if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite(_)) {
+                        if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite { .. }) {
                             let statements_clone = statements.clone();
                             let start = Instant::now();
 

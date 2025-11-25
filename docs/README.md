@@ -26,6 +26,58 @@ You can use the prelude to import everything you need, or import item by item.
 use sql_middleware::prelude::*;
 ```
 
+
+### Parameterized queries for reading or changing data
+
+`QueryAndParams` gives you a single API for both reads and writes through the query builder. The query builder optionally supports same SQL regardless of backend, even with different parameter placeholders ([`$1` or `?1`, with some limitations](#placeholder-translation)). Here is an example that supports PostgreSQL, SQLite, LibSQL, or Turso without duplicating logic.
+
+```rust
+use chrono::NaiveDateTime;
+use sql_middleware::prelude::*;
+
+pub struct ScoreChange {
+    pub espn_id: i64,
+    pub score: i32,
+    pub updated_at: NaiveDateTime,
+}
+
+pub async fn set_scores_in_db(
+    config_and_pool: &sql_middleware::pool::ConfigAndPool,
+    updates: &[ScoreChange],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let mut conn = config_and_pool.get_connection().await?;
+
+    // Author once; translation rewrites placeholders as needed across backends.
+    let insert_sql = "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)";
+    let fetch_sql = "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1";
+
+    for change in updates {
+        let params = vec![
+            RowValues::Int(change.espn_id),
+            RowValues::Int(i64::from(change.score)),
+            RowValues::Timestamp(change.updated_at),
+        ];
+        let bound = QueryAndParams::new(insert_sql, params);
+        conn.query(&bound.query)
+            .translation(TranslationMode::ForceOn)
+            .params(&bound.params)
+            .dml()
+            .await?;
+    }
+
+    let limit = (updates.len().max(1)) as i64;
+    let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
+    let rows = conn
+        .query(&latest.query)
+        .translation(TranslationMode::ForceOn)
+        .params(&latest.params)
+        .select()
+        .await?;
+
+    Ok(rows)
+}
+```
+
 ### Multi-database support without copy/pasting query logic
 
 An example using multiple different backends (sqlite, postgres, turso). Notice the need to not repeat the query logic regardless of backend connection type. 
@@ -37,18 +89,17 @@ pub async fn get_scores_from_db(
     config_and_pool: &sql_middleware::pool::ConfigAndPool,
     event_id: i32,
 ) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
     let query = match &conn {
-        MiddlewarePoolConnection::Postgres(_) => {
+        MiddlewarePoolConnection::Postgres { .. } => {
             "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names($1) ORDER BY grp, eup_id"
         }
-        MiddlewarePoolConnection::Sqlite(_) | MiddlewarePoolConnection::Turso(_) => {
+        MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
             include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
         }
     };
     let params = vec![RowValues::Int(i64::from(event_id))];
-    let res = conn.execute_select(query, &params).await?;
+    let res = conn.query(query).params(&params).select().await?;
 
     let z: Result<Vec<Scores>, SqlMiddlewareDbError> = res
         .results
@@ -153,72 +204,17 @@ let ddl_query =
     include_str!("/path/to/test1.sql");
 conn.execute_batch(&ddl_query).await?;
 ```
-
-
-### Parameterized queries for reading or changing data
-
-`QueryAndParams` gives you a single API for both `execute_select` (reads) and `execute_dml` (writes); the only thing that changes per backend is the placeholder syntax you drop into the SQL string. Here is the same function updating scores across PostgreSQL, SQLite, LibSQL, or Turso without duplicating binding logic.
-
-```rust
-use chrono::NaiveDateTime;
-use sql_middleware::prelude::*;
-
-pub struct ScoreChange {
-    pub espn_id: i64,
-    pub score: i32,
-    pub updated_at: NaiveDateTime,
-}
-
-pub async fn set_scores_in_db(
-    config_and_pool: &sql_middleware::pool::ConfigAndPool,
-    updates: &[ScoreChange],
-) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
-
-    let (insert_sql, fetch_sql) = match &conn {
-        MiddlewarePoolConnection::Postgres(_) => (
-            "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)",
-            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1",
-        ),
-        MiddlewarePoolConnection::Sqlite(_)
-        | MiddlewarePoolConnection::Libsql(_)
-        | MiddlewarePoolConnection::Turso(_) => (
-            "INSERT INTO scores (espn_id, score, updated_at) VALUES (?1, ?2, ?3)",
-            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT ?1",
-        ),
-    };
-
-    for change in updates {
-        let params = vec![
-            RowValues::Int(change.espn_id),
-            RowValues::Int(i64::from(change.score)),
-            RowValues::Timestamp(change.updated_at),
-        ];
-        let bound = QueryAndParams::new(insert_sql, params);
-        conn.execute_dml(&bound.query, &bound.params).await?;
-    }
-
-    let limit = (updates.len().max(1)) as i64;
-    let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
-    let rows = conn.execute_select(&latest.query, &latest.params).await?;
-
-    Ok(rows)
-}
-```
-
 ### Queries without parameters
 
 You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, LibSQL, and Turso:
 
 ```rust
 // Either build a QueryAndParams
-// And you could structure like previous example to pass param values
 let query = QueryAndParams::new_without_params("SELECT * FROM users");
-let results = conn.execute_select(&query.query, &[]).await?;
+let results = conn.query(&query.query).select().await?;
 
 // Or pass the SQL string directly
-let results2 = conn.execute_select("SELECT * FROM users", &[]).await?;
+let results2 = conn.query("SELECT * FROM users").select().await?;
 ```
 
 ### Custom logic in between transactions
@@ -255,27 +251,29 @@ pub async fn get_scores_from_db(
     config_and_pool: &ConfigAndPool,
     event_id: i64,
 ) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
 
-    let turso_query = "SELECT grp, golfername, playername, eup_id, espn_id \
-                       FROM sp_get_player_names(?1) ORDER BY grp, eup_id";
-    let postgres_query = "SELECT grp, golfername, playername, eup_id, espn_id \
-                          FROM sp_get_player_names($1) ORDER BY grp, eup_id";
+    // Author once; translate for SQLite-family backends when preparing.
+    let base_query = "SELECT grp, golfername, playername, eup_id, espn_id \
+                      FROM sp_get_player_names($1) ORDER BY grp, eup_id";
     let (tx, stmt) = match &mut conn {
-        MiddlewarePoolConnection::Turso(client) => {
+        MiddlewarePoolConnection::Turso { conn: client, .. } => {
             let tx = begin_transaction(client).await?;
-            let stmt = tx.prepare(turso_query).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref()).await?;
             (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
         }
-        MiddlewarePoolConnection::Postgres(pg_conn) => {
+        MiddlewarePoolConnection::Postgres {
+            client: pg_conn, ..
+        } => {
             let mut tx = pg_conn.transaction().await?;
-            let stmt = tx.prepare(postgres_query).await?;
+            let stmt = tx.prepare(base_query).await?;
             (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
         }
-        MiddlewarePoolConnection::Libsql(conn) => {
+        MiddlewarePoolConnection::Libsql { conn, .. } => {
             let tx = begin_libsql_tx(conn).await?;
-            let stmt = tx.prepare(turso_query)?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref())?;
             (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
         }
         _ => {
@@ -346,32 +344,30 @@ pub async fn get_scores_from_db(
 }
 ```
 
-### Using the AsyncDatabaseExecutor trait
-
-The `AsyncDatabaseExecutor` trait provides a consistent interface for database operations if you prefer designing this way.
+### Using the query builder in helpers
 
 ```rust
 // This works for PostgreSQL, SQLite, LibSQL, and Turso connections
-async fn insert_user<T: AsyncDatabaseExecutor>(
-    conn: &mut T,
+async fn insert_user(
+    conn: &mut MiddlewarePoolConnection,
     user_id: i32,
-    name: &str
+    name: &str,
 ) -> Result<(), SqlMiddlewareDbError> {
     let query = QueryAndParams::new(
-        // Use appropriate parameter syntax for your DB
-        // PostgreSQL: "VALUES ($1, $2)"
-        // SQLite/LibSQL/Turso: "VALUES (?, ?)" or "VALUES (?1, ?2)"
+        // Author once; translation rewrites placeholders for SQLite-family backends.
         "INSERT INTO users (id, name) VALUES ($1, $2)",
         vec![
             RowValues::Int(i64::from(user_id)),
             RowValues::Text(name.to_string()),
-        ]
+        ],
     );
-    
-    // Execute query through the trait. Placeholder style in `query.query`
-    // must match the active backend.
-    conn.execute_dml(&query.query, &query.params).await?;
-    
+
+    conn.query(&query.query)
+        .translation(TranslationMode::ForceOn)
+        .params(&query.params)
+        .dml()
+        .await?;
+
     Ok(())
 }
 ```
@@ -383,6 +379,26 @@ See further examples in the tests directory:
 - [Turso test example](/tests/test5d_turso.rs), [Turso bench example 1](../benches/bench_turso_single_row_lookup.rs)
 - [PostgreSQL test example](/tests/test5a_postgres.rs)
 - [LibSQL test example](/tests/test5b_libsql.rs)
+
+## Placeholder Translation
+
+- Default off. Enable at pool creation with the `*_with_translation(..., true)` constructors (or by toggling `translate_placeholders` on `ConfigAndPool`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
+- Override per call via the query builder: `.translation(TranslationMode::ForceOff | ForceOn)` or `.options(...)`.
+- Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
+- *Limitations*: Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched. Basically, don't rely on this to try to translate `?X` to `$X` in complicated, per-dialect specific stuff (like `$tag$...$tag$` in postgres, this translation is meant to cover 90% of use cases).
+- More design notes and edge cases live in [documentation of the feature](./docs/feat_translation.md).
+
+```rust
+use sql_middleware::prelude::*;
+
+let mut conn = config_and_pool.get_connection().await?;
+let rows = conn
+    .query("select * from t where id = $1")
+    .translation(TranslationMode::ForceOn)
+    .params(&[RowValues::Int(1)])
+    .select()
+    .await?;
+```
 
 ## Feature Flags
 
@@ -420,4 +436,5 @@ Available features:
 
 ## Release Notes
 
-- 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT and added third-party notice documentation.
+- 0.3.0 (unreleased): Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
+- 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).

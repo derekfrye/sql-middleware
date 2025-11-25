@@ -48,28 +48,11 @@ pub async fn set_scores_in_db(
     updates: &[ScoreChange],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Acquire a pooled connection (Postgres, SQLite, LibSQL, or Turso).
-    let pool = config_and_pool.pool.get().await?;
-    let mut conn = MiddlewarePool::get_connection(pool).await?;
+    let mut conn = config_and_pool.get_connection().await?;
 
-    // Pick the appropriate placeholder syntax based on the backend.
-    let (insert_sql, fetch_sql) = match &conn {
-        MiddlewarePoolConnection::Postgres(_) => (
-            "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)",
-            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1",
-        ),
-        MiddlewarePoolConnection::Sqlite(_)
-        | MiddlewarePoolConnection::Libsql(_)
-        | MiddlewarePoolConnection::Turso(_) => (
-            "INSERT INTO scores (espn_id, score, updated_at) VALUES (?1, ?2, ?3)",
-            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT ?1",
-        ),
-        #[allow(unreachable_patterns)]
-        _ => {
-            return Err(SqlMiddlewareDbError::Unimplemented(
-                "Backend not enabled in this build".to_string(),
-            ))
-        }
-    };
+    // Author once; translation rewrites placeholders per backend.
+    let insert_sql = "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)";
+    let fetch_sql = "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1";
 
     // Reuse the same binding logic for every backend.
     for change in updates {
@@ -79,15 +62,23 @@ pub async fn set_scores_in_db(
             RowValues::Timestamp(change.updated_at),
         ];
         let statement = QueryAndParams::new(insert_sql, params);
-        conn.execute_dml(&statement.query, &statement.params).await?;
+        conn.query(&statement.query)
+            .translation(TranslationMode::ForceOn)
+            .params(&statement.params)
+            .dml()
+            .await?;
     }
 
     // Fetch the latest rows to confirm the write path succeeded.
     let limit = updates.len().max(1) as i64;
     let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
-    conn.execute_select(&latest.query, &latest.params).await
+    conn.query(&latest.query)
+        .translation(TranslationMode::ForceOn)
+        .params(&latest.params)
+        .select()
+        .await
 }
 
-// For more in-depth examples (batch queries, AsyncDatabaseExecutor usage, benchmarks),
+// For more in-depth examples (batch queries, query builder usage, benchmarks),
 // see the project README: https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md
 ```

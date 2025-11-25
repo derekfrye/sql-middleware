@@ -25,6 +25,49 @@ impl ConfigAndPool {
         port: Option<u16>,
         instance_name: Option<String>, // For named instance support
     ) -> Result<Self, SqlMiddlewareDbError> {
+        Self::new_mssql_with_translation(
+            server,
+            database,
+            user,
+            password,
+            port,
+            instance_name,
+            false,
+        )
+        .await
+    }
+
+    /// Asynchronous initializer for `ConfigAndPool` with SQL Server (MSSQL) and optional translation default.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if MSSQL client creation or pool creation fails.
+    ///
+    /// Warning: translation skips placeholders inside quoted strings, comments, and dollar-quoted
+    /// blocks via a lightweight state machine; it may miss edge cases in complex SQL. Prefer
+    /// backend-specific SQL instead of relying on translation:
+    /// ```rust
+    /// # use sql_middleware::prelude::*;
+    /// let query = match &conn {
+    ///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
+    /// BEGIN
+    ///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
+    /// END;
+    /// $function$"#,
+    ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
+    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+    ///     }
+    /// };
+    /// ```
+    #[allow(clippy::unused_async)]
+    pub async fn new_mssql_with_translation(
+        server: String,
+        database: String,
+        user: String,
+        password: String,
+        port: Option<u16>,
+        instance_name: Option<String>, // For named instance support
+        translate_placeholders: bool,
+    ) -> Result<Self, SqlMiddlewareDbError> {
         // Create deadpool-tiberius manager and configure it
         let mut manager = deadpool_tiberius::Manager::new()
             .host(&server)
@@ -46,6 +89,7 @@ impl ConfigAndPool {
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Mssql(pool),
             db_type: DatabaseType::Mssql,
+            translate_placeholders,
         })
     }
 }

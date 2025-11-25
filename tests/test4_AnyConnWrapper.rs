@@ -2,8 +2,8 @@ use sql_middleware::{
     PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery,
     convert_sql_params,
     middleware::{
-        AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool as ConfigAndPool2, ConversionMode,
-        DatabaseType, MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, RowValues,
+        AnyConnWrapper, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType,
+        MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
     postgres_build_result_set, sqlite_build_result_set,
 };
@@ -45,7 +45,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         cfg.port = Some(5432);
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(String::new());
-        test_cases.push(TestCase::Postgres(cfg));
+        test_cases.push(TestCase::Postgres(Box::new(cfg)));
     }
     #[cfg(feature = "turso")]
     {
@@ -102,13 +102,11 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut conn: MiddlewarePoolConnection;
-            let pool: &MiddlewarePool;
             match test_case {
                 TestCase::Sqlite(connection_string) => {
                     // Initialize Sqlite pool
                     let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
-                    pool = config_and_pool.pool.get().await?;
-                    conn = MiddlewarePool::get_connection(pool).await?;
+                    conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
@@ -116,9 +114,8 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 #[cfg(feature = "postgres")]
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
-                    let config_and_pool = ConfigAndPool2::new_postgres(cfg).await?;
-                    pool = config_and_pool.pool.get().await?;
-                    conn = MiddlewarePool::get_connection(pool).await?;
+                    let config_and_pool = ConfigAndPool2::new_postgres(*cfg).await?;
+                    conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Postgres).await?;
@@ -127,21 +124,20 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 TestCase::Turso(connection_string) => {
                     // Initialize Turso connection (no deadpool pooling)
                     let config_and_pool = ConfigAndPool2::new_turso(connection_string).await?;
-                    pool = config_and_pool.pool.get().await?;
-                    conn = MiddlewarePool::get_connection(pool).await?;
+                    conn = config_and_pool.get_connection().await?;
                 }
             }
             if db_type == DatabaseType::Postgres {
                 // Ensure a clean slate when reusing a shared Postgres instance.
                 conn.execute_batch(
-                    r#"
+                    r"
                     DROP TABLE IF EXISTS eup_statistic CASCADE;
                     DROP TABLE IF EXISTS event_user_player CASCADE;
                     DROP TABLE IF EXISTS bettor CASCADE;
                     DROP TABLE IF EXISTS golfer CASCADE;
                     DROP TABLE IF EXISTS event CASCADE;
                     DROP TABLE IF EXISTS test CASCADE;
-                    "#,
+                    ",
                 )
                 .await?;
             }
@@ -160,7 +156,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 enum TestCase {
     Sqlite(String),
     #[cfg(feature = "postgres")]
-    Postgres(deadpool_postgres::Config),
+    Postgres(Box<deadpool_postgres::Config>),
     #[cfg(feature = "turso")]
     Turso(String),
     // #[cfg(feature = "libsql")]
@@ -270,11 +266,11 @@ async fn run_test_logic(
     // lets first run this through 100 transactions, yikes
     for param in params {
         // println!("param: {:?}", param);
-        conn.execute_dml(parameterized_query, &param).await?;
+        conn.query(parameterized_query).params(&param).dml().await?;
     }
 
     let query = "select count(*) as cnt from test;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         100
@@ -289,7 +285,10 @@ async fn run_test_logic(
 
     match db_type {
         DatabaseType::Postgres => {
-            if let MiddlewarePoolConnection::Postgres(pg_handle) = conn {
+            if let MiddlewarePoolConnection::Postgres {
+                client: pg_handle, ..
+            } = conn
+            {
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
@@ -332,26 +331,26 @@ async fn run_test_logic(
             // For this test, skip the MSSQL implementation
             // Simply insert the data using the middleware connection
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
         #[cfg(feature = "turso")]
         DatabaseType::Turso => {
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => {
             // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
     }
 
     let query = "select count(*) as cnt from test;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         200
@@ -367,7 +366,10 @@ async fn run_test_logic(
 
     match db_type {
         DatabaseType::Postgres => {
-            if let MiddlewarePoolConnection::Postgres(pg_handle) = conn {
+            if let MiddlewarePoolConnection::Postgres {
+                client: pg_handle, ..
+            } = conn
+            {
                 let tx = pg_handle.transaction().await?;
                 for param in params {
                     let postgres_params = PostgresParams::convert(&param)?;
@@ -440,13 +442,13 @@ async fn run_test_logic(
         DatabaseType::Mssql | DatabaseType::Turso | DatabaseType::Libsql => {
             // For MS SQL, insert data using the middleware connection
             for param in params {
-                conn.execute_dml(parameterized_query, &param).await?;
+                conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
     }
 
     let query = "select count(*) as cnt from test;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         400
@@ -462,7 +464,7 @@ async fn run_test_logic(
     };
 
     (match &mut *conn {
-        MiddlewarePoolConnection::Postgres(xx) => {
+        MiddlewarePoolConnection::Postgres { client: xx, .. } => {
             let tx = xx.transaction().await?;
             let converted_params = PostgresParams::convert_for_batch(&query_and_params.params)?;
 
@@ -475,13 +477,15 @@ async fn run_test_logic(
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Mssql(_) => {
+        MiddlewarePoolConnection::Mssql { .. } => {
             // For MSSQL, just execute the query using the middleware
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
-        MiddlewarePoolConnection::Sqlite(_) => {
+        MiddlewarePoolConnection::Sqlite { .. } => {
             Ok(conn
                 .with_sqlite_connection(move |xxx| {
                     let tx = xxx.transaction()?;
@@ -527,11 +531,15 @@ async fn run_test_logic(
                 .await?)
         }
 
-        MiddlewarePoolConnection::Libsql(_) | MiddlewarePoolConnection::Turso(_) => {
+        MiddlewarePoolConnection::Libsql { .. } | MiddlewarePoolConnection::Turso { .. } => {
             // For LibSQL, just execute the query using the middleware
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
                 .await?;
-            conn.execute_dml(&query_and_params.query, &query_and_params.params)
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
                 .await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
@@ -541,7 +549,7 @@ async fn run_test_logic(
 
     // make sure to match the val from above
     let query = "select count(*) as cnt,name from test where id = 990 group by name;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     // theres two in here now, we inserted same val 2x above
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
@@ -557,7 +565,7 @@ async fn run_test_logic(
     );
 
     let query = "select count(*) as cnt from test ;";
-    let result_set = conn.execute_select(query, &[]).await?;
+    let result_set = conn.query(query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         402

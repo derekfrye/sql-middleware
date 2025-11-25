@@ -1,7 +1,7 @@
 #![cfg(any(feature = "sqlite", feature = "turso"))]
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sql_middleware::middleware::{AsyncDatabaseExecutor, ConfigAndPool, MiddlewarePool, RowValues};
+use sql_middleware::middleware::{ConfigAndPool, RowValues};
 use tokio::runtime::Runtime;
 
 enum TestCase {
@@ -73,8 +73,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
                 TestCase::Turso(path) => ConfigAndPool::new_turso(path).await?,
             };
 
-            let pool = cap.pool.get().await?;
-            let mut conn = MiddlewarePool::get_connection(pool).await?;
+            let mut conn = cap.get_connection().await?;
 
             // DDL: ensure table exists
             let ddl = r"
@@ -98,7 +97,7 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
             // Query a subset by recid
             let query = "SELECT * from test where recid in (?1, ?2, ?3);";
             let params = [RowValues::Int(1), RowValues::Int(2), RowValues::Int(3)];
-            let res = conn.execute_select(query, &params).await?;
+            let res = conn.query(query).params(&params).select().await?;
 
             assert_eq!(res.results.len(), 3);
 

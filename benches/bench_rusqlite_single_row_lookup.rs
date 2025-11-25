@@ -10,8 +10,8 @@ use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
 use sql_middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePool, MiddlewarePoolConnection, RowValues,
-    SqlMiddlewareDbError, SqliteParamsQuery, sqlite_build_result_set, sqlite_convert_params,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, RowValues, SqlMiddlewareDbError,
+    SqliteParamsQuery, sqlite_build_result_set, sqlite_convert_params,
 };
 use std::cell::RefCell;
 use std::fs;
@@ -73,8 +73,7 @@ static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> = LazyLock::new(|| {
 static MIDDLEWARE_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyLock::new(|| {
     TOKIO_RUNTIME
         .block_on(async {
-            let pool = MIDDLEWARE_CONFIG.pool.clone();
-            let mut conn = MiddlewarePool::get_connection(&pool).await?;
+            let mut conn = MIDDLEWARE_CONFIG.get_connection().await?;
             let prepared = conn
                 .prepare_sqlite_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
                 .await?;
@@ -281,8 +280,8 @@ fn benchmark_middleware(
                     if let Some(stats) = breakdown.as_mut() {
                         stats.record_iteration();
                     }
-                    let pool = config_and_pool.pool.clone();
-                    let mut conn = MiddlewarePool::get_connection(&pool)
+                    let mut conn = config_and_pool
+                        .get_connection()
                         .await
                         .expect("acquire middleware connection");
                     let prepared = conn
@@ -344,18 +343,19 @@ fn benchmark_pool_acquire(
     group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
+            let pool = config_and_pool.clone();
             async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    let conn = MiddlewarePool::get_connection(&pool)
-                        .await
-                        .expect("checkout connection");
-                    drop(conn);
-                    total += start.elapsed();
-                }
-                total
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let start = Instant::now();
+                let conn = pool
+                    .get_connection()
+                    .await
+                    .expect("checkout connection");
+                drop(conn);
+                total += start.elapsed();
+            }
+            total
             }
         });
     });
@@ -372,25 +372,26 @@ fn benchmark_middleware_prepare(
     group.bench_function(BenchmarkId::new("middleware_prepare", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
+            let pool = config_and_pool.clone();
             async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let mut conn = MiddlewarePool::get_connection(&pool)
-                        .await
-                        .expect("checkout connection");
-                    let start = Instant::now();
-                    let prepared = conn
-                        .prepare_sqlite_statement(
-                            "SELECT id, name, score, active FROM test WHERE id = ?1",
-                        )
-                        .await
-                        .expect("prepare statement");
-                    total += start.elapsed();
-                    drop(prepared);
-                    drop(conn);
-                }
-                total
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let mut conn = pool
+                    .get_connection()
+                    .await
+                    .expect("checkout connection");
+                let start = Instant::now();
+                let prepared = conn
+                    .prepare_sqlite_statement(
+                        "SELECT id, name, score, active FROM test WHERE id = ?1",
+                    )
+                    .await
+                    .expect("prepare statement");
+                total += start.elapsed();
+                drop(prepared);
+                drop(conn);
+            }
+            total
             }
         });
     });
@@ -407,23 +408,24 @@ fn benchmark_middleware_interact_only(
     group.bench_function(BenchmarkId::new("middleware_interact", lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
-            let pool = config_and_pool.pool.clone();
+            let pool = config_and_pool.clone();
             async move {
-                let mut total = Duration::default();
-                let mut conn = MiddlewarePool::get_connection(&pool)
-                    .await
-                    .expect("checkout connection");
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    if matches!(&conn, MiddlewarePoolConnection::Sqlite(_)) {
-                        conn.with_sqlite_connection(|_| Ok::<_, SqlMiddlewareDbError>(()))
-                            .await
-                            .expect("with_sqlite_connection");
-                    }
-                    total += start.elapsed();
+            let mut total = Duration::default();
+            let mut conn = pool
+                .get_connection()
+                .await
+                .expect("checkout connection");
+            for _ in 0..iters {
+                let start = Instant::now();
+                if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
+                    conn.with_sqlite_connection(|_| Ok::<_, SqlMiddlewareDbError>(()))
+                        .await
+                        .expect("with_sqlite_connection");
                 }
-                drop(conn);
-                total
+                total += start.elapsed();
+            }
+            drop(conn);
+            total
             }
         });
     });

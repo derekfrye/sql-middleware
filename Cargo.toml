@@ -1,6 +1,6 @@
 [package]
 name = "sql-middleware"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
@@ -53,7 +53,7 @@ rand_chacha = { version = "0", optional = true }
 # LibSQL dependencies
 deadpool-libsql = { version = "0", optional = true }
 # turso deps
-turso = { version = "0.2.2", optional = true }
+turso = { version = "0.3.2", optional = true }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--deny", "unsafe_code"]

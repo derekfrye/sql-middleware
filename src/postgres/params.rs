@@ -70,7 +70,30 @@ impl ToSql for RowValues {
         out: &mut bytes::BytesMut,
     ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
         match self {
-            RowValues::Int(i) => (*i).to_sql(ty, out),
+            RowValues::Int(i) => match *ty {
+                Type::INT8 => (*i).to_sql(ty, out),
+                Type::INT4 => {
+                    let v = i32::try_from(*i).map_err(|_| {
+                        SqlMiddlewareDbError::ExecutionError(format!(
+                            "integer value {i} overflows Postgres INT4 parameter"
+                        ))
+                    })?;
+                    v.to_sql(ty, out)
+                }
+                Type::INT2 => {
+                    let v = i16::try_from(*i).map_err(|_| {
+                        SqlMiddlewareDbError::ExecutionError(format!(
+                            "integer value {i} overflows Postgres INT2 parameter"
+                        ))
+                    })?;
+                    v.to_sql(ty, out)
+                }
+                _ => {
+                    return Err(Box::new(SqlMiddlewareDbError::ExecutionError(
+                        format!("unsupported integer parameter type: {ty:?}"),
+                    )))
+                }
+            },
             RowValues::Float(f) => (*f).to_sql(ty, out),
             RowValues::Text(s) => s.to_sql(ty, out),
             RowValues::Bool(b) => (*b).to_sql(ty, out),

@@ -14,6 +14,8 @@ pub mod conversion;
 pub mod exports;
 pub mod helpers;
 pub mod prelude;
+pub mod query_builder;
+pub mod translation;
 
 // Core modules
 pub mod error;
@@ -47,14 +49,15 @@ pub use crate::conversion::convert_sql_params as sqlite_convert_params;
 
 // Direct exports for frequently used types
 pub use middleware::{
-    AnyConnWrapper, AsyncDatabaseExecutor, ConfigAndPool, ConversionMode, CustomDbRow,
-    DatabaseType, MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams,
-    ResultSet, RowValues, SqlMiddlewareDbError,
+    AnyConnWrapper, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool,
+    MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder, ResultSet, RowValues,
+    SqlMiddlewareDbError,
 };
 
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;
 pub use exports::*;
+pub use translation::{PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders};
 
 // Compatibility alias for existing code
 pub mod test_helpers {
