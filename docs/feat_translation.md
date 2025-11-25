@@ -66,3 +66,11 @@ Goal: optional, backend-aware translation between PostgreSQL-style placeholders 
   - `query_typed` (and `prepare`/`query`) uses `postgres_protocol::message::frontend::parse` to send a Parse message with the raw SQL (`src/query.rs`), and `frontend::bind` to send parameter values (`postgres-protocol` crate, `message/frontend.rs`).
   - The driver relies on the PostgreSQL server’s own parser to recognize `$1`, `$2`, etc. There is no placeholder rewriting in tokio-postgres.
   - PostgreSQL’s parser is quote/comment-aware for `$n` parameters; any translation we add would be layered on top of this server-side behavior.
+
+## Portability/Type Inference Limitations (Postgres vs SQLite)
+- SQLite accepts loosely typed parameters; Postgres requires parameters to match inferred or declared types. Translation does not change SQL semantics, so mismatches can still occur.
+- `RowValues::Int` now downcasts to `INT2/INT4` when Postgres infers those, but will error if the value overflows. Explicit casts are still safest for portable SQL when widths matter.
+- Postgres may infer `UNKNOWN` or `NUMERIC` in queries like `SELECT $1` or `WHERE $1 IS NULL`. We currently bind ints/floats/strings/JSON only to concrete types, so untyped params can fail unless the SQL casts them (e.g., `?1::text`, `?1::numeric`, `?1::jsonb`).
+- JSON: SQLite treats JSON as text; Postgres distinguishes `json`/`jsonb`. Cast portable SQL to `::jsonb`/`::json` or use the JSON RowValues variant in a typed context.
+- Nulls: `Null` needs a type context on Postgres (e.g., `?1::int`); untyped null parameters will error.
+- Arrays/other composite types: not supported by translation or RowValues; portable SQL using them requires backend-specific handling.***

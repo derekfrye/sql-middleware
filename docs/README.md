@@ -174,18 +174,9 @@ pub async fn set_scores_in_db(
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let mut conn = config_and_pool.get_connection().await?;
 
-    let (insert_sql, fetch_sql) = match &conn {
-        MiddlewarePoolConnection::Postgres { .. } => (
-            "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)",
-            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1",
-        ),
-        MiddlewarePoolConnection::Sqlite { .. }
-        | MiddlewarePoolConnection::Libsql { .. }
-        | MiddlewarePoolConnection::Turso { .. } => (
-            "INSERT INTO scores (espn_id, score, updated_at) VALUES (?1, ?2, ?3)",
-            "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT ?1",
-        ),
-    };
+    // Author once; translation rewrites placeholders as needed across backends.
+    let insert_sql = "INSERT INTO scores (espn_id, score, updated_at) VALUES ($1, $2, $3)";
+    let fetch_sql = "SELECT espn_id, score, updated_at FROM scores ORDER BY updated_at DESC LIMIT $1";
 
     for change in updates {
         let params = vec![
@@ -195,6 +186,7 @@ pub async fn set_scores_in_db(
         ];
         let bound = QueryAndParams::new(insert_sql, params);
         conn.query(&bound.query)
+            .translation(TranslationMode::ForceOn)
             .params(&bound.params)
             .dml()
             .await?;
@@ -204,6 +196,7 @@ pub async fn set_scores_in_db(
     let latest = QueryAndParams::new(fetch_sql, vec![RowValues::Int(limit)]);
     let rows = conn
         .query(&latest.query)
+        .translation(TranslationMode::ForceOn)
         .params(&latest.params)
         .select()
         .await?;
@@ -261,26 +254,27 @@ pub async fn get_scores_from_db(
 ) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
     let mut conn = config_and_pool.get_connection().await?;
 
-    let turso_query = "SELECT grp, golfername, playername, eup_id, espn_id \
-                       FROM sp_get_player_names(?1) ORDER BY grp, eup_id";
-    let postgres_query = "SELECT grp, golfername, playername, eup_id, espn_id \
-                          FROM sp_get_player_names($1) ORDER BY grp, eup_id";
+    // Author once; translate for SQLite-family backends when preparing.
+    let base_query = "SELECT grp, golfername, playername, eup_id, espn_id \
+                      FROM sp_get_player_names($1) ORDER BY grp, eup_id";
     let (tx, stmt) = match &mut conn {
         MiddlewarePoolConnection::Turso { conn: client, .. } => {
             let tx = begin_transaction(client).await?;
-            let stmt = tx.prepare(turso_query).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref()).await?;
             (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
         }
         MiddlewarePoolConnection::Postgres {
             client: pg_conn, ..
         } => {
             let mut tx = pg_conn.transaction().await?;
-            let stmt = tx.prepare(postgres_query).await?;
+            let stmt = tx.prepare(base_query).await?;
             (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
         }
         MiddlewarePoolConnection::Libsql { conn, .. } => {
             let tx = begin_libsql_tx(conn).await?;
-            let stmt = tx.prepare(turso_query)?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref())?;
             (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
         }
         _ => {
@@ -394,6 +388,7 @@ See further examples in the tests directory:
 - Override per call via the query builder: `.translation(TranslationMode::ForceOff | ForceOn)` or `.options(...)`.
 - Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
 - Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched.
+- Design notes and edge cases live in `docs/feat_translation.md`.
 
 ```rust
 use sql_middleware::prelude::*;
