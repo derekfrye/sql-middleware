@@ -8,6 +8,18 @@ impl ConfigAndPool {
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if database creation, pool creation, or connection test fails.
     pub async fn new_libsql(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
+        Self::new_libsql_with_translation(db_path, false).await
+    }
+
+    /// Asynchronous initializer for `ConfigAndPool` with libsql using `deadpool_libsql`
+    /// and optional placeholder translation default.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if database creation, pool creation, or connection test fails.
+    pub async fn new_libsql_with_translation(
+        db_path: String,
+        translate_placeholders: bool,
+    ) -> Result<Self, SqlMiddlewareDbError> {
         // Create libsql database connection
         let db = deadpool_libsql::libsql::Builder::new_local(db_path.clone())
             .build()
@@ -37,6 +49,7 @@ impl ConfigAndPool {
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Libsql(pool),
             db_type: DatabaseType::Libsql,
+            translate_placeholders,
         })
     }
 
@@ -47,6 +60,18 @@ impl ConfigAndPool {
     pub async fn new_libsql_remote(
         url: String,
         auth_token: Option<String>,
+    ) -> Result<Self, SqlMiddlewareDbError> {
+        Self::new_libsql_remote_with_translation(url, auth_token, false).await
+    }
+
+    /// Create libsql connection from remote URL (Turso) with optional translation default.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if remote database creation, pool creation, or connection test fails.
+    pub async fn new_libsql_remote_with_translation(
+        url: String,
+        auth_token: Option<String>,
+        translate_placeholders: bool,
     ) -> Result<Self, SqlMiddlewareDbError> {
         // Create libsql database connection for remote
         let builder = deadpool_libsql::libsql::Builder::new_remote(
@@ -76,6 +101,7 @@ impl ConfigAndPool {
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Libsql(pool),
             db_type: DatabaseType::Libsql,
+            translate_placeholders,
         })
     }
 }

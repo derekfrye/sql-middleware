@@ -10,6 +10,9 @@ pub use crate::middleware::{
 };
 
 pub use crate::conversion::convert_sql_params;
+pub use crate::translation::{
+    PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
+};
 
 #[cfg(feature = "postgres")]
 pub use crate::exports::PostgresParams;

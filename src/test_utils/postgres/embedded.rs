@@ -61,10 +61,12 @@ pub fn setup_postgres_embedded(
                 admin_cfg.dbname = Some("postgres".to_string());
 
                 let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
-                let pool = admin_pool.pool.get().await?;
-                let admin_conn = MiddlewarePool::get_connection(pool).await?;
+                let admin_conn = admin_pool.get_connection().await?;
 
-                if let MiddlewarePoolConnection::Postgres(pgconn) = admin_conn {
+                if let MiddlewarePoolConnection::Postgres {
+                    client: pgconn, ..
+                } = admin_conn
+                {
                     // Create the desired user with the desired password
                     let create_user_sql = format!(
                         "CREATE USER \"{desired_user}\" WITH PASSWORD '{desired_password}' CREATEDB SUPERUSER"
@@ -96,10 +98,12 @@ pub fn setup_postgres_embedded(
 
         // Quick connection test
         let config_and_pool = ConfigAndPool::new_postgres(final_cfg.clone()).await?;
-        let pool = config_and_pool.pool.get().await?;
-        let conn = MiddlewarePool::get_connection(pool).await?;
+        let conn = config_and_pool.get_connection().await?;
 
-        if let MiddlewarePoolConnection::Postgres(pgconn) = conn {
+        if let MiddlewarePoolConnection::Postgres {
+            client: pgconn, ..
+        } = conn
+        {
             // Test with a simple query
             pgconn.execute("SELECT 1", &[]).await?;
             println!("Successfully connected to embedded PostgreSQL database!");

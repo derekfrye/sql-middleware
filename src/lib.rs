@@ -14,6 +14,7 @@ pub mod conversion;
 pub mod exports;
 pub mod helpers;
 pub mod prelude;
+pub mod translation;
 
 // Core modules
 pub mod error;
@@ -55,6 +56,7 @@ pub use middleware::{
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;
 pub use exports::*;
+pub use translation::{PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders};
 
 // Compatibility alias for existing code
 pub mod test_helpers {

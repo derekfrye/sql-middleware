@@ -8,6 +8,18 @@ impl ConfigAndPool {
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
     pub async fn new_sqlite(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
+        Self::new_sqlite_with_translation(db_path, false).await
+    }
+
+    /// Asynchronous initializer for `ConfigAndPool` with Sqlite using `deadpool_sqlite`
+    /// and optional placeholder translation default.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
+    pub async fn new_sqlite_with_translation(
+        db_path: String,
+        translate_placeholders: bool,
+    ) -> Result<Self, SqlMiddlewareDbError> {
         // Configure deadpool_sqlite
         let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
 
@@ -37,6 +49,7 @@ impl ConfigAndPool {
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Sqlite(pool),
             db_type: DatabaseType::Sqlite,
+            translate_placeholders,
         })
     }
 }

@@ -9,6 +9,18 @@ impl ConfigAndPool {
     /// Returns `SqlMiddlewareDbError::ConfigError` if required config fields are missing or `SqlMiddlewareDbError::ConnectionError` if pool creation fails.
     #[allow(clippy::unused_async)]
     pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
+        Self::new_postgres_with_translation(pg_config, false).await
+    }
+
+    /// Asynchronous initializer for `ConfigAndPool` with Postgres and optional translation default.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ConfigError` if required config fields are missing or `SqlMiddlewareDbError::ConnectionError` if pool creation fails.
+    #[allow(clippy::unused_async)]
+    pub async fn new_postgres_with_translation(
+        pg_config: PgConfig,
+        translate_placeholders: bool,
+    ) -> Result<Self, SqlMiddlewareDbError> {
         // Validate all required config fields are present
         if pg_config.dbname.is_none() {
             return Err(SqlMiddlewareDbError::ConfigError(
@@ -49,6 +61,7 @@ impl ConfigAndPool {
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Postgres(pg_pool),
             db_type: DatabaseType::Postgres,
+            translate_placeholders,
         })
     }
 }

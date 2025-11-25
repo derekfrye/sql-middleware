@@ -4,6 +4,9 @@ pub use crate::executor::AsyncDatabaseExecutor;
 pub use crate::pool::{ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 pub use crate::query::{AnyConnWrapper, QueryAndParams};
 pub use crate::results::{CustomDbRow, ResultSet};
+pub use crate::translation::{
+    PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
+};
 pub use crate::types::{ConversionMode, DatabaseType, ParamConverter, RowValues};
 
 #[cfg(feature = "sqlite")]
