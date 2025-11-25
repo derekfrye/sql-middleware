@@ -65,7 +65,7 @@ fn postgres_translation_force_on_override_default_off() -> Result<(), Box<dyn st
 
         conn.execute_batch(
             "DROP TABLE IF EXISTS tbl_translate_force_on;
-             CREATE TABLE tbl_translate_force_on (id INT);",
+             CREATE TABLE tbl_translate_force_on (id BIGINT);",
         )
         .await?;
 
@@ -131,7 +131,7 @@ fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std:
         // Comment should not be translated; ?1 outside comment should be.
         let rs = conn
             .query(
-                "SELECT 1 -- $1 in comment\n                 + ?1 AS val;",
+                "SELECT 1::BIGINT -- $1 in comment\n                 + (?1)::BIGINT AS val;",
             )
             .translation(TranslationMode::ForceOn)
             .params(&[RowValues::Int(1)])
@@ -141,11 +141,11 @@ fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std:
         assert_eq!(rs.results.len(), 1);
         assert_eq!(*rs.results[0].get("val").unwrap().as_int().unwrap(), 2);
 
-        // Literal containing ?1 stays untouched; ?2 outside literal translates.
+        // Literal containing ?1 stays untouched; ?1 outside literal translates.
         let rs = conn
-            .query("SELECT 'O''Reilly || ?1' || ?2 AS val;")
+            .query("SELECT 'O''Reilly || ?1' || ?1 AS val;")
             .translation(TranslationMode::ForceOn)
-            .params(&[RowValues::Text("ignored".into()), RowValues::Text("X".into())])
+            .params(&[RowValues::Text("X".into())])
             .select()
             .await?;
 
