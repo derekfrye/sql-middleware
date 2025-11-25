@@ -47,6 +47,9 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     }
 
     /// Execute a SELECT and return the result set.
+    ///
+    /// # Errors
+    /// Returns an error if placeholder translation fails or the backend query execution fails.
     pub async fn select(self) -> Result<ResultSet, SqlMiddlewareDbError> {
         let translated = translate_query(
             self.conn,
@@ -58,6 +61,9 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     }
 
     /// Execute a DML statement and return rows affected.
+    ///
+    /// # Errors
+    /// Returns an error if placeholder translation fails or the backend DML execution fails.
     pub async fn dml(self) -> Result<usize, SqlMiddlewareDbError> {
         let translated = translate_query(
             self.conn,
@@ -69,6 +75,9 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     }
 
     /// Execute a batch (ignores params by design).
+    ///
+    /// # Errors
+    /// Returns an error if the backend rejects the batch or the connection fails.
     pub async fn batch(self) -> Result<(), SqlMiddlewareDbError> {
         self.conn.execute_batch(&self.sql).await
     }

@@ -20,6 +20,9 @@ use crate::turso;
 
 impl MiddlewarePoolConnection {
     /// Executes a batch of SQL queries within a transaction by delegating to the specific database module.
+    ///
+    /// # Errors
+    /// Returns an error if the selected backend cannot execute the batch or the database responds with an error.
     pub async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
         match self {
             #[cfg(feature = "postgres")]

@@ -45,7 +45,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         cfg.port = Some(5432);
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(String::new());
-        test_cases.push(TestCase::Postgres(cfg));
+        test_cases.push(TestCase::Postgres(Box::new(cfg)));
     }
     #[cfg(feature = "turso")]
     {
@@ -114,7 +114,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 #[cfg(feature = "postgres")]
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
-                    let config_and_pool = ConfigAndPool2::new_postgres(cfg).await?;
+                    let config_and_pool = ConfigAndPool2::new_postgres(*cfg).await?;
                     conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
@@ -156,7 +156,7 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 enum TestCase {
     Sqlite(String),
     #[cfg(feature = "postgres")]
-    Postgres(deadpool_postgres::Config),
+    Postgres(Box<deadpool_postgres::Config>),
     #[cfg(feature = "turso")]
     Turso(String),
     // #[cfg(feature = "libsql")]

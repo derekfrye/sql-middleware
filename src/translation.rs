@@ -57,11 +57,11 @@ impl QueryOptions {
 ///
 /// Returns a borrowed `Cow` when no changes are needed.
 #[must_use]
-pub fn translate_placeholders<'a>(
-    sql: &'a str,
+pub fn translate_placeholders(
+    sql: &str,
     target: PlaceholderStyle,
     enabled: bool,
-) -> Cow<'a, str> {
+) -> Cow<'_, str> {
     if !enabled {
         return Cow::Borrowed(sql);
     }
@@ -88,19 +88,21 @@ pub fn translate_placeholders<'a>(
                     if let Some((tag, advance)) = try_start_dollar_quote(bytes, idx) {
                         state = State::DollarQuoted(tag);
                         idx = advance;
-                    } else if matches!(target, PlaceholderStyle::Sqlite) {
-                        if let Some((digits_end, digits)) = scan_digits(bytes, idx + 1) {
-                            out.get_or_insert_with(|| sql[..idx].to_string()).push('?');
-                            out.as_mut().unwrap().push_str(digits);
-                            idx = digits_end - 1;
-                            replaced = true;
-                        }
+                    } else if matches!(target, PlaceholderStyle::Sqlite)
+                        && let Some((digits_end, digits)) = scan_digits(bytes, idx + 1)
+                    {
+                        let buf = out.get_or_insert_with(|| sql[..idx].to_string());
+                        buf.push('?');
+                        buf.push_str(digits);
+                        idx = digits_end - 1;
+                        replaced = true;
                     }
                 }
                 b'?' if matches!(target, PlaceholderStyle::Postgres) => {
                     if let Some((digits_end, digits)) = scan_digits(bytes, idx + 1) {
-                        out.get_or_insert_with(|| sql[..idx].to_string()).push('$');
-                        out.as_mut().unwrap().push_str(digits);
+                        let buf = out.get_or_insert_with(|| sql[..idx].to_string());
+                        buf.push('$');
+                        buf.push_str(digits);
                         idx = digits_end - 1;
                         replaced = true;
                     }
@@ -150,10 +152,8 @@ pub fn translate_placeholders<'a>(
             }
         }
 
-        if let Some(ref mut buf) = out {
-            if !replaced {
-                buf.push(b as char);
-            }
+        if let Some(ref mut buf) = out && !replaced {
+            buf.push(b as char);
         }
 
         idx += 1;
