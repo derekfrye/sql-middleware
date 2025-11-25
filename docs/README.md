@@ -355,9 +355,7 @@ async fn insert_user(
     name: &str,
 ) -> Result<(), SqlMiddlewareDbError> {
     let query = QueryAndParams::new(
-        // Use appropriate parameter syntax for your DB
-        // PostgreSQL: "VALUES ($1, $2)"
-        // SQLite/LibSQL/Turso: "VALUES (?, ?)" or "VALUES (?1, ?2)"
+        // Author once; translation rewrites placeholders for SQLite-family backends.
         "INSERT INTO users (id, name) VALUES ($1, $2)",
         vec![
             RowValues::Int(i64::from(user_id)),
@@ -366,6 +364,7 @@ async fn insert_user(
     );
 
     conn.query(&query.query)
+        .translation(TranslationMode::ForceOn)
         .params(&query.params)
         .dml()
         .await?;
