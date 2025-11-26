@@ -11,20 +11,22 @@ pub mod benchmark;
 
 // Public API modules
 pub mod conversion;
-pub mod exports;
-pub mod helpers;
 pub mod prelude;
-pub mod query_builder;
 pub mod translation;
 
-// Core modules
+// Core modules (public for docs/advanced use)
 pub mod error;
 pub mod executor;
 pub mod middleware;
 pub mod pool;
 pub mod query;
-pub mod results;
-pub mod types;
+
+// Internal modules (types are re-exported; modules stay private)
+pub(crate) mod exports;
+pub(crate) mod helpers;
+pub(crate) mod query_builder;
+pub(crate) mod results;
+pub(crate) mod types;
 
 // Private database-specific modules
 #[cfg(feature = "libsql")]
