@@ -141,6 +141,11 @@ impl MiddlewarePool {
 impl MiddlewarePoolConnection {
     /// Run synchronous `SQLite` work on the underlying worker-owned connection.
     ///
+    /// Use this when you need to batch multiple statements in one worker hop, reuse `rusqlite`
+    /// features we don't expose (savepoints, pragmas that return rows, custom hooks), or avoid
+    /// re-preparing statements in hot loops. It keeps blocking work off the async runtime while
+    /// letting you drive the raw `rusqlite::Connection`.
+    ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not `SQLite`.
     ///
@@ -151,7 +156,7 @@ impl MiddlewarePoolConnection {
     /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
     /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
     /// let mut conn = cap.get_connection().await?;
-    /// conn.with_sqlite_connection(|raw| {
+    /// conn.with_blocking_sqlite(|raw| {
     ///     raw.execute_batch("CREATE TABLE t (id INTEGER, name TEXT);")?;
     ///     Ok::<_, SqlMiddlewareDbError>(())
     /// })
@@ -159,7 +164,10 @@ impl MiddlewarePoolConnection {
     /// # Ok(()) }
     /// ```
     #[cfg(feature = "sqlite")]
-    pub async fn with_sqlite_connection<F, R>(&mut self, func: F) -> Result<R, SqlMiddlewareDbError>
+    pub async fn with_blocking_sqlite<F, R>(
+        &mut self,
+        func: F,
+    ) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
         R: Send + 'static,
@@ -167,7 +175,7 @@ impl MiddlewarePoolConnection {
         match self {
             MiddlewarePoolConnection::Sqlite { conn, .. } => conn.with_connection(func).await,
             _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "with_sqlite_connection is only available for SQLite connections".to_string(),
+                "with_blocking_sqlite is only available for SQLite connections".to_string(),
             )),
         }
     }

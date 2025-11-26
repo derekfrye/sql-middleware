@@ -490,7 +490,7 @@ async fn run_test_logic(
         }
         MiddlewarePoolConnection::Sqlite { .. } => {
             Ok(conn
-                .with_sqlite_connection(move |xxx| {
+                .with_blocking_sqlite(move |xxx| {
                     let tx = xxx.transaction()?;
                     {
                         let converted_params = convert_sql_params::<SqliteParams>(

@@ -92,7 +92,7 @@ let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
 let mut conn = cap.get_connection().await?;
 
 // Borrow the raw rusqlite::Connection on the worker for batched work.
-conn.with_sqlite_connection(|raw| {
+conn.with_blocking_sqlite(|raw| {
     let tx = raw.transaction()?;
     tx.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);")?;
     tx.execute("INSERT INTO t (name) VALUES (?1)", ["alice"])?;

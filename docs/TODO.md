@@ -138,12 +138,12 @@ LibSQL prepared (wrapper) note
 - If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
 - Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
 
-- ✅ Added `MiddlewarePoolConnection::with_sqlite_connection` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
+- ✅ Added `MiddlewarePoolConnection::with_blocking_sqlite` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
 - ✅ Introduced `prepare_sqlite_statement` + `SqlitePreparedStatement` for explicit prepared-statement reuse via the worker queue.
 - If we add the guard, benchmark loops would switch from repeated `execute_select`
   calls to something like:
   ```rust
-  MiddlewarePool::with_sqlite_connection(&pool, |conn| {
+  MiddlewarePool::with_blocking_sqlite(&pool, |conn| {
       let mut stmt = conn.prepare_cached(query)?;
       let mut params = [RowValues::Int(0)];
       for &id in &ids {

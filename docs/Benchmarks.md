@@ -53,7 +53,7 @@ Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BEN
 Additional micro-benches in the same Criterion group isolate specific parts of the middleware stack:
 - `pool_acquire` – measures connection checkout/drop latency. Current [results](../bench_results/pool_acquire.md).
 - `middleware_prepare` – times statement preparation through the middleware. Current [results](../bench_results/prepare.md).
-- `middleware_interact` (legacy name) – measures the worker hand-off when calling `with_sqlite_connection` on a pooled SQLite handle without executing SQL. Current [results](../bench_results/interact.md).
+- `middleware_interact` (legacy name) – measures the worker hand-off when calling `with_blocking_sqlite` on a pooled SQLite handle without executing SQL. Current [results](../bench_results/interact.md).
 - `middleware_marshalling` – runs `build_result_set` directly to capture row materialisation cost. Current [results](../bench_results/query_raw.md).
 - `middleware_decode` – decodes a cached `CustomDbRow` into the bench struct to isolate row conversion cost. Current [results](../bench_results/decode.md).
 - `middleware_param_convert` – benchmarks parameter conversion from `RowValues` into `rusqlite::Value`s. Current [results](../bench_results/param_bind.md).

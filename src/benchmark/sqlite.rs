@@ -47,7 +47,7 @@ pub async fn clean_sqlite_tables(
     let mut conn = config_and_pool.get_connection().await?;
 
     if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
-        conn.with_sqlite_connection(move |connection| {
+        conn.with_blocking_sqlite(move |connection| {
             connection.execute("DROP TABLE IF EXISTS test", [])?;
 
             let create_sql = "CREATE TABLE IF NOT EXISTS test (
@@ -90,7 +90,7 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
 
     if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite { .. }) {
         sqlite_conn
-            .with_sqlite_connection(move |connection| {
+            .with_blocking_sqlite(move |connection| {
                 let transaction = connection.transaction()?;
                 transaction.execute_batch(ddl)?;
                 transaction.commit()?;
@@ -138,7 +138,7 @@ pub fn benchmark_sqlite(c: &mut Criterion, runtime: &Runtime) {
                             let start = Instant::now();
 
                             sqlite_conn
-                                .with_sqlite_connection(move |connection| {
+                                .with_blocking_sqlite(move |connection| {
                                     let transaction = connection.transaction()?;
                                     transaction.execute_batch(&statements_clone)?;
                                     transaction.commit()?;

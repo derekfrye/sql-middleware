@@ -20,7 +20,7 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
                 let converted =
                     convert_sql_params::<SqliteParams>(&params, ConversionMode::Execute)?;
 
-                conn.with_sqlite_connection(move |raw| {
+                conn.with_blocking_sqlite(move |raw| {
                     let tx = raw.transaction()?;
                     {
                         let mut stmt = tx.prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")?;
