@@ -121,6 +121,44 @@ impl SqliteConnection {
     fn object_id(&self) -> ObjectId {
         self.worker.object_id()
     }
+
+    pub async fn begin_transaction(&self) -> Result<u64, SqlMiddlewareDbError> {
+        self.worker.begin_transaction().await
+    }
+
+    pub async fn execute_tx_batch(
+        &self,
+        tx_id: u64,
+        query: String,
+    ) -> Result<(), SqlMiddlewareDbError> {
+        self.worker.execute_tx_batch(tx_id, query).await
+    }
+
+    pub async fn execute_tx_query(
+        &self,
+        tx_id: u64,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.worker.execute_tx_query(tx_id, query, params).await
+    }
+
+    pub async fn execute_tx_dml(
+        &self,
+        tx_id: u64,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        self.worker.execute_tx_dml(tx_id, query, params).await
+    }
+
+    pub async fn commit_tx(&self, tx_id: u64) -> Result<(), SqlMiddlewareDbError> {
+        self.worker.commit_tx(tx_id).await
+    }
+
+    pub async fn rollback_tx(&self, tx_id: u64) -> Result<(), SqlMiddlewareDbError> {
+        self.worker.rollback_tx(tx_id).await
+    }
 }
 
 impl fmt::Debug for SqliteConnection {

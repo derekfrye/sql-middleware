@@ -1,6 +1,4 @@
 use deadpool_sqlite::rusqlite;
-use deadpool_sqlite::rusqlite::ParamsFromIter;
-use rusqlite::types::Value;
 use std::fmt::Write;
 
 use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
@@ -47,94 +45,50 @@ pub fn row_value_to_sqlite_value(value: &RowValues, for_execute: bool) -> rusqli
                 // For execute, we can directly use the bytes
                 rusqlite::types::Value::Blob(bytes.clone())
             } else {
-                // For queries, we need to clone
                 rusqlite::types::Value::Blob(bytes.clone())
             }
         }
     }
 }
 
-/// Bind middleware params to `SQLite` types.
-pub fn convert_params(params: &[RowValues]) -> Vec<rusqlite::types::Value> {
-    let mut vec_values = Vec::with_capacity(params.len());
-    for p in params {
-        vec_values.push(row_value_to_sqlite_value(p, false));
+/// Unified SQLite parameter container.
+pub struct Params(pub Vec<rusqlite::types::Value>);
+
+impl Params {
+    /// Convert middleware row values into SQLite values.
+    pub fn convert(params: &[RowValues]) -> Result<Self, SqlMiddlewareDbError> {
+        let mut vec_values = Vec::with_capacity(params.len());
+        for p in params {
+            vec_values.push(row_value_to_sqlite_value(p, true));
+        }
+        Ok(Params(vec_values))
     }
-    vec_values
+
+    /// Borrow the underlying values.
+    #[must_use]
+    pub fn as_values(&self) -> &[rusqlite::types::Value] {
+        &self.0
+    }
+
+    /// Build a borrowed params slice suitable for rusqlite execution.
+    #[must_use]
+    pub fn as_refs(&self) -> Vec<&dyn rusqlite::ToSql> {
+        self.0.iter().map(|v| v as &dyn rusqlite::ToSql).collect()
+    }
 }
 
-/// Convert parameters for execution operations
-#[allow(dead_code)]
-pub fn convert_params_for_execute<I>(iter: I) -> ParamsFromIter<std::vec::IntoIter<Value>>
-where
-    I: IntoIterator<Item = RowValues>,
-{
-    // Convert directly to avoid unnecessary collection
-    let mut values = Vec::new();
-    for p in iter {
-        values.push(row_value_to_sqlite_value(&p, true));
-    }
-    // Note: clippy suggests removing .into_iter(), but removing it causes
-    // a type error. This is because params_from_iter needs IntoIter<Value>,
-    // not Vec<Value>, despite the type parameter suggesting otherwise.
-    #[allow(clippy::useless_conversion)]
-    rusqlite::params_from_iter(values.into_iter())
-}
-
-/// Wrapper for `SQLite` parameters for queries.
-#[allow(dead_code)]
-pub struct SqliteParamsQuery(pub Vec<rusqlite::types::Value>);
-
-/// Wrapper for `SQLite` parameters for execution.
-#[allow(dead_code)]
-pub struct SqliteParamsExecute(
-    pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>,
-);
-
-impl ParamConverter<'_> for SqliteParamsQuery {
-    type Converted = Self;
+impl ParamConverter<'_> for Params {
+    type Converted = Params;
 
     fn convert_sql_params(
         params: &[RowValues],
-        mode: ConversionMode,
+        _mode: ConversionMode,
     ) -> Result<Self::Converted, SqlMiddlewareDbError> {
-        match mode {
-            // For a query, use the conversion that returns a Vec<Value>
-            ConversionMode::Query => Ok(SqliteParamsQuery(convert_params(params))),
-            // Or, if you really want to support execution mode with this type, you might decide how to handle it:
-            ConversionMode::Execute => {
-                // For example, you could also call the "query" conversion here or return an error.
-                Ok(SqliteParamsQuery(convert_params(params)))
-            }
-        }
+        Self::convert(params)
     }
 
     fn supports_mode(mode: ConversionMode) -> bool {
-        // This converter is primarily for query operations
-        mode == ConversionMode::Query
-    }
-}
-
-impl ParamConverter<'_> for SqliteParamsExecute {
-    type Converted = Self;
-
-    fn convert_sql_params(
-        params: &[RowValues],
-        mode: ConversionMode,
-    ) -> Result<Self::Converted, SqlMiddlewareDbError> {
-        match mode {
-            ConversionMode::Execute => Ok(SqliteParamsExecute(convert_params_for_execute(
-                params.to_vec(),
-            ))),
-            // For queries you might not support the "execute" wrapper:
-            ConversionMode::Query => Err(SqlMiddlewareDbError::ParameterError(
-                "SqliteParamsExecute can only be used with Execute mode".into(),
-            )),
-        }
-    }
-
-    fn supports_mode(mode: ConversionMode) -> bool {
-        // This converter is only for execution operations
-        mode == ConversionMode::Execute
+        // Single Params type supports both query and execute.
+        matches!(mode, ConversionMode::Query | ConversionMode::Execute)
     }
 }

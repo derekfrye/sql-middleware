@@ -2,7 +2,7 @@
 
 use sql_middleware::prelude::*;
 use sql_middleware::{convert_sql_params};
-use sql_middleware::sqlite::SqliteParamsExecute;
+use sql_middleware::sqlite::Params as SqliteParams;
 
 #[test]
 fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,14 +18,15 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             MiddlewarePoolConnection::Sqlite { .. } => {
                 let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
                 let converted =
-                    convert_sql_params::<SqliteParamsExecute>(&params, ConversionMode::Execute)?;
+                    convert_sql_params::<SqliteParams>(&params, ConversionMode::Execute)?;
 
                 conn.with_sqlite_connection(move |raw| {
                     let tx = raw.transaction()?;
                     {
                         let mut stmt = tx.prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")?;
-                        // SqliteParamsExecute wraps a ParamsFromIter which can be passed directly
-                        let _ = stmt.execute(converted.0)?;
+                        // SqliteParams wraps SQLite values which can be passed directly
+                        let refs = converted.as_refs();
+                        let _ = stmt.execute(&refs[..])?;
                     }
                     tx.commit()?; // commit after stmt is dropped
                     Ok::<(), SqlMiddlewareDbError>(())

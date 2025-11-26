@@ -227,6 +227,10 @@ use sql_middleware::libsql::{
     Tx as LibsqlTx,
 };
 use sql_middleware::prelude::*;
+use sql_middleware::sqlite::{
+    begin_transaction as begin_sqlite_tx, Params as SqliteParams, Prepared as SqlitePrepared,
+    Tx as SqliteTx,
+};
 use sql_middleware::turso::{
     begin_transaction as begin_turso_tx, Params as TursoParams, Prepared as TursoPrepared,
     Tx as TursoTx,
@@ -239,12 +243,14 @@ use sql_middleware::postgres::{
 enum BackendTx<'conn> {
     Turso(TursoTx<'conn>),
     Postgres(PostgresTx<'conn>),
+    Sqlite(SqliteTx<'conn>),
     Libsql(LibsqlTx<'conn>),
 }
 
 enum PreparedStmt {
     Turso(TursoPrepared),
     Postgres(PostgresPrepared),
+    Sqlite(SqlitePrepared),
     Libsql(LibsqlPrepared),
 }
 
@@ -277,9 +283,15 @@ pub async fn get_scores_from_db(
             let stmt = tx.prepare(q.as_ref())?;
             (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
         }
+        MiddlewarePoolConnection::Sqlite { conn, .. } => {
+            let tx = begin_sqlite_tx(conn).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref())?;
+            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
+        }
         _ => {
             return Err(SqlMiddlewareDbError::Unimplemented(
-                "expected Turso, Postgres, or LibSQL connection".to_string(),
+                "expected Turso, Postgres, SQLite, or LibSQL connection".to_string(),
             ));
         }
     };
@@ -317,6 +329,19 @@ pub async fn get_scores_from_db(
             }
         }
         (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
+            let result = tx.query_prepared(&stmt, &dynamic_params).await;
+            match result {
+                Ok(rows) => {
+                    tx.commit().await?;
+                    rows
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    return Err(e);
+                }
+            }
+        }
+        (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
             let result = tx.query_prepared(&stmt, &dynamic_params).await;
             match result {
                 Ok(rows) => {

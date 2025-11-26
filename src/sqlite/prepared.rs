@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
-use super::params::convert_params;
+use super::params::Params;
 use super::worker::SqliteConnection;
 
 /// Handle to a prepared `SQLite` statement owned by a worker connection.
@@ -27,7 +27,7 @@ impl SqlitePreparedStatement {
     /// Returns [`SqlMiddlewareDbError`] if the underlying worker fails to execute the statement or
     /// if result conversion encounters an issue.
     pub async fn query(&self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let params_owned = convert_params(params);
+        let params_owned = Params::convert(params)?.0;
         self.connection
             .execute_prepared_select(Arc::clone(&self.query), params_owned)
             .await
@@ -39,7 +39,7 @@ impl SqlitePreparedStatement {
     /// Returns [`SqlMiddlewareDbError`] if the worker cannot execute the statement or if the result
     /// cannot be converted into the expected row count.
     pub async fn execute(&self, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
-        let params_owned = convert_params(params);
+        let params_owned = Params::convert(params)?.0;
         self.connection
             .execute_prepared_dml(Arc::clone(&self.query), params_owned)
             .await

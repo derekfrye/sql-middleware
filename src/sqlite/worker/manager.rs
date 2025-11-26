@@ -144,6 +144,82 @@ impl SqliteWorker {
         .await
     }
 
+    pub(super) async fn begin_transaction(&self) -> Result<u64, SqlMiddlewareDbError> {
+        self.request(
+            |respond_to| Command::BeginTransaction { respond_to },
+            "SQLite worker dropped while beginning transaction",
+        )
+        .await
+    }
+
+    pub(super) async fn execute_tx_batch(
+        &self,
+        tx_id: u64,
+        query: String,
+    ) -> Result<(), SqlMiddlewareDbError> {
+        self.request(
+            |respond_to| Command::ExecuteTxBatch {
+                tx_id,
+                query,
+                respond_to,
+            },
+            "SQLite worker dropped while executing transactional batch",
+        )
+        .await
+    }
+
+    pub(super) async fn execute_tx_query(
+        &self,
+        tx_id: u64,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.request(
+            |respond_to| Command::ExecuteTxQuery {
+                tx_id,
+                query,
+                params,
+                respond_to,
+            },
+            "SQLite worker dropped while executing transactional query",
+        )
+        .await
+    }
+
+    pub(super) async fn execute_tx_dml(
+        &self,
+        tx_id: u64,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        self.request(
+            |respond_to| Command::ExecuteTxDml {
+                tx_id,
+                query,
+                params,
+                respond_to,
+            },
+            "SQLite worker dropped while executing transactional dml",
+        )
+        .await
+    }
+
+    pub(super) async fn commit_tx(&self, tx_id: u64) -> Result<(), SqlMiddlewareDbError> {
+        self.request(
+            |respond_to| Command::CommitTx { tx_id, respond_to },
+            "SQLite worker dropped while committing transaction",
+        )
+        .await
+    }
+
+    pub(super) async fn rollback_tx(&self, tx_id: u64) -> Result<(), SqlMiddlewareDbError> {
+        self.request(
+            |respond_to| Command::RollbackTx { tx_id, respond_to },
+            "SQLite worker dropped while rolling back transaction",
+        )
+        .await
+    }
+
     pub(super) async fn with_connection<F, R>(&self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,

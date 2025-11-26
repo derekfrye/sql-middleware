@@ -38,6 +38,34 @@ pub(super) enum Command {
         params: Vec<rusqlite::types::Value>,
         respond_to: oneshot::Sender<Result<usize, SqlMiddlewareDbError>>,
     },
+    BeginTransaction {
+        respond_to: oneshot::Sender<Result<u64, SqlMiddlewareDbError>>,
+    },
+    ExecuteTxBatch {
+        tx_id: u64,
+        query: String,
+        respond_to: oneshot::Sender<Result<(), SqlMiddlewareDbError>>,
+    },
+    ExecuteTxQuery {
+        tx_id: u64,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+        respond_to: oneshot::Sender<Result<ResultSet, SqlMiddlewareDbError>>,
+    },
+    ExecuteTxDml {
+        tx_id: u64,
+        query: Arc<String>,
+        params: Vec<rusqlite::types::Value>,
+        respond_to: oneshot::Sender<Result<usize, SqlMiddlewareDbError>>,
+    },
+    CommitTx {
+        tx_id: u64,
+        respond_to: oneshot::Sender<Result<(), SqlMiddlewareDbError>>,
+    },
+    RollbackTx {
+        tx_id: u64,
+        respond_to: oneshot::Sender<Result<(), SqlMiddlewareDbError>>,
+    },
     WithConnection {
         callback: BoxedCallback,
         respond_to: oneshot::Sender<BoxedResponse>,

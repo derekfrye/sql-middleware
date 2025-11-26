@@ -5,9 +5,7 @@ use sql_middleware::{
         MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
 };
-use sql_middleware::sqlite::{
-    SqliteParamsExecute, SqliteParamsQuery, build_result_set as sqlite_build_result_set,
-};
+use sql_middleware::sqlite::{Params as SqliteParams, build_result_set as sqlite_build_result_set};
 use sql_middleware::postgres::{Params as PostgresParams, build_result_set as postgres_build_result_set};
 use tokio::runtime::Runtime;
 
@@ -312,11 +310,12 @@ async fn run_test_logic(
                         AnyConnWrapper::Sqlite(sql_conn) => {
                             let tx = sql_conn.transaction()?;
                             for param in params {
-                                let converted_params = convert_sql_params::<SqliteParamsExecute>(
+                                let converted_params = convert_sql_params::<SqliteParams>(
                                     &param,
                                     ConversionMode::Execute,
                                 )?;
-                                tx.execute(&parameterized_query, converted_params.0)?;
+                                let refs = converted_params.as_refs();
+                                tx.execute(&parameterized_query, &refs[..])?;
                             }
                             tx.commit()?;
                             Ok(())
@@ -408,12 +407,11 @@ async fn run_test_logic(
                                 }
                                 {
                                     for param in params {
-                                        let converted_params = convert_sql_params::<
-                                            SqliteParamsExecute,
-                                        >(
+                                        let converted_params = convert_sql_params::<SqliteParams>(
                                             &param, ConversionMode::Execute
                                         )?;
-                                        tx.execute(&parameterized_query, converted_params.0)?;
+                                        let refs = converted_params.as_refs();
+                                        tx.execute(&parameterized_query, &refs[..])?;
                                     }
                                 }
                                 {
@@ -492,12 +490,12 @@ async fn run_test_logic(
                 .with_sqlite_connection(move |xxx| {
                     let tx = xxx.transaction()?;
                     {
-                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                        let converted_params = convert_sql_params::<SqliteParams>(
                             &query_and_params.params,
                             ConversionMode::Query,
                         )?;
                         let mut stmt = tx.prepare(&query_and_params.query)?;
-                        sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                        sqlite_build_result_set(&mut stmt, converted_params.as_values())?;
                     }
                     // should be able to read that val even tho we're not done w tx
                     {
@@ -505,14 +503,13 @@ async fn run_test_logic(
                             query: "select count(*) as cnt from test;".to_string(),
                             params: vec![],
                         };
-                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                        let converted_params = convert_sql_params::<SqliteParams>(
                             &query_and_params_vec.params,
                             ConversionMode::Query,
                         )?;
                         let mut stmt = tx.prepare(&query_and_params_vec.query)?;
-                        let result_set = {
-                            sqlite_build_result_set(&mut stmt, &converted_params.0)?
-                        };
+                        let result_set =
+                            sqlite_build_result_set(&mut stmt, converted_params.as_values())?;
                         assert_eq!(result_set.results.len(), 1);
                         assert_eq!(
                             *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
@@ -520,12 +517,12 @@ async fn run_test_logic(
                         );
                     }
                     {
-                        let converted_params = convert_sql_params::<SqliteParamsQuery>(
+                        let converted_params = convert_sql_params::<SqliteParams>(
                             &query_and_params.params,
                             ConversionMode::Query,
                         )?;
                         let mut stmt = tx.prepare(&query_and_params.query)?;
-                        sqlite_build_result_set(&mut stmt, &converted_params.0)?;
+                        sqlite_build_result_set(&mut stmt, converted_params.as_values())?;
                     }
                     tx.commit()?;
                     Ok::<_, SqlMiddlewareDbError>(result_set)

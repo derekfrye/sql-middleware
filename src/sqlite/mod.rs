@@ -11,16 +11,19 @@ pub mod executor;
 pub mod params;
 pub mod prepared;
 pub mod query;
+pub mod transaction;
 pub mod worker;
 
 // Re-export the public API
 #[allow(unused_imports)]
 pub use executor::{execute_batch, execute_dml, execute_select};
 #[allow(unused_imports)]
-pub use params::{SqliteParamsExecute, SqliteParamsQuery};
-#[allow(unused_imports)]
-pub use prepared::SqlitePreparedStatement;
+pub use params::Params;
 #[allow(unused_imports)]
 pub use query::build_result_set;
 #[allow(unused_imports)]
+pub use transaction::{Prepared, Tx, begin_transaction};
+#[allow(unused_imports)]
 pub use worker::SqliteConnection;
+#[allow(unused_imports)]
+pub use prepared::SqlitePreparedStatement;
