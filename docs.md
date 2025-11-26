@@ -1,5 +1,7 @@
     # SQL Middleware - A lightweight wrapper SQL backends
 
+*Keywords: postgres, sqlite, libsql, turso, deadpool, async, pool, query builder*
+
 This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
 similar, async-compatible API consistent across databases.
 

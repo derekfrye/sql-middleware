@@ -1,4 +1,4 @@
-use super::transaction::{begin_transaction, Tx};
+use super::transaction::{Tx, begin_transaction};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use deadpool_postgres::Object;
 

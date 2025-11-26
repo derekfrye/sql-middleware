@@ -1,7 +1,7 @@
 #![cfg(feature = "sqlite")]
 
+use sql_middleware::convert_sql_params;
 use sql_middleware::prelude::*;
-use sql_middleware::{convert_sql_params};
 use sql_middleware::sqlite::Params as SqliteParams;
 
 #[test]

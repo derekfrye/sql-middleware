@@ -1,10 +1,10 @@
-// PostgreSQL module - provides PostgreSQL-specific database functionality
-//
-// This module is split into several sub-modules for better organization:
-// - config: Connection configuration and pool setup
-// - params: Parameter conversion between middleware and PostgreSQL types
-// - query: Result extraction and building
-// - executor: Database operation execution
+//! PostgreSQL backend glue.
+//!
+//! Submodules mirror the SQLite/Turso/LibSQL structure for consistency:
+//! - `config`: connection configuration and pool setup
+//! - `params`: parameter conversion between middleware and PostgreSQL types
+//! - `query`: result extraction and building
+//! - `executor`: database operation execution
 
 pub mod config;
 pub mod executor;

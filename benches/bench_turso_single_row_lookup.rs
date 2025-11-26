@@ -414,17 +414,14 @@ fn benchmark_pool_acquire(
         b.to_async(runtime).iter_custom(move |iters| {
             let pool = config_and_pool.clone();
             async move {
-            let mut total = Duration::default();
-            for _ in 0..iters {
-                let start = Instant::now();
-                let conn = pool
-                    .get_connection()
-                    .await
-                    .expect("checkout connection");
-                drop(conn);
-                total += start.elapsed();
-            }
-            total
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    let conn = pool.get_connection().await.expect("checkout connection");
+                    drop(conn);
+                    total += start.elapsed();
+                }
+                total
             }
         });
     });
@@ -443,24 +440,21 @@ fn benchmark_middleware_prepare(
         b.to_async(runtime).iter_custom(move |iters| {
             let pool = config_and_pool.clone();
             async move {
-            let mut total = Duration::default();
-            for _ in 0..iters {
-                let mut conn = pool
-                    .get_connection()
-                    .await
-                    .expect("checkout connection");
-                let start = Instant::now();
-                let prepared = conn
-                    .prepare_turso_statement(
-                        "SELECT id, name, score, active FROM test WHERE id = ?1",
-                    )
-                    .await
-                    .expect("prepare statement");
-                total += start.elapsed();
-                drop(prepared);
-                drop(conn);
-            }
-            total
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = pool.get_connection().await.expect("checkout connection");
+                    let start = Instant::now();
+                    let prepared = conn
+                        .prepare_turso_statement(
+                            "SELECT id, name, score, active FROM test WHERE id = ?1",
+                        )
+                        .await
+                        .expect("prepare statement");
+                    total += start.elapsed();
+                    drop(prepared);
+                    drop(conn);
+                }
+                total
             }
         });
     });
@@ -479,22 +473,19 @@ fn benchmark_middleware_interact_only(
         b.to_async(runtime).iter_custom(move |iters| {
             let pool = config_and_pool.clone();
             async move {
-            let mut total = Duration::default();
-            let mut conn = pool
-                .get_connection()
-                .await
-                .expect("checkout connection");
-            for _ in 0..iters {
-                let start = Instant::now();
-                let _ = conn
-                    .query("SELECT 1 WHERE 0 = 1")
-                    .select()
-                    .await
-                    .expect("execute noop select");
-                total += start.elapsed();
-            }
-            drop(conn);
-            total
+                let mut total = Duration::default();
+                let mut conn = pool.get_connection().await.expect("checkout connection");
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    let _ = conn
+                        .query("SELECT 1 WHERE 0 = 1")
+                        .select()
+                        .await
+                        .expect("execute noop select");
+                    total += start.elapsed();
+                }
+                drop(conn);
+                total
             }
         });
     });

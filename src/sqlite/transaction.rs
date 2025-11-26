@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::middleware::{ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
+};
 
 use super::params::Params;
 use super::worker::SqliteConnection;
@@ -88,9 +90,7 @@ impl Tx {
     /// # Errors
     /// Returns an error if execution fails.
     pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        self.conn
-            .execute_tx_batch(self.tx_id, sql.to_owned())
-            .await
+        self.conn.execute_tx_batch(self.tx_id, sql.to_owned()).await
     }
 
     /// Commit the transaction.

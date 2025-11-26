@@ -32,10 +32,19 @@ pub enum AnyConnWrapper<'a> {
     Turso(&'a turso::Connection),
 }
 
-/// A query and its parameters bundled together
+/// A SQL string and its bound parameters bundled together.
 ///
-/// This type makes it easier to pass around a SQL query and its
-/// parameters as a single unit.
+/// Handy for helpers that need to return both query text and params without
+/// losing alignment with placeholder translation:
+/// ```rust
+/// use sql_middleware::prelude::*;
+///
+/// let qp = QueryAndParams::new(
+///     "INSERT INTO t (id, name) VALUES ($1, $2)",
+///     vec![RowValues::Int(1), RowValues::Text("alice".into())],
+/// );
+/// # let _ = qp;
+/// ```
 #[derive(Debug, Clone)]
 pub struct QueryAndParams {
     /// The SQL query string

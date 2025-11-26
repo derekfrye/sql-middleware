@@ -1,11 +1,11 @@
-// MSSQL module - provides SQL Server-specific database functionality
-//
-// This module is split into several sub-modules for better organization:
-// - config: Connection configuration and pool setup
-// - params: Parameter conversion between middleware and SQL Server types
-// - query: Result extraction, building, and query binding
-// - executor: Database operation execution
-// - client: Raw client creation utilities
+//! SQL Server backend glue.
+//!
+//! Submodules:
+//! - `config`: connection configuration and pool setup
+//! - `params`: parameter conversion between middleware and SQL Server types
+//! - `query`: result extraction, building, and query binding
+//! - `executor`: database operation execution
+//! - `client`: raw client creation utilities
 
 pub mod client;
 pub mod config;

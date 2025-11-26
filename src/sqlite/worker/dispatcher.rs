@@ -119,7 +119,9 @@ fn run_tx_loop(tx_id: u64, mut tx: rusqlite::Transaction<'_>, receiver: &Receive
                     let _ = respond_to.send(Err(tx_id_mismatch(tx_id, id)));
                     continue;
                 }
-                let res = tx.execute_batch(&query).map_err(SqlMiddlewareDbError::SqliteError);
+                let res = tx
+                    .execute_batch(&query)
+                    .map_err(SqlMiddlewareDbError::SqliteError);
                 let _ = respond_to.send(res);
             }
             Command::ExecuteTxQuery {
@@ -148,7 +150,10 @@ fn run_tx_loop(tx_id: u64, mut tx: rusqlite::Transaction<'_>, receiver: &Receive
                 let res = execute_tx_dml(&mut tx, &query, &params);
                 let _ = respond_to.send(res);
             }
-            Command::CommitTx { tx_id: id, respond_to } => {
+            Command::CommitTx {
+                tx_id: id,
+                respond_to,
+            } => {
                 if id != tx_id {
                     let _ = respond_to.send(Err(tx_id_mismatch(tx_id, id)));
                     continue;
@@ -157,7 +162,10 @@ fn run_tx_loop(tx_id: u64, mut tx: rusqlite::Transaction<'_>, receiver: &Receive
                 let _ = respond_to.send(res);
                 break;
             }
-            Command::RollbackTx { tx_id: id, respond_to } => {
+            Command::RollbackTx {
+                tx_id: id,
+                respond_to,
+            } => {
                 if id != tx_id {
                     let _ = respond_to.send(Err(tx_id_mismatch(tx_id, id)));
                     continue;
@@ -231,7 +239,10 @@ fn execute_dml(
     })
 }
 
-fn prepare_statement(conn: &mut rusqlite::Connection, query: &Arc<String>) -> Result<(), SqlMiddlewareDbError> {
+fn prepare_statement(
+    conn: &mut rusqlite::Connection,
+    query: &Arc<String>,
+) -> Result<(), SqlMiddlewareDbError> {
     let _ = conn.prepare_cached(query.as_ref())?;
     Ok(())
 }
@@ -285,7 +296,10 @@ fn transactional_dml<F>(
     action: F,
 ) -> Result<usize, SqlMiddlewareDbError>
 where
-    F: FnOnce(&rusqlite::Transaction<'_>, &[&dyn rusqlite::ToSql]) -> Result<usize, SqlMiddlewareDbError>,
+    F: FnOnce(
+        &rusqlite::Transaction<'_>,
+        &[&dyn rusqlite::ToSql],
+    ) -> Result<usize, SqlMiddlewareDbError>,
 {
     let tx = conn.transaction()?;
     let param_refs = values_as_tosql(params);

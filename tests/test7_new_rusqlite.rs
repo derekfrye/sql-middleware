@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tempfile::tempdir;
 use sql_middleware::prelude::*;
-use sql_middleware::sqlite::{begin_transaction, Params as SqliteParams};
+use sql_middleware::sqlite::{Params as SqliteParams, begin_transaction};
+use tempfile::tempdir;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;
 
@@ -24,8 +24,7 @@ fn unique_db_path(prefix: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error::Error>> {
-    let cap =
-        Arc::new(ConfigAndPool::new_sqlite(unique_db_path("stress").to_string()).await?);
+    let cap = Arc::new(ConfigAndPool::new_sqlite(unique_db_path("stress").to_string()).await?);
     let sem = Arc::new(Semaphore::new(1));
     let mut conn = cap.get_connection().await?;
     apply_pragmas(&mut conn).await?;
@@ -123,7 +122,9 @@ async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Er
             .await
             .unwrap_err();
         tx.rollback().await?;
-        assert!(format!("{err}").contains("SQLite transaction in progress; operation not permitted"));
+        assert!(
+            format!("{err}").contains("SQLite transaction in progress; operation not permitted")
+        );
     } else {
         panic!("expected sqlite connection");
     }
@@ -225,7 +226,10 @@ async fn sqlite_tx_rejects_second_begin() -> Result<(), Box<dyn std::error::Erro
         tx.commit().await?;
 
         // After commit, reads should succeed again.
-        let rs = conn.query("SELECT COUNT(*) AS cnt FROM t4").select().await?;
+        let rs = conn
+            .query("SELECT COUNT(*) AS cnt FROM t4")
+            .select()
+            .await?;
         let _ = rs.results[0].get("cnt").unwrap().as_int().unwrap();
     } else {
         panic!("expected sqlite connection");

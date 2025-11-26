@@ -10,6 +10,15 @@ pub enum PlaceholderStyle {
 }
 
 /// How to resolve translation for a call relative to the pool default.
+///
+/// # Examples
+/// ```rust
+/// use sql_middleware::prelude::*;
+///
+/// let options = QueryOptions::default()
+///     .with_translation(TranslationMode::ForceOn);
+/// # let _ = options;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranslationMode {
     /// Follow the pool's default setting.
@@ -77,11 +86,7 @@ impl QueryOptions {
 /// ```
 /// Returns a borrowed `Cow` when no changes are needed.
 #[must_use]
-pub fn translate_placeholders(
-    sql: &str,
-    target: PlaceholderStyle,
-    enabled: bool,
-) -> Cow<'_, str> {
+pub fn translate_placeholders(sql: &str, target: PlaceholderStyle, enabled: bool) -> Cow<'_, str> {
     if !enabled {
         return Cow::Borrowed(sql);
     }
@@ -172,7 +177,9 @@ pub fn translate_placeholders(
             }
         }
 
-        if let Some(ref mut buf) = out && !replaced {
+        if let Some(ref mut buf) = out
+            && !replaced
+        {
             buf.push(b as char);
         }
 

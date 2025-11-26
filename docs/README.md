@@ -18,14 +18,23 @@ This middleware performance is about 14% faster than SQlx for at least some SQLi
 
 More examples available in [tests](../tests/). Also in-use with a tiny little personal website app, [rusty-golf](https://github.com/derekfrye/rusty-golf).
 
-### Importing
+## Feature Flags
 
-You can use the prelude to import everything you need, or import item by item.
+By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
 
-```rust
-use sql_middleware::prelude::*;
+```toml
+# Only include SQLite and Turso support
+sql-middleware = { version = "0", features = ["sqlite", "turso"] }
 ```
 
+Available features:
+- `sqlite`: Enables SQLite support
+- `postgres`: Enables PostgreSQL support
+- `mssql`: Enables SQL Server support
+- `libsql`: Enables LibSQL support (local or remote)
+- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. No deadpool support (yet).
+- `default`: Enables common backends (sqlite, postgres). Enable others as needed.
+- `test-utils`: Enables test utilities for internal testing
 
 ### Parameterized queries for reading or changing data
 
@@ -122,100 +131,6 @@ pub async fn get_scores_from_db(
         score_struct: z?,
     })
 }
-```
-
-### Get a connection from the pool
-
-Similar api regardless of db backend.
-
-<table>
-<tr>
-<th>
-PostgreSQL
-</th>
-<th>
-SQLite / LibSQL / Turso
-</th>
-</tr>
-<tr>
-<td>
-
-```rust
-let mut cfg = deadpool_postgres
-    ::Config::new();
-cfg.dbname = Some("test_db"
-    .to_string());
-cfg.host = Some("192.168.2.1"
-    .to_string());
-cfg.port = Some(5432);
-cfg.user = Some("test user"
-    .to_string());
-cfg.password = Some("passwd"
-    .to_string());
-
-let c = ConfigAndPool
-    ::new_postgres(cfg)
-    .await?;
-let mut conn = c.get_connection()
-    .await?;
-
-```
-
-</td>
-<td>
-
-```rust
-let cfg = 
-    "file::memory:?cache=shared"
-    .to_string();
-// Or file-based:
-// let cfg = "./data.db".to_string();
-
-
-
-
-
-// same api for connection
-// sqlite just has fewer required 
-// config items (no port, etc.)
-let c = ConfigAndPool::
-    new_sqlite(cfg)
-    .await?;
-let mut conn = c.get_connection()
-    .await?;
-
-```
-
-</td>
-</tr>
-</table>
-
-Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the constructor as needed: `new_sqlite(path)`, `new_libsql(path)`, or `new_turso(path)`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
-
-SQLite pooling now uses a dedicated worker thread so blocking `rusqlite` calls do not hold the async runtime. Two helpers expose that surface when you need it:
-
-```rust
-use sql_middleware::prelude::*;
-
-let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
-let mut conn = cap.get_connection().await?;
-
-// Borrow the raw rusqlite::Connection for batched work on the worker thread.
-conn.with_sqlite_connection(|raw| {
-    let tx = raw.transaction()?;
-    tx.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);")?;
-    tx.execute("INSERT INTO t (name) VALUES (?1)", ["alice"])?;
-    tx.commit()?;
-    Ok::<_, SqlMiddlewareDbError>(())
-})
-.await?;
-
-// Prepare once and reuse the cached statement via the worker.
-let prepared = conn
-    .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
-    .await?;
-let rows = prepared.query(&[RowValues::Int(1)]).await?;
-assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
 ```
 
 ### Batch query w/o params
@@ -459,24 +374,6 @@ let rows = conn
     .select()
     .await?;
 ```
-
-## Feature Flags
-
-By default, `postgres` and `sqlite` database backends are enabled. You can selectively enable only the backends you need:
-
-```toml
-# Only include SQLite and Turso support
-sql-middleware = { version = "0", features = ["sqlite", "turso"] }
-```
-
-Available features:
-- `sqlite`: Enables SQLite support
-- `postgres`: Enables PostgreSQL support
-- `mssql`: Enables SQL Server support
-- `libsql`: Enables LibSQL support (local or remote)
-- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. No deadpool support (yet).
-- `default`: Enables common backends (sqlite, postgres). Enable others as needed.
-- `test-utils`: Enables test utilities for internal testing
 
 ## Developing and Testing
 

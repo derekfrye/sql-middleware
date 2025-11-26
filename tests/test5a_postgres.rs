@@ -1,11 +1,11 @@
 #![cfg(feature = "test-utils")]
 
+use sql_middleware::convert_sql_params;
+use sql_middleware::postgres::Params as PostgresParams;
 use sql_middleware::prelude::*;
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
-use sql_middleware::{convert_sql_params};
-use sql_middleware::postgres::Params as PostgresParams;
 
 #[test]
 fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {

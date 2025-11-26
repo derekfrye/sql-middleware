@@ -1,3 +1,7 @@
+use sql_middleware::postgres::{
+    Params as PostgresParams, build_result_set as postgres_build_result_set,
+};
+use sql_middleware::sqlite::{Params as SqliteParams, build_result_set as sqlite_build_result_set};
 use sql_middleware::{
     SqlMiddlewareDbError, convert_sql_params,
     middleware::{
@@ -5,8 +9,6 @@ use sql_middleware::{
         MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
 };
-use sql_middleware::sqlite::{Params as SqliteParams, build_result_set as sqlite_build_result_set};
-use sql_middleware::postgres::{Params as PostgresParams, build_result_set as postgres_build_result_set};
 use tokio::runtime::Runtime;
 
 fn unique_path(prefix: &str) -> String {
@@ -408,7 +410,8 @@ async fn run_test_logic(
                                 {
                                     for param in params {
                                         let converted_params = convert_sql_params::<SqliteParams>(
-                                            &param, ConversionMode::Execute
+                                            &param,
+                                            ConversionMode::Execute,
                                         )?;
                                         let refs = converted_params.as_refs();
                                         tx.execute(&parameterized_query, &refs[..])?;

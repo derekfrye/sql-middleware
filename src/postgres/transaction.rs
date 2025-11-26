@@ -5,7 +5,7 @@ use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
 };
 
-use super::{build_result_set, Params};
+use super::{Params, build_result_set};
 
 /// Lightweight transaction wrapper for Postgres.
 pub struct Tx<'a> {
@@ -48,10 +48,7 @@ impl<'a> Tx<'a> {
         let converted =
             <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
 
-        let rows = self
-            .tx
-            .execute(&prepared.stmt, converted.as_refs())
-            .await?;
+        let rows = self.tx.execute(&prepared.stmt, converted.as_refs()).await?;
 
         usize::try_from(rows).map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))

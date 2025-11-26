@@ -143,6 +143,21 @@ impl MiddlewarePoolConnection {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not `SQLite`.
+    ///
+    /// # Examples
+    /// ```rust,no_run
+    /// use sql_middleware::prelude::*;
+    ///
+    /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
+    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let mut conn = cap.get_connection().await?;
+    /// conn.with_sqlite_connection(|raw| {
+    ///     raw.execute_batch("CREATE TABLE t (id INTEGER, name TEXT);")?;
+    ///     Ok::<_, SqlMiddlewareDbError>(())
+    /// })
+    /// .await?;
+    /// # Ok(()) }
+    /// ```
     #[cfg(feature = "sqlite")]
     pub async fn with_sqlite_connection<F, R>(&mut self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
@@ -162,6 +177,24 @@ impl MiddlewarePoolConnection {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the underlying connection is not
     /// `SQLite`, or propagates any preparation error reported by the worker thread.
+    ///
+    /// # Examples
+    /// ```rust,no_run
+    /// use sql_middleware::prelude::*;
+    ///
+    /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
+    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let mut conn = cap.get_connection().await?;
+    /// conn.execute_batch("CREATE TABLE t (id INTEGER, name TEXT)").await?;
+    ///
+    /// let prepared = conn
+    ///     .prepare_sqlite_statement("INSERT INTO t (id, name) VALUES (?1, ?2)")
+    ///     .await?;
+    /// prepared
+    ///     .execute(&[RowValues::Int(1), RowValues::Text("alice".into())])
+    ///     .await?;
+    /// # Ok(()) }
+    /// ```
     #[cfg(feature = "sqlite")]
     pub async fn prepare_sqlite_statement(
         &mut self,

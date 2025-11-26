@@ -55,6 +55,24 @@ impl MiddlewarePoolConnection {
     }
 
     /// Start a fluent query builder that can translate placeholders before executing.
+    ///
+    /// # Examples
+    /// ```rust,no_run
+    /// use sql_middleware::prelude::*;
+    ///
+    /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
+    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let mut conn = cap.get_connection().await?;
+    /// conn.execute_batch("CREATE TABLE t (id INTEGER)").await?;
+    ///
+    /// let rows = conn
+    ///     .query("SELECT id FROM t WHERE id = ?1")
+    ///     .params(&[RowValues::Int(1)])
+    ///     .select()
+    ///     .await?;
+    /// assert!(rows.results.is_empty());
+    /// # Ok(()) }
+    /// ```
     pub fn query<'a>(&'a mut self, query: &'a str) -> QueryBuilder<'a, 'a> {
         QueryBuilder::new(self, query)
     }

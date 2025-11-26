@@ -97,9 +97,7 @@ fn turso_translation_skips_comments_and_literals() -> Result<(), Box<dyn std::er
 
         // Comment should not be translated; $1 outside comment should be.
         let rs = conn
-            .query(
-                "SELECT 1 /* ?1 in block comment */ + $1 -- $2 in line comment\n AS val;",
-            )
+            .query("SELECT 1 /* ?1 in block comment */ + $1 -- $2 in line comment\n AS val;")
             .translation(TranslationMode::ForceOn)
             .params(&[RowValues::Int(3)])
             .select()
@@ -112,7 +110,10 @@ fn turso_translation_skips_comments_and_literals() -> Result<(), Box<dyn std::er
         let rs = conn
             .query("SELECT 'O''Reilly || ?1$1' || $2 AS val;")
             .translation(TranslationMode::ForceOn)
-            .params(&[RowValues::Text("ignored".into()), RowValues::Text("Y".into())])
+            .params(&[
+                RowValues::Text("ignored".into()),
+                RowValues::Text("Y".into()),
+            ])
             .select()
             .await?;
 

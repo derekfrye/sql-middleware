@@ -4,10 +4,20 @@ use serde_json::Value as JsonValue;
 
 use crate::error::SqlMiddlewareDbError;
 
-/// Values that can be stored in a database row or used as query parameters
+/// Values that can be stored in a database row or used as query parameters.
 ///
-/// This enum provides a unified representation of database values across
-/// different database engines.
+/// Reuse the same enum across backends so helper functions do not need to branch on driver
+/// types:
+/// ```rust
+/// use sql_middleware::prelude::*;
+///
+/// let params = vec![
+///     RowValues::Int(1),
+///     RowValues::Text("alice".into()),
+///     RowValues::Bool(true),
+/// ];
+/// # let _ = params;
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum RowValues {
     /// Integer value (64-bit)
