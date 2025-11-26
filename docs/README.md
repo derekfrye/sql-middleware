@@ -6,13 +6,13 @@ Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crate
 
 Motivated from trying SQLx and not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192). 
 
-This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. (That could be my misunderstanding of SQLx rather than an inherent performance difference.) For current evidence, see our [benchmark results](./bench_results/index.md).
+This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. (That could be my misunderstanding of SQLx rather than an inherent performance difference.) For current evidence, see our [benchmark results](/bench_results/index.md).
 
 ## Goals
 * Convenience functions for common async SQL query patterns
 * Keep underlying flexibility of `deadpool` connection pooling
 * Minimal overhead (ideally, just syntax sugar/wrapper fns)
-* See [Benchmarks](./Benchmarks.md) for details on performance testing.
+* See [Benchmarks](/docs/Benchmarks.md) for details on performance testing.
 
 ## Examples
 
@@ -156,8 +156,7 @@ cfg.password = Some("passwd"
 let c = ConfigAndPool
     ::new_postgres(cfg)
     .await?;
-let conn = MiddlewarePool
-    ::get_connection(&c.pool)
+let mut conn = c.get_connection()
     .await?;
 
 ```
@@ -182,8 +181,7 @@ let cfg =
 let c = ConfigAndPool::
     new_sqlite(cfg)
     .await?;
-let conn = MiddlewarePool
-    ::get_connection(&c.pool)
+let mut conn = c.get_connection()
     .await?;
 
 ```
@@ -193,6 +191,32 @@ let conn = MiddlewarePool
 </table>
 
 Note: The SQLite example applies to SQLite, LibSQL, and Turso. Swap the constructor as needed: `new_sqlite(path)`, `new_libsql(path)`, or `new_turso(path)`. For Turso, there’s no deadpool pooling; `get_connection` creates a fresh connection.
+
+SQLite pooling now uses a dedicated worker thread so blocking `rusqlite` calls do not hold the async runtime. Two helpers expose that surface when you need it:
+
+```rust
+use sql_middleware::prelude::*;
+
+let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+let mut conn = cap.get_connection().await?;
+
+// Borrow the raw rusqlite::Connection for batched work on the worker thread.
+conn.with_sqlite_connection(|raw| {
+    let tx = raw.transaction()?;
+    tx.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);")?;
+    tx.execute("INSERT INTO t (name) VALUES (?1)", ["alice"])?;
+    tx.commit()?;
+    Ok::<_, SqlMiddlewareDbError>(())
+})
+.await?;
+
+// Prepare once and reuse the cached statement via the worker.
+let prepared = conn
+    .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
+    .await?;
+let rows = prepared.query(&[RowValues::Int(1)]).await?;
+assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
+```
 
 ### Batch query w/o params
 

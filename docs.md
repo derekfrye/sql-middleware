@@ -79,6 +79,34 @@ pub async fn set_scores_in_db(
         .await
 }
 
+### SQLite worker helpers
+
+SQLite pooling runs through a worker thread so blocking `rusqlite` calls never stall the async runtime. Two helpers expose that surface:
+
+```rust,no_run
+use sql_middleware::prelude::*;
+
+let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+let mut conn = cap.get_connection().await?;
+
+// Borrow the raw rusqlite::Connection on the worker for batched work.
+conn.with_sqlite_connection(|raw| {
+    let tx = raw.transaction()?;
+    tx.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);")?;
+    tx.execute("INSERT INTO t (name) VALUES (?1)", ["alice"])?;
+    tx.commit()?;
+    Ok::<_, SqlMiddlewareDbError>(())
+})
+.await?;
+
+// Prepare once and reuse via the worker queue.
+let prepared = conn
+    .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
+    .await?;
+let rows = prepared.query(&[RowValues::Int(1)]).await?;
+assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
+```
+
 // For more in-depth examples (batch queries, query builder usage, benchmarks),
 // see the project README: https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md
 ```
