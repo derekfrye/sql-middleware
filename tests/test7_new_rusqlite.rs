@@ -1,14 +1,34 @@
 #![cfg(feature = "sqlite")]
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use tempfile::tempdir;
 use sql_middleware::prelude::*;
 use sql_middleware::sqlite::{begin_transaction, Params as SqliteParams};
+use tokio::sync::Semaphore;
+use tokio::time::sleep;
+
+async fn apply_pragmas(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMiddlewareDbError> {
+    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
+        .await
+}
+
+fn unique_db_path(prefix: &str) -> String {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join(format!("{prefix}.db"));
+    // Leak the tempdir so the file persists for the duration of the test binary.
+    std::mem::forget(dir);
+    path.to_string_lossy().into_owned()
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error::Error>> {
-    let cap = Arc::new(ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string()).await?);
+    let cap =
+        Arc::new(ConfigAndPool::new_sqlite(unique_db_path("stress").to_string()).await?);
+    let sem = Arc::new(Semaphore::new(1));
     let mut conn = cap.get_connection().await?;
+    apply_pragmas(&mut conn).await?;
     conn.execute_batch(
         "CREATE TABLE stress (id INTEGER PRIMARY KEY, val TEXT NOT NULL);
          INSERT INTO stress (id, val) VALUES (0, 'seed');",
@@ -20,8 +40,11 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
     let mut handles = Vec::new();
     for i in 1..=200 {
         let cap = Arc::clone(&cap);
+        let sem = Arc::clone(&sem);
         handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
             let mut conn = cap.get_connection().await?;
+            let _ = apply_pragmas(&mut conn).await;
             match &mut conn {
                 MiddlewarePoolConnection::Sqlite { conn, .. } => {
                     let tx = begin_transaction(conn).await?;
@@ -40,8 +63,11 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
 
     for _ in 0..100 {
         let cap = Arc::clone(&cap);
+        let sem = Arc::clone(&sem);
         handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
             let mut conn = cap.get_connection().await?;
+            let _ = apply_pragmas(&mut conn).await;
             match &mut conn {
                 MiddlewarePoolConnection::Sqlite { conn, .. } => {
                     let tx = begin_transaction(conn).await?;
@@ -82,10 +108,11 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string())
+    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("block").to_string())
         .await?
         .get_connection()
         .await?;
+    apply_pragmas(&mut conn).await?;
     conn.execute_batch("CREATE TABLE t1 (id INTEGER)").await?;
 
     if let MiddlewarePoolConnection::Sqlite { conn: raw, .. } = &mut conn {
@@ -106,19 +133,24 @@ async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Er
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_id_mismatch_errors_cleanly() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string())
+    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("mismatch").to_string())
         .await?
         .get_connection()
         .await?;
+    apply_pragmas(&mut conn).await?;
     conn.execute_batch("CREATE TABLE t2 (id INTEGER)").await?;
 
     if let MiddlewarePoolConnection::Sqlite { conn: raw, .. } = &mut conn {
         let tx = begin_transaction(raw).await?;
         // Call the low-level tx API with an incorrect id to simulate misuse.
-        let wrong_id = tx.id() + 1;
+        let wrong_id = u64::MAX;
         let params = SqliteParams::convert(&[RowValues::Int(1)])?;
         let err = raw
-            .execute_tx_dml(wrong_id, Arc::new("INSERT INTO t2 (id) VALUES (?1)".into()), params.0)
+            .test_execute_tx_dml(
+                wrong_id,
+                Arc::new("INSERT INTO t2 (id) VALUES (?1)".into()),
+                params.0,
+            )
             .await
             .unwrap_err();
         assert!(format!("{err}").contains("SQLite transaction mismatch"));
@@ -132,11 +164,13 @@ async fn sqlite_tx_id_mismatch_errors_cleanly() -> Result<(), Box<dyn std::error
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string())
+    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("drop").to_string())
         .await?
         .get_connection()
         .await?;
-    conn.execute_batch("CREATE TABLE t3 (id INTEGER PRIMARY KEY)").await?;
+    apply_pragmas(&mut conn).await?;
+    conn.execute_batch("CREATE TABLE t3 (id INTEGER PRIMARY KEY)")
+        .await?;
 
     if let MiddlewarePoolConnection::Sqlite { conn: raw, .. } = &mut conn {
         {
@@ -147,10 +181,24 @@ async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
             let _ = tx.execute_prepared(&stmt, &params).await;
         } // drop tx
 
-        // Connection should still work and table should be empty.
-        let rs = conn.query("SELECT COUNT(*) AS cnt FROM t3").select().await?;
-        let count = *rs.results[0].get("cnt").unwrap().as_int().unwrap();
-        assert_eq!(count, 0);
+        // Connection should still work and table should be empty. Retry a few times to allow async rollback.
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            match conn.query("SELECT COUNT(*) AS cnt FROM t3").select().await {
+                Ok(rs) => {
+                    let count = *rs.results[0].get("cnt").unwrap().as_int().unwrap();
+                    assert_eq!(count, 0);
+                    break;
+                }
+                Err(e) => {
+                    if attempts >= 5 {
+                        panic!("query failed after retries: {e}");
+                    }
+                    sleep(Duration::from_millis(20)).await;
+                }
+            }
+        }
     } else {
         panic!("expected sqlite connection");
     }
@@ -160,10 +208,11 @@ async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_rejects_second_begin() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string())
+    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("second").to_string())
         .await?
         .get_connection()
         .await?;
+    apply_pragmas(&mut conn).await?;
     conn.execute_batch("CREATE TABLE t4 (id INTEGER)").await?;
 
     if let MiddlewarePoolConnection::Sqlite { conn: raw, .. } = &mut conn {

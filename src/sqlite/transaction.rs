@@ -33,9 +33,9 @@ pub async fn begin_transaction(conn: &SqliteConnection) -> Result<Tx, SqlMiddlew
 }
 
 impl Tx {
-    /// Expose the underlying transaction id for internal diagnostics/tests.
-    #[must_use]
-    pub fn id(&self) -> u64 {
+    /// Test hook to fetch the underlying transaction id (not part of the public API surface).
+    #[doc(hidden)]
+    pub fn test_id(&self) -> u64 {
         self.tx_id
     }
 
@@ -119,18 +119,13 @@ impl Drop for Tx {
         if self.completed.load(Ordering::SeqCst) {
             return;
         }
-        // Best-effort rollback on drop to avoid leaving the worker in a stuck transaction loop.
+        // Best-effort async rollback to avoid leaving the worker in a stuck transaction loop.
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let conn = self.conn.clone();
             let tx_id = self.tx_id;
-            let _ = handle.block_on(async move { conn.rollback_tx(tx_id).await });
-        } else if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            let conn = self.conn.clone();
-            let tx_id = self.tx_id;
-            let _ = rt.block_on(async move { conn.rollback_tx(tx_id).await });
+            handle.spawn(async move {
+                let _ = conn.rollback_tx(tx_id).await;
+            });
         }
     }
 }

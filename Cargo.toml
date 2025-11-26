@@ -69,6 +69,7 @@ rand = "0"
 rand_chacha = "0"
 sql-middleware = { path = ".", features = ["benchmarks", "mssql", "libsql", "turso", "test-utils"] }
 rusqlite = "0"
+tempfile = "3"
 
 [[bench]]
 name = "database_benchmark"
