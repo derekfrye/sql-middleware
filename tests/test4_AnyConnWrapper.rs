@@ -1,12 +1,14 @@
 use sql_middleware::{
-    PostgresParams, SqlMiddlewareDbError, SqliteParamsExecute, SqliteParamsQuery,
-    convert_sql_params,
+    SqlMiddlewareDbError, convert_sql_params,
     middleware::{
         AnyConnWrapper, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType,
         MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
-    postgres_build_result_set, sqlite_build_result_set,
 };
+use sql_middleware::sqlite::{
+    SqliteParamsExecute, SqliteParamsQuery, build_result_set as sqlite_build_result_set,
+};
+use sql_middleware::postgres::{Params as PostgresParams, build_result_set as postgres_build_result_set};
 use tokio::runtime::Runtime;
 
 fn unique_path(prefix: &str) -> String {
@@ -509,7 +511,7 @@ async fn run_test_logic(
                         )?;
                         let mut stmt = tx.prepare(&query_and_params_vec.query)?;
                         let result_set = {
-                            sql_middleware::sqlite_build_result_set(&mut stmt, &converted_params.0)?
+                            sqlite_build_result_set(&mut stmt, &converted_params.0)?
                         };
                         assert_eq!(result_set.results.len(), 1);
                         assert_eq!(

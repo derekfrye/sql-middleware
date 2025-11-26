@@ -1,7 +1,8 @@
 #![cfg(feature = "sqlite")]
 
 use sql_middleware::prelude::*;
-use sql_middleware::{SqliteParamsExecute, convert_sql_params};
+use sql_middleware::{convert_sql_params};
+use sql_middleware::sqlite::SqliteParamsExecute;
 
 #[test]
 fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {

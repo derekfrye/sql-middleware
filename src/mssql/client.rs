@@ -10,6 +10,7 @@ use crate::middleware::SqlMiddlewareDbError;
 ///
 /// # Errors
 /// Returns `SqlMiddlewareDbError::ConnectionError` if the MSSQL connection fails.
+#[allow(dead_code)]
 pub async fn create_mssql_client(
     server: &str,
     database: &str,

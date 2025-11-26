@@ -30,22 +30,13 @@ pub mod types;
 #[cfg(feature = "libsql")]
 pub mod libsql;
 #[cfg(feature = "mssql")]
-mod mssql;
+pub mod mssql;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(feature = "sqlite")]
-mod sqlite;
+pub mod sqlite;
 #[cfg(feature = "turso")]
 pub mod turso;
-
-#[cfg(feature = "benchmarks")]
-pub use crate::sqlite::{
-    params::{SqliteParamsExecute, SqliteParamsQuery},
-    query::build_result_set as sqlite_build_result_set,
-};
-
-#[cfg(feature = "benchmarks")]
-pub use crate::conversion::convert_sql_params as sqlite_convert_params;
 
 // Direct exports for frequently used types
 pub use middleware::{
@@ -56,7 +47,6 @@ pub use middleware::{
 
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;
-pub use exports::*;
 pub use translation::{PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders};
 
 // Compatibility alias for existing code

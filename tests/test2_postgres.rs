@@ -11,9 +11,8 @@ use sql_middleware::middleware::{
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
-use sql_middleware::{
-    PostgresParams, SqlMiddlewareDbError, convert_sql_params, postgres_build_result_set,
-};
+use sql_middleware::{SqlMiddlewareDbError, convert_sql_params};
+use sql_middleware::postgres::{Params as PostgresParams, build_result_set as postgres_build_result_set};
 
 use std::vec;
 use tokio::runtime::Runtime;

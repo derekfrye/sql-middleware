@@ -14,8 +14,13 @@ pub mod query;
 pub mod worker;
 
 // Re-export the public API
+#[allow(unused_imports)]
 pub use executor::{execute_batch, execute_dml, execute_select};
+#[allow(unused_imports)]
 pub use params::{SqliteParamsExecute, SqliteParamsQuery};
+#[allow(unused_imports)]
 pub use prepared::SqlitePreparedStatement;
+#[allow(unused_imports)]
 pub use query::build_result_set;
+#[allow(unused_imports)]
 pub use worker::SqliteConnection;

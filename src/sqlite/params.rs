@@ -64,6 +64,7 @@ pub fn convert_params(params: &[RowValues]) -> Vec<rusqlite::types::Value> {
 }
 
 /// Convert parameters for execution operations
+#[allow(dead_code)]
 pub fn convert_params_for_execute<I>(iter: I) -> ParamsFromIter<std::vec::IntoIter<Value>>
 where
     I: IntoIterator<Item = RowValues>,
@@ -81,9 +82,11 @@ where
 }
 
 /// Wrapper for `SQLite` parameters for queries.
+#[allow(dead_code)]
 pub struct SqliteParamsQuery(pub Vec<rusqlite::types::Value>);
 
 /// Wrapper for `SQLite` parameters for execution.
+#[allow(dead_code)]
 pub struct SqliteParamsExecute(
     pub rusqlite::ParamsFromIter<std::vec::IntoIter<rusqlite::types::Value>>,
 );

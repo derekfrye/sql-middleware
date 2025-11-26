@@ -5,6 +5,7 @@ use super::query::{bind_query_params, build_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Execute a batch of SQL statements for SQL Server
+#[allow(dead_code)]
 pub async fn execute_batch(
     mssql_client: &mut Object<MssqlManager>,
     query: &str,
@@ -22,6 +23,7 @@ pub async fn execute_batch(
 }
 
 /// Execute a SELECT query with parameters
+#[allow(dead_code)]
 pub async fn execute_select(
     mssql_client: &mut Object<MssqlManager>,
     query: &str,
@@ -35,6 +37,7 @@ pub async fn execute_select(
 }
 
 /// Execute a DML query (INSERT, UPDATE, DELETE) with parameters
+#[allow(dead_code)]
 pub async fn execute_dml(
     mssql_client: &mut Object<MssqlManager>,
     query: &str,

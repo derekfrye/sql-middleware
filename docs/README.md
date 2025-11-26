@@ -222,28 +222,29 @@ let results2 = conn.query("SELECT * FROM users").select().await?;
 Here, because the underlying libraries are different, unfortunately, if you need custom app logic between `transaction()` and `commit()`, the code becomes a little less DRY.
 
 ```rust
-use deadpool_postgres::Transaction as PgTransaction;
-use sql_middleware::conversion::convert_sql_params;
-use sql_middleware::exports::PostgresParams;
 use sql_middleware::libsql::{
     begin_transaction as begin_libsql_tx, Params as LibsqlParams, Prepared as LibsqlPrepared,
     Tx as LibsqlTx,
 };
 use sql_middleware::prelude::*;
 use sql_middleware::turso::{
-    begin_transaction, Params as TursoParams, Prepared as TursoPrepared, Tx as TursoTx,
+    begin_transaction as begin_turso_tx, Params as TursoParams, Prepared as TursoPrepared,
+    Tx as TursoTx,
 };
-use tokio_postgres::Statement as PgStatement;
+use sql_middleware::postgres::{
+    begin_transaction as begin_postgres_tx, Params as PostgresParams, Prepared as PostgresPrepared,
+    Tx as PostgresTx,
+};
 
 enum BackendTx<'conn> {
     Turso(TursoTx<'conn>),
-    Postgres(PgTransaction<'conn>),
+    Postgres(PostgresTx<'conn>),
     Libsql(LibsqlTx<'conn>),
 }
 
 enum PreparedStmt {
     Turso(TursoPrepared),
-    Postgres(PgStatement),
+    Postgres(PostgresPrepared),
     Libsql(LibsqlPrepared),
 }
 
@@ -258,7 +259,7 @@ pub async fn get_scores_from_db(
                       FROM sp_get_player_names($1) ORDER BY grp, eup_id";
     let (tx, stmt) = match &mut conn {
         MiddlewarePoolConnection::Turso { conn: client, .. } => {
-            let tx = begin_transaction(client).await?;
+            let tx = begin_turso_tx(client).await?;
             let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
             let stmt = tx.prepare(q.as_ref()).await?;
             (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
@@ -266,7 +267,7 @@ pub async fn get_scores_from_db(
         MiddlewarePoolConnection::Postgres {
             client: pg_conn, ..
         } => {
-            let mut tx = pg_conn.transaction().await?;
+            let tx = begin_postgres_tx(pg_conn).await?;
             let stmt = tx.prepare(base_query).await?;
             (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
         }
@@ -290,33 +291,43 @@ pub async fn get_scores_from_db(
 
     let rows = match (tx, stmt) {
         (BackendTx::Turso(tx), PreparedStmt::Turso(mut stmt)) => {
-            let _converted_params =
-                convert_sql_params::<TursoParams>(&dynamic_params, ConversionMode::Query)?;
-
-            let result = tx.query_prepared(&mut stmt, &dynamic_params).await?;
-            tx.commit().await?;
-            result
+            let result = tx.query_prepared(&mut stmt, &dynamic_params).await;
+            match result {
+                Ok(rows) => {
+                    tx.commit().await?;
+                    rows
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    return Err(e);
+                }
+            }
         }
-        (BackendTx::Postgres(mut tx), PreparedStmt::Postgres(stmt)) => {
-            let converted_params =
-                convert_sql_params::<PostgresParams>(&dynamic_params, ConversionMode::Query)?;
-
-            let result = sql_middleware::postgres::build_result_set(
-                &stmt,
-                converted_params.as_refs(),
-                &tx,
-            )
-            .await?;
-            tx.commit().await?;
-            result
+        (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
+            let result = tx.query_prepared(&stmt, &dynamic_params).await;
+            match result {
+                Ok(rows) => {
+                    tx.commit().await?;
+                    rows
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    return Err(e);
+                }
+            }
         }
         (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
-            let _converted_params =
-                convert_sql_params::<LibsqlParams>(&dynamic_params, ConversionMode::Query)?;
-
-            let result = tx.query_prepared(&stmt, &dynamic_params).await?;
-            tx.commit().await?;
-            result
+            let result = tx.query_prepared(&stmt, &dynamic_params).await;
+            match result {
+                Ok(rows) => {
+                    tx.commit().await?;
+                    rows
+                }
+                Err(e) => {
+                    let _ = tx.rollback().await;
+                    return Err(e);
+                }
+            }
         }
         _ => unreachable!("transaction and statement variants always align"),
     };

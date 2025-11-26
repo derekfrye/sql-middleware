@@ -9,7 +9,7 @@ use deadpool_sqlite::Object as SqliteObject;
 use deadpool_sqlite::rusqlite;
 
 #[cfg(feature = "turso")]
-use crate::turso::TursoPreparedStatement;
+use crate::turso::TursoNonTxPreparedStatement;
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Object as LibsqlObject;
 #[cfg(feature = "turso")]
@@ -184,11 +184,11 @@ impl MiddlewarePoolConnection {
     pub async fn prepare_turso_statement(
         &mut self,
         query: &str,
-    ) -> Result<TursoPreparedStatement, SqlMiddlewareDbError> {
+    ) -> Result<TursoNonTxPreparedStatement, SqlMiddlewareDbError> {
         match self {
             MiddlewarePoolConnection::Turso {
                 conn: turso_conn, ..
-            } => TursoPreparedStatement::prepare(turso_conn.clone(), query).await,
+            } => TursoNonTxPreparedStatement::prepare(turso_conn.clone(), query).await,
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "prepare_turso_statement is only available for Turso connections".to_string(),
             )),

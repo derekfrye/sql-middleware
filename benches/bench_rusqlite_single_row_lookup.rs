@@ -11,8 +11,9 @@ use rand_chacha::ChaCha8Rng;
 use rusqlite::{Connection, Row, params};
 use sql_middleware::{
     ConfigAndPool, ConversionMode, MiddlewarePoolConnection, RowValues, SqlMiddlewareDbError,
-    SqliteParamsQuery, sqlite_build_result_set, sqlite_convert_params,
+    convert_sql_params,
 };
+use sql_middleware::sqlite::{SqliteParamsQuery, build_result_set as sqlite_build_result_set};
 use std::cell::RefCell;
 use std::fs;
 use std::hint::black_box;
@@ -450,7 +451,7 @@ fn benchmark_middleware_marshalling(
                     let mut stmt = conn
                         .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
                         .expect("prepare statement");
-                    let params = sqlite_convert_params::<SqliteParamsQuery>(
+                    let params = convert_sql_params::<SqliteParamsQuery>(
                         &[RowValues::Int(id)],
                         ConversionMode::Query,
                     )
@@ -510,7 +511,7 @@ fn benchmark_middleware_param_conversion(
                     let start = Instant::now();
                     for &id in &ids {
                         let params = [RowValues::Int(id)];
-                        let converted = sqlite_convert_params::<SqliteParamsQuery>(
+                        let converted = convert_sql_params::<SqliteParamsQuery>(
                             &params,
                             ConversionMode::Query,
                         )

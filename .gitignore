@@ -13,3 +13,4 @@ benchmark_sqlite_single_lookup.db
 benchmark_sqlite_single_lookup.db*
 benchmark_turso_single_lookup.db*
 perf*.data*
+benchmark_sqlite_multithread_lookup.db*
