@@ -30,3 +30,4 @@ pub use query::build_result_set;
 #[allow(unused_imports)]
 pub use transaction::{Prepared, Tx, begin_transaction};
 pub use prepared::SqlitePreparedStatement;
+pub(crate) use worker::SqliteConnection;
