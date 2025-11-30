@@ -8,6 +8,8 @@ Motivated from trying SQLx and not liking some issue [others already noted](http
 
 This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. (That could be my misunderstanding of SQLx rather than an inherent performance difference.) For current evidence, see our [benchmark results](/bench_results/index.md).
 
+See also: [API test coverage](docs/api_test_coverage.md) for a map of the public surface to current tests.
+
 ## Goals
 * Convenience functions for common async SQL query patterns
 * Keep underlying flexibility of `deadpool` connection pooling
