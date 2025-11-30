@@ -6,77 +6,77 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `conversion::convert_sql_params`
   - Coverage: Used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test5c_sqlite.rs`.
   - Purpose: Convert `RowValues` into backend-specific parameter types through `ParamConverter`; public to let callers prepare params without owning backend types.
-- `translation::translate_placeholders`
-  - Coverage: Only unit tests in `src/translation.rs`.
-  - Purpose: Rewrite `$n`/`?n` placeholders; public so callers can opt into manual translation.
+- `conversion::convert_sql_params` (re-export)
+  - Coverage: Same as above.
+  - Purpose: Convenience from root/prelude.
+- `middleware` re-exports (`AnyConnWrapper`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
+  - Coverage: See per-item below.
+  - Purpose: Single import path via `prelude`.
+- `middleware::SqlMiddlewareDbError`
+  - Coverage: Error type used across tests; individual variants largely untested.
+  - Purpose: Unified error surface across backends; public for consumer error handling.
+- `test_helpers::create_test_row`
+  - Coverage: Used in `tests/test2_postgres.rs`.
+  - Purpose: Helper for constructing `CustomDbRow`; public for legacy compatibility/tests.
 - `translation::PlaceholderStyle`
   - Coverage: **Not covered**.
   - Purpose: Enumerates target placeholder dialect; public for caller-controlled translation.
-- `translation::TranslationMode`
-  - Coverage: Used via `QueryBuilder::translation` in `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
-  - Purpose: Per-call toggle relative to pool default; public to let callers force on/off.
 - `translation::QueryOptions`
   - Coverage: **Not covered** directly.
   - Purpose: Bundles per-call options; public to pass structured options instead of chaining methods.
 - `translation::QueryOptions::with_translation`
   - Coverage: **Not covered**.
   - Purpose: Fluent builder for `QueryOptions`; public for ergonomic options construction.
-- `middleware::SqlMiddlewareDbError`
-  - Coverage: Error type used across tests; individual variants largely untested.
-  - Purpose: Unified error surface across backends; public for consumer error handling.
-- `middleware` re-exports (`AnyConnWrapper`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
-  - Coverage: See per-item below.
-  - Purpose: Single import path via `prelude`.
-- `conversion::convert_sql_params` (re-export)
-  - Coverage: Same as above.
-  - Purpose: Convenience from root/prelude.
+- `translation::TranslationMode`
+  - Coverage: Used via `QueryBuilder::translation` in `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
+  - Purpose: Per-call toggle relative to pool default; public to let callers force on/off.
+- `translation::translate_placeholders`
+  - Coverage: Only unit tests in `src/translation.rs`.
+  - Purpose: Rewrite `$n`/`?n` placeholders; public so callers can opt into manual translation.
 - `translation::{translate_placeholders, PlaceholderStyle, QueryOptions, TranslationMode}` (re-export)
   - Coverage: As above.
   - Purpose: Convenience from root/prelude.
-- `test_helpers::create_test_row`
-  - Coverage: Used in `tests/test2_postgres.rs`.
-  - Purpose: Helper for constructing `CustomDbRow`; public for legacy compatibility/tests.
 
 ## Config and pool
-- `ConfigAndPool::new_sqlite`
-  - Coverage: `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
-  - Purpose: Primary SQLite constructor; public for consumer setup.
-- `ConfigAndPool::new_sqlite_with_translation`
-  - Coverage: **Not covered**.
-  - Purpose: SQLite constructor with default translation toggle; public for apps wanting translation-on by default.
-- `ConfigAndPool::new_postgres`
-  - Coverage: `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
-  - Purpose: Primary Postgres constructor; public for consumer setup.
-- `ConfigAndPool::new_postgres_with_translation`
-  - Coverage: `tests/test6_postgres_translation.rs`.
-  - Purpose: Postgres constructor with translation default; public for apps needing placeholder rewrites.
+- `ConfigAndPool::get_connection`
+  - Coverage: Used widely across integration tests.
+  - Purpose: Acquire pooled connection with pool defaults; public entry point.
 - `ConfigAndPool::new_libsql`
   - Coverage: `tests/test5b_libsql.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
   - Purpose: Local LibSQL constructor; public to initialize pool.
-- `ConfigAndPool::new_libsql_with_translation`
-  - Coverage: **Not covered**.
-  - Purpose: LibSQL constructor with translation default; public for translation-on pools.
 - `ConfigAndPool::new_libsql_remote`
   - Coverage: **Not covered**.
   - Purpose: Remote LibSQL/Turso URL constructor; public for remote deployments.
 - `ConfigAndPool::new_libsql_remote_with_translation`
   - Coverage: **Not covered**.
   - Purpose: Remote LibSQL with translation default; public for placeholder rewrites on remote.
-- `ConfigAndPool::new_turso`
-  - Coverage: `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5d_turso.rs`, `tests/test6_turso_translation.rs`.
-  - Purpose: Local Turso constructor; public for Turso setup.
-- `ConfigAndPool::new_turso_with_translation`
-  - Coverage: `tests/test6_turso_translation.rs`.
-  - Purpose: Turso constructor with translation default; public for translation-on pools.
+- `ConfigAndPool::new_libsql_with_translation`
+  - Coverage: **Not covered**.
+  - Purpose: LibSQL constructor with translation default; public for translation-on pools.
 - `ConfigAndPool::new_mssql`
   - Coverage: **Not covered**.
   - Purpose: MSSQL constructor; public for SQL Server consumers.
 - `ConfigAndPool::new_mssql_with_translation`
   - Coverage: **Not covered**.
   - Purpose: MSSQL constructor with translation default; public for placeholder control.
-- `ConfigAndPool::get_connection`
-  - Coverage: Used widely across integration tests.
-  - Purpose: Acquire pooled connection with pool defaults; public entry point.
+- `ConfigAndPool::new_postgres`
+  - Coverage: `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
+  - Purpose: Primary Postgres constructor; public for consumer setup.
+- `ConfigAndPool::new_postgres_with_translation`
+  - Coverage: `tests/test6_postgres_translation.rs`.
+  - Purpose: Postgres constructor with translation default; public for apps needing placeholder rewrites.
+- `ConfigAndPool::new_sqlite`
+  - Coverage: `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
+  - Purpose: Primary SQLite constructor; public for consumer setup.
+- `ConfigAndPool::new_sqlite_with_translation`
+  - Coverage: **Not covered**.
+  - Purpose: SQLite constructor with default translation toggle; public for apps wanting translation-on by default.
+- `ConfigAndPool::new_turso`
+  - Coverage: `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5d_turso.rs`, `tests/test6_turso_translation.rs`.
+  - Purpose: Local Turso constructor; public for Turso setup.
+- `ConfigAndPool::new_turso_with_translation`
+  - Coverage: `tests/test6_turso_translation.rs`.
+  - Purpose: Turso constructor with translation default; public for translation-on pools.
 - `MiddlewarePool`
   - Coverage: Type used indirectly; method `get` **Not covered** directly.
   - Purpose: Erased pool enum across backends; public for advanced pooling control.
@@ -94,61 +94,58 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `MiddlewarePoolConnection::execute_batch`
   - Coverage: Many integration tests (Postgres, SQLite, LibSQL, Turso).
   - Purpose: Run batch SQL without params; public convenience.
-- `MiddlewarePoolConnection::query`
-  - Coverage: Widely used across tests.
-  - Purpose: Entry to `QueryBuilder`; public fluent API.
-- `MiddlewarePoolConnection::with_blocking_sqlite`
-  - Coverage: `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`.
-  - Purpose: Run blocking `rusqlite` work on worker thread; public for advanced SQLite hooks.
-- `MiddlewarePoolConnection::prepare_sqlite_statement`
-  - Coverage: `tests/test5c_sqlite.rs`.
-  - Purpose: Prepare cached SQLite statement; public for performance-sensitive callers.
-- `MiddlewarePoolConnection::prepare_turso_statement`
-  - Coverage: **Not covered**.
-  - Purpose: Prepare Turso statement handle; public parity with SQLite prepared API.
 - `MiddlewarePoolConnection::interact_async`
   - Coverage: **Not covered**.
   - Purpose: Async access to raw backend client (Postgres/MSSQL/LibSQL); public escape hatch.
 - `MiddlewarePoolConnection::interact_sync`
   - Coverage: `tests/test4_AnyConnWrapper.rs`.
   - Purpose: Sync access to SQLite connection; public escape hatch.
+- `MiddlewarePoolConnection::prepare_sqlite_statement`
+  - Coverage: `tests/test5c_sqlite.rs`.
+  - Purpose: Prepare cached SQLite statement; public for performance-sensitive callers.
+- `MiddlewarePoolConnection::prepare_turso_statement`
+  - Coverage: **Not covered**.
+  - Purpose: Prepare Turso statement handle; public parity with SQLite prepared API.
+- `MiddlewarePoolConnection::query`
+  - Coverage: Widely used across tests.
+  - Purpose: Entry to `QueryBuilder`; public fluent API.
 - `MiddlewarePoolConnection::translation_default`
   - Coverage: **Not covered** directly.
   - Purpose: Exposes pool-level translation toggle; public for inspection/tweaks.
+- `MiddlewarePoolConnection::with_blocking_sqlite`
+  - Coverage: `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`.
+  - Purpose: Run blocking `rusqlite` work on worker thread; public for advanced SQLite hooks.
 
 ## Query builder and execution
-- `QueryBuilder::params`
-  - Coverage: Widely used in integration tests.
-  - Purpose: Attach params slice to builder; public for fluent chaining.
-- `QueryBuilder::options`
-  - Coverage: **Not covered**.
-  - Purpose: Supply `QueryOptions` object; public for structured overrides.
-- `QueryBuilder::translation`
-  - Coverage: `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
-  - Purpose: Set translation mode; public ergonomic toggle.
-- `QueryBuilder::select`
-  - Coverage: Broad test usage.
-  - Purpose: Execute SELECT returning `ResultSet`; public primary read path.
-- `QueryBuilder::dml`
-  - Coverage: Broad test usage.
-  - Purpose: Execute DML returning rows affected; public write path.
 - `QueryBuilder::batch`
   - Coverage: **Not covered**.
   - Purpose: Run batch SQL ignoring params; public convenience alias to `execute_batch`.
-- `executor::translate_query`, `execute_select_dispatch`, `execute_dml_dispatch`
+- `QueryBuilder::dml`
+  - Coverage: Broad test usage.
+  - Purpose: Execute DML returning rows affected; public write path.
+- `QueryBuilder::options`
+  - Coverage: **Not covered**.
+  - Purpose: Supply `QueryOptions` object; public for structured overrides.
+- `QueryBuilder::params`
+  - Coverage: Widely used in integration tests.
+  - Purpose: Attach params slice to builder; public for fluent chaining.
+- `QueryBuilder::select`
+  - Coverage: Broad test usage.
+  - Purpose: Execute SELECT returning `ResultSet`; public primary read path.
+- `QueryBuilder::translation`
+  - Coverage: `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
+  - Purpose: Set translation mode; public ergonomic toggle.
+- `executor::execute_dml_dispatch`
   - Coverage: Indirect via builder usage; no direct calls in tests.
-  - Purpose: Internal dispatch helpers; exposed crate-wide for advanced callers.
+  - Purpose: Internal dispatch helper; exposed crate-wide for advanced callers.
+- `executor::execute_select_dispatch`
+  - Coverage: Indirect via builder usage; no direct calls in tests.
+  - Purpose: Internal dispatch helper; exposed crate-wide for advanced callers.
+- `executor::translate_query`
+  - Coverage: Indirect via builder usage; no direct calls in tests.
+  - Purpose: Internal translation helper; exposed crate-wide for advanced callers.
 
 ## Query and parameter helpers
-- `QueryAndParams`
-  - Coverage: Type used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs` via struct literal.
-  - Purpose: Bundles SQL and params to keep them aligned; public helper for reusable queries.
-- `QueryAndParams::new`
-  - Coverage: **Not covered**.
-  - Purpose: Constructor for query+params; public ergonomic creation.
-- `QueryAndParams::new_without_params`
-  - Coverage: **Not covered**.
-  - Purpose: Constructor for param-less queries; public ergonomic creation.
 - `AnyConnWrapper`
   - Coverage: Used in `tests/test4_AnyConnWrapper.rs`.
   - Purpose: Type-erased raw connection wrapper for `interact_*`; public escape hatch.
@@ -158,32 +155,20 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `ParamConverter` trait
   - Coverage: Implementations exercised via convert_sql_params; trait itself not directly tested.
   - Purpose: Backend param conversion contract; public for custom converters.
+- `QueryAndParams`
+  - Coverage: Type used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs` via struct literal.
+  - Purpose: Bundles SQL and params to keep them aligned; public helper for reusable queries.
+- `QueryAndParams::new`
+  - Coverage: **Not covered**.
+  - Purpose: Constructor for query+params; public ergonomic creation.
+- `QueryAndParams::new_without_params`
+  - Coverage: **Not covered**.
+  - Purpose: Constructor for param-less queries; public ergonomic creation.
 
 ## Results
-- `ResultSet`
-  - Coverage: Struct fields used across tests.
-  - Purpose: Unified result container; public return type.
-- `ResultSet::with_capacity`
-  - Coverage: **Not covered**.
-  - Purpose: Preallocate result storage; public for performance tuning.
-- `ResultSet::set_column_names`
-  - Coverage: **Not covered**.
-  - Purpose: Share column names across rows; public for manual result building.
-- `ResultSet::get_column_names`
-  - Coverage: **Not covered**.
-  - Purpose: Inspect shared column names; public accessor.
-- `ResultSet::add_row_values`
-  - Coverage: **Not covered** directly (used internally by backend query builders).
-  - Purpose: Push row data when building results; public for custom drivers.
-- `ResultSet::add_row`
-  - Coverage: **Not covered**.
-  - Purpose: Legacy row insertion API; public for callers constructing results manually.
 - `CustomDbRow`
   - Coverage: Accessed in many tests via `get`; constructed via helper in `tests/test2_postgres.rs`.
   - Purpose: Row wrapper with name lookup; public for result consumption.
-- `CustomDbRow::new`
-  - Coverage: Indirect via `test_helpers::create_test_row`.
-  - Purpose: Build row with column cache; public for manual row creation.
 - `CustomDbRow::get`
   - Coverage: Widely used in tests.
   - Purpose: Lookup by column name; public convenience.
@@ -193,19 +178,55 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `CustomDbRow::get_column_index`
   - Coverage: **Not covered** directly.
   - Purpose: Resolve column name to index; public helper.
+- `CustomDbRow::new`
+  - Coverage: Indirect via `test_helpers::create_test_row`.
+  - Purpose: Build row with column cache; public for manual row creation.
+- `ResultSet`
+  - Coverage: Struct fields used across tests.
+  - Purpose: Unified result container; public return type.
+- `ResultSet::add_row`
+  - Coverage: **Not covered**.
+  - Purpose: Legacy row insertion API; public for callers constructing results manually.
+- `ResultSet::add_row_values`
+  - Coverage: **Not covered** directly (used internally by backend query builders).
+  - Purpose: Push row data when building results; public for custom drivers.
+- `ResultSet::get_column_names`
+  - Coverage: **Not covered**.
+  - Purpose: Inspect shared column names; public accessor.
+- `ResultSet::set_column_names`
+  - Coverage: **Not covered**.
+  - Purpose: Share column names across rows; public for manual result building.
+- `ResultSet::with_capacity`
+  - Coverage: **Not covered**.
+  - Purpose: Preallocate result storage; public for performance tuning.
 
 ## Values and types
+- `DatabaseType` enum
+  - Coverage: Used in `tests/test4_AnyConnWrapper.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
+  - Purpose: Identify backend; public for branching logic.
 - `RowValues` enum
   - Coverage: All variants used across tests (`Int`, `Float`, `Text`, `Bool`, `Timestamp`, `Null`, `JSON`, `Blob`).
   - Purpose: Unified value representation; public for params/results.
 - `RowValues` accessors (`is_null`, `as_int`, `as_text`, `as_bool`, `as_timestamp`, `as_float`, `as_blob`)
   - Coverage: `as_int`/`as_text`/`as_bool`/`as_timestamp`/`as_float`/`as_blob` used across tests; `is_null` used in `tests/test6_libsql.rs`.
   - Purpose: Typed extraction; public for consumers.
-- `DatabaseType` enum
-  - Coverage: Used in `tests/test4_AnyConnWrapper.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
-  - Purpose: Identify backend; public for branching logic.
 
 ## Backend-specific re-exports
+- LibSQL `execute_batch`, `execute_dml`, `execute_select`
+  - Coverage: Indirect via connection calls; not direct.
+  - Purpose: Direct backend helpers; public for manual execution.
+- LibSQL `Params`
+  - Coverage: **Not covered** (LibSQL tests use `&[RowValues]`).
+  - Purpose: Param wrapper for backend parity; public for converters.
+- LibSQL `build_result_set`
+  - Coverage: Not directly called in tests.
+  - Purpose: Build results from libsql rows; public for manual execution.
+- LibSQL `transaction::{Prepared, Tx, begin_transaction}`
+  - Coverage: Used in `tests/test5b_libsql.rs`.
+  - Purpose: Transaction helpers; public for explicit transactions.
+- MSSQL `create_mssql_client`, `MssqlClient`, `execute_batch`, `execute_dml`, `execute_select`, `Params`, `build_result_set`
+  - Coverage: **Not covered**.
+  - Purpose: SQL Server support; public for consumers targeting MSSQL (awaiting tests).
 - Postgres `execute_batch`, `execute_dml`, `execute_select`
   - Coverage: Indirect via pooled connections; no direct calls from tests.
   - Purpose: Direct backend helpers; public for callers bypassing pool abstraction.
@@ -224,27 +245,15 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - SQLite `Params`
   - Coverage: Used in `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
   - Purpose: SQLite param wrapper; public for conversion.
+- SQLite `SqlitePreparedStatement`
+  - Coverage: Used in `tests/test5c_sqlite.rs`.
+  - Purpose: Prepared statement handle; public for reuse.
 - SQLite `build_result_set`
   - Coverage: Used in `tests/test4_AnyConnWrapper.rs`.
   - Purpose: Build results from rusqlite rows; public for manual execution.
 - SQLite `transaction::{Prepared, Tx, begin_transaction}`
   - Coverage: Used in `tests/test7_new_rusqlite.rs`.
   - Purpose: Transaction helpers on worker; public for explicit transaction control.
-- `SqlitePreparedStatement`
-  - Coverage: Used in `tests/test5c_sqlite.rs`.
-  - Purpose: Prepared statement handle; public for reuse.
-- LibSQL `execute_batch`, `execute_dml`, `execute_select`
-  - Coverage: Indirect via connection calls; not direct.
-  - Purpose: Direct backend helpers; public for manual execution.
-- LibSQL `Params`
-  - Coverage: **Not covered** (LibSQL tests use `&[RowValues]`).
-  - Purpose: Param wrapper for backend parity; public for converters.
-- LibSQL `build_result_set`
-  - Coverage: Not directly called in tests.
-  - Purpose: Build results from libsql rows; public for manual execution.
-- LibSQL `transaction::{Prepared, Tx, begin_transaction}`
-  - Coverage: Used in `tests/test5b_libsql.rs`.
-  - Purpose: Transaction helpers; public for explicit transactions.
 - Turso `execute_batch`, `execute_dml`, `execute_select`
   - Coverage: Indirect via connection methods.
   - Purpose: Direct backend helpers; public for manual execution.
@@ -257,6 +266,3 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - Turso `transaction::{Prepared, Tx, begin_transaction}`
   - Coverage: Used in `tests/test5d_turso.rs`.
   - Purpose: Transaction helpers; public for explicit transaction flows.
-- MSSQL `create_mssql_client`, `MssqlClient`, `execute_batch`, `execute_dml`, `execute_select`, `Params`, `build_result_set`
-  - Coverage: **Not covered**.
-  - Purpose: SQL Server support; public for consumers targeting MSSQL (awaiting tests).
