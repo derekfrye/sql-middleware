@@ -164,10 +164,7 @@ impl MiddlewarePoolConnection {
     /// # Ok(()) }
     /// ```
     #[cfg(feature = "sqlite")]
-    pub async fn with_blocking_sqlite<F, R>(
-        &mut self,
-        func: F,
-    ) -> Result<R, SqlMiddlewareDbError>
+    pub async fn with_blocking_sqlite<F, R>(&mut self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
         R: Send + 'static,

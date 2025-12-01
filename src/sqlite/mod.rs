@@ -25,9 +25,9 @@ pub mod worker;
 pub use executor::{execute_batch, execute_dml, execute_select};
 #[allow(unused_imports)]
 pub use params::Params;
+pub use prepared::SqlitePreparedStatement;
 #[allow(unused_imports)]
 pub use query::build_result_set;
 #[allow(unused_imports)]
 pub use transaction::{Prepared, Tx, begin_transaction};
-pub use prepared::SqlitePreparedStatement;
 pub(crate) use worker::SqliteConnection;

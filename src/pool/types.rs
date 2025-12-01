@@ -4,9 +4,6 @@ use deadpool_postgres::Pool as DeadpoolPostgresPool;
 #[cfg(feature = "sqlite")]
 use deadpool_sqlite::Pool as DeadpoolSqlitePool;
 
-#[cfg(feature = "sqlite")]
-pub type SqliteWritePool = DeadpoolSqlitePool;
-
 #[cfg(feature = "mssql")]
 use deadpool_tiberius::Pool as TiberiusPool;
 

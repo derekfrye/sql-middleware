@@ -409,11 +409,11 @@ fn benchmark_middleware_interact_only(
                 let mut conn = pool.get_connection().await.expect("checkout connection");
                 for _ in 0..iters {
                     let start = Instant::now();
-                if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
-                    conn.with_blocking_sqlite(|_| Ok::<_, SqlMiddlewareDbError>(()))
-                        .await
-                        .expect("with_blocking_sqlite");
-                }
+                    if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
+                        conn.with_blocking_sqlite(|_| Ok::<_, SqlMiddlewareDbError>(()))
+                            .await
+                            .expect("with_blocking_sqlite");
+                    }
                     total += start.elapsed();
                 }
                 drop(conn);

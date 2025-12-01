@@ -3,7 +3,7 @@ pub mod interaction;
 pub mod types;
 
 pub use connection::MiddlewarePoolConnection;
-pub use types::{MiddlewarePool, SqliteWritePool};
+pub use types::MiddlewarePool;
 
 use crate::SqlMiddlewareDbError;
 use crate::types::DatabaseType;

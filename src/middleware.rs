@@ -8,6 +8,3 @@ pub use crate::translation::{
     PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
 };
 pub use crate::types::{ConversionMode, DatabaseType, ParamConverter, RowValues};
-
-#[cfg(feature = "sqlite")]
-pub use crate::pool::SqliteWritePool;
