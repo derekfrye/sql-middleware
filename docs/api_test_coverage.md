@@ -100,11 +100,14 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Returns self reference for API symmetry; public but minimal utility.
 
 ## Connections and interaction
+- `MiddlewarePool::get_connection`
+  - **Coverage:** Invoked indirectly via `ConfigAndPool::get_connection` throughout integration tests that borrow pooled connections; not called directly in tests.
+  - **Purpose:** Attach pool-level translation defaults while checking out a connection; public for callers that hold a `MiddlewarePool` without `ConfigAndPool`.
 - `MiddlewarePoolConnection` variants (`Postgres`, `Sqlite`, `Mssql`, `Libsql`, `Turso`)
-  - **Coverage:** Postgres/Sqlite/Libsql/Turso exercised in tests; MSSQL only mentioned in `tests/test4_AnyConnWrapper.rs` (no runtime coverage).
+  - **Coverage:** Postgres in `tests/test2_postgres.rs`/`tests/test6_postgres_translation.rs`; SQLite in `tests/test1.rs`/`tests/test3_sqlite.rs`/`tests/test5c_sqlite.rs`/`tests/test7_new_rusqlite.rs`; LibSQL in `tests/test5b_libsql.rs`/`tests/test6_libsql.rs`; Turso in `tests/test5d_turso.rs`/`tests/test6_turso_translation.rs`; MSSQL only pattern-matched in `tests/test2_postgres.rs` and `tests/test4_AnyConnWrapper.rs` (no live connections).
   - **Purpose:** Erased connection handle; public so callers can branch on backend.
 - `MiddlewarePoolConnection::execute_batch`
-  - **Coverage:** Many integration tests (Postgres, SQLite, LibSQL, Turso).
+  - **Coverage:** Used across backends in `tests/test1.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test5b_libsql.rs`, `tests/test5c_sqlite.rs`, `tests/test5d_turso.rs`, `tests/test6_postgres_translation.rs`, `tests/test6_libsql.rs`, `tests/test6_turso_translation.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Run batch SQL without params; public convenience.
 - `MiddlewarePoolConnection::interact_async`
   - **Coverage:** **Not covered**.
@@ -113,25 +116,22 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
   - **Purpose:** Sync access to SQLite connection; public escape hatch.
 - `MiddlewarePoolConnection::prepare_sqlite_statement`
-  - **Coverage:** `tests/test5c_sqlite.rs`.
-  - **Purpose:** Prepare cached SQLite statement; public for performance-sensitive callers.
+  - **Coverage:** `tests/test5c_sqlite.rs` (also used in SQLite benchmarks).
+  - **Purpose:** Prepare cached SQLite statement on the worker thread using the pooled connection and pool translation defaults; public so callers can stay on the type-erased `MiddlewarePoolConnection` without dropping into backend types while reusing statements. Use backend-specific exports like `sql_middleware::sqlite::SqlitePreparedStatement` or `sql_middleware::sqlite::prepared::Prepared` when driving your own raw SQLite client/connection.
 - `MiddlewarePoolConnection::prepare_turso_statement`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** Prepare Turso statement handle; public parity with SQLite prepared API.
+  - **Coverage:** **Not covered** by tests (exercised only in Turso benchmarks).
+  - **Purpose:** Prepare a Turso statement tied to the pooled connection while keeping callers on the type-erased API; public for parity with SQLite prepared support without requiring backend client types. Use backend-specific exports like `sql_middleware::turso::prepared::TursoNonTxPreparedStatement` when you already manage your own Turso connection handle.
 - `MiddlewarePoolConnection::query`
-  - **Coverage:** Widely used across tests.
+  - **Coverage:** Entry point for queries across the integration suite (`tests/test1.rs` through `tests/test7_new_rusqlite.rs`).
   - **Purpose:** Entry to `QueryBuilder`; public fluent API.
 - `MiddlewarePoolConnection::translation_default`
-  - **Coverage:** **Not covered** directly.
+  - **Coverage:** **Not covered** directly; used internally by query translation.
   - **Purpose:** Exposes pool-level translation toggle; public for inspection/tweaks.
 - `MiddlewarePoolConnection::with_blocking_sqlite`
   - **Coverage:** `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`.
   - **Purpose:** Run blocking `rusqlite` work on worker thread; public for advanced SQLite hooks.
 
 ## Query builder and execution
-- `QueryBuilder::batch`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** Run batch SQL ignoring params; public convenience alias to `execute_batch`.
 - `QueryBuilder::dml`
   - **Coverage:** Broad test usage.
   - **Purpose:** Execute DML returning rows affected; public write path.
@@ -147,15 +147,6 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `QueryBuilder::translation`
   - **Coverage:** `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
   - **Purpose:** Set translation mode; public ergonomic toggle.
-- `executor::execute_dml_dispatch`
-  - **Coverage:** Indirect via builder usage; no direct calls in tests.
-  - **Purpose:** Internal dispatch helper; exposed crate-wide for advanced callers.
-- `executor::execute_select_dispatch`
-  - **Coverage:** Indirect via builder usage; no direct calls in tests.
-  - **Purpose:** Internal dispatch helper; exposed crate-wide for advanced callers.
-- `executor::translate_query`
-  - **Coverage:** Indirect via builder usage; no direct calls in tests.
-  - **Purpose:** Internal translation helper; exposed crate-wide for advanced callers.
 
 ## Query and parameter helpers
 - `AnyConnWrapper`
@@ -166,7 +157,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Distinguish query vs execute conversion; public for converter selection.
 - `ParamConverter` trait
   - **Coverage:** Implementations exercised via convert_sql_params; trait itself not directly tested.
-  - **Purpose:** Backend param conversion contract; public for custom converters.
+  - **Purpose:** Backend param conversion contract; must stay public because `convert_sql_params` is public and generic over this trait, and to allow custom converters.
 - `QueryAndParams`
   - **Coverage:** Type used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs` via struct literal.
   - **Purpose:** Bundles SQL and params to keep them aligned; public helper for reusable queries.

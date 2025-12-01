@@ -16,7 +16,7 @@ pub mod translation;
 
 // Core modules (public for docs/advanced use)
 pub mod error;
-pub mod executor;
+pub(crate) mod executor;
 pub mod middleware;
 pub mod pool;
 pub mod query;

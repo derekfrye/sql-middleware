@@ -94,12 +94,4 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
         );
         execute_dml_dispatch(self.conn, translated.as_ref(), self.params.as_ref()).await
     }
-
-    /// Execute a batch (ignores params by design).
-    ///
-    /// # Errors
-    /// Returns an error if the backend rejects the batch or the connection fails.
-    pub async fn batch(self) -> Result<(), SqlMiddlewareDbError> {
-        self.conn.execute_batch(&self.sql).await
-    }
 }
