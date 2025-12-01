@@ -1,5 +1,5 @@
 use super::super::SHARED_RUNTIME;
-use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PostgresOptions};
 
 #[cfg(feature = "test-utils")]
 use postgresql_embedded::PostgreSQL;
@@ -60,7 +60,8 @@ pub fn setup_postgres_embedded(
                 admin_cfg.password = Some(embedded_password.clone());
                 admin_cfg.dbname = Some("postgres".to_string());
 
-                let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
+                let admin_pool =
+                    ConfigAndPool::new_postgres(PostgresOptions::new(admin_cfg)).await?;
                 let admin_conn = admin_pool.get_connection().await?;
 
                 if let MiddlewarePoolConnection::Postgres {
@@ -97,7 +98,8 @@ pub fn setup_postgres_embedded(
         final_cfg.password = Some(final_password);
 
         // Quick connection test
-        let config_and_pool = ConfigAndPool::new_postgres(final_cfg.clone()).await?;
+        let config_and_pool =
+            ConfigAndPool::new_postgres(PostgresOptions::new(final_cfg.clone())).await?;
         let conn = config_and_pool.get_connection().await?;
 
         if let MiddlewarePoolConnection::Postgres {

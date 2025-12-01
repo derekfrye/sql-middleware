@@ -19,7 +19,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_postgres(real_cfg).await?;
+        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(real_cfg)).await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")

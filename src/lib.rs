@@ -46,6 +46,18 @@ pub use middleware::{
     MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder, ResultSet, RowValues,
     SqlMiddlewareDbError,
 };
+#[cfg(feature = "libsql")]
+pub use middleware::{
+    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
+};
+#[cfg(feature = "mssql")]
+pub use middleware::{MssqlOptions, MssqlOptionsBuilder};
+#[cfg(feature = "postgres")]
+pub use middleware::{PostgresOptions, PostgresOptionsBuilder};
+#[cfg(feature = "sqlite")]
+pub use middleware::{SqliteOptions, SqliteOptionsBuilder};
+#[cfg(feature = "turso")]
+pub use middleware::{TursoOptions, TursoOptionsBuilder};
 
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;

@@ -1,39 +1,72 @@
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
+/// Options for configuring a Turso database.
+#[derive(Debug, Clone)]
+pub struct TursoOptions {
+    pub db_path: String,
+    pub translate_placeholders: bool,
+}
+
+impl TursoOptions {
+    #[must_use]
+    pub fn new(db_path: String) -> Self {
+        Self {
+            db_path,
+            translate_placeholders: false,
+        }
+    }
+
+    #[must_use]
+    pub fn with_translation(mut self, translate_placeholders: bool) -> Self {
+        self.translate_placeholders = translate_placeholders;
+        self
+    }
+}
+
+/// Fluent builder for Turso options.
+#[derive(Debug, Clone)]
+pub struct TursoOptionsBuilder {
+    opts: TursoOptions,
+}
+
+impl TursoOptionsBuilder {
+    #[must_use]
+    pub fn new(db_path: String) -> Self {
+        Self {
+            opts: TursoOptions::new(db_path),
+        }
+    }
+
+    #[must_use]
+    pub fn translation(mut self, translate_placeholders: bool) -> Self {
+        self.opts.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn finish(self) -> TursoOptions {
+        self.opts
+    }
+
+    pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
+        ConfigAndPool::new_turso(self.finish()).await
+    }
+}
+
 impl ConfigAndPool {
+    #[must_use]
+    pub fn turso_builder(db_path: String) -> TursoOptionsBuilder {
+        TursoOptionsBuilder::new(db_path)
+    }
+
     /// Asynchronous initializer for `ConfigAndPool` with Turso (local/in-process).
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if database creation or connection test fails.
-    pub async fn new_turso(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
-        Self::new_turso_with_translation(db_path, false).await
-    }
+    pub async fn new_turso(opts: TursoOptions) -> Result<Self, SqlMiddlewareDbError> {
+        let db_path = opts.db_path;
+        let translate_placeholders = opts.translate_placeholders;
 
-    /// Asynchronous initializer for `ConfigAndPool` with Turso (local/in-process) and optional translation default.
-    ///
-    /// # Errors
-    /// Returns `SqlMiddlewareDbError::ConnectionError` if database creation or connection test fails.
-    ///
-    /// Warning: translation skips placeholders inside quoted strings, comments, and dollar-quoted
-    /// blocks via a lightweight state machine; it may miss edge cases in complex SQL. Prefer
-    /// backend-specific SQL instead of relying on translation:
-    /// ```rust
-    /// # use sql_middleware::prelude::*;
-    /// let query = match &conn {
-    ///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
-    /// BEGIN
-    ///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
-    /// END;
-    /// $function$"#,
-    ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
-    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
-    ///     }
-    /// };
-    /// ```
-    pub async fn new_turso_with_translation(
-        db_path: String,
-        translate_placeholders: bool,
-    ) -> Result<Self, SqlMiddlewareDbError> {
         let db = turso::Builder::new_local(&db_path)
             .build()
             .await

@@ -12,7 +12,9 @@ mod libsql_tests {
         let rt = Runtime::new()?;
         rt.block_on(async {
             // Create in-memory libsql database
-            let config_and_pool = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
+            let config_and_pool = ConfigAndPool::libsql_builder(":memory:".to_string())
+                .build()
+                .await?;
             assert_eq!(config_and_pool.db_type, DatabaseType::Libsql);
 
             let mut libsql_conn = config_and_pool.get_connection().await?;
@@ -138,7 +140,9 @@ mod libsql_tests {
     fn test_libsql_null_values() -> Result<(), Box<dyn std::error::Error>> {
         let rt = Runtime::new()?;
         rt.block_on(async {
-            let config_and_pool = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
+            let config_and_pool = ConfigAndPool::libsql_builder(":memory:".to_string())
+                .build()
+                .await?;
             let mut libsql_conn = config_and_pool.get_connection().await?;
 
             // Create table

@@ -77,7 +77,9 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
         println!("setup_sqlite_db: Warning – failed to remove existing file {db_path}: {err}");
     }
 
-    let config_and_pool = ConfigAndPool::new_sqlite(db_path.to_string()).await?;
+    let config_and_pool = ConfigAndPool::sqlite_builder(db_path.to_string())
+        .build()
+        .await?;
 
     let ddl = "CREATE TABLE IF NOT EXISTS test (
         recid INTEGER PRIMARY KEY AUTOINCREMENT,

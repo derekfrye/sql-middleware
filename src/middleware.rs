@@ -8,3 +8,16 @@ pub use crate::translation::{
     PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
 };
 pub use crate::types::{ConversionMode, DatabaseType, ParamConverter, RowValues};
+
+#[cfg(feature = "libsql")]
+pub use crate::libsql::{
+    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
+};
+#[cfg(feature = "mssql")]
+pub use crate::mssql::{MssqlOptions, MssqlOptionsBuilder};
+#[cfg(feature = "postgres")]
+pub use crate::postgres::{PostgresOptions, PostgresOptionsBuilder};
+#[cfg(feature = "sqlite")]
+pub use crate::sqlite::{SqliteOptions, SqliteOptionsBuilder};
+#[cfg(feature = "turso")]
+pub use crate::turso::{TursoOptions, TursoOptionsBuilder};

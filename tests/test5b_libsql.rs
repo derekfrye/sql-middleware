@@ -6,7 +6,9 @@ use sql_middleware::prelude::*;
 fn test5b_libsql_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
+        let cap = ConfigAndPool::libsql_builder(":memory:".to_string())
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")

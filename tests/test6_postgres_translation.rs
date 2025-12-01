@@ -15,7 +15,7 @@ fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error
         // Deadpool requires a password field; default to empty for trust auth, allow env override.
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        let cap = ConfigAndPool::new_postgres(cfg).await?;
+        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
         let mut conn = cap.get_connection().await?;
 
         // Drop and recreate to ensure no leftover rows from previous runs against the shared DB
@@ -60,7 +60,7 @@ fn postgres_translation_force_on_override_default_off() -> Result<(), Box<dyn st
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
         // Pool default is off; per-call override forces translation of ?1 -> $1.
-        let cap = ConfigAndPool::new_postgres_with_translation(cfg, false).await?;
+        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch(
@@ -98,7 +98,8 @@ fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn s
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
         // Pool default is on; per-call override should skip translation, leaving ?1 invalid.
-        let cap = ConfigAndPool::new_postgres_with_translation(cfg, true).await?;
+        let cap =
+            ConfigAndPool::new_postgres(PostgresOptions::new(cfg).with_translation(true)).await?;
         let mut conn = cap.get_connection().await?;
 
         let res = conn
@@ -125,7 +126,7 @@ fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std:
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        let cap = ConfigAndPool::new_postgres(cfg).await?;
+        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
         let mut conn = cap.get_connection().await?;
 
         // Comment should not be translated; ?1 outside comment should be.

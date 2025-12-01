@@ -22,6 +22,8 @@ pub mod worker;
 
 // Re-export the public API
 #[allow(unused_imports)]
+pub use config::{SqliteOptions, SqliteOptionsBuilder};
+#[allow(unused_imports)]
 pub use executor::{execute_batch, execute_dml, execute_select};
 #[allow(unused_imports)]
 pub use params::Params;

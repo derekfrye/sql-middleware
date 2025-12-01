@@ -6,7 +6,9 @@ use sql_middleware::prelude::*;
 fn turso_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_turso(":memory:".to_string()).await?;
+        let cap = ConfigAndPool::turso_builder(":memory:".to_string())
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE tbl (val TEXT);").await?;
@@ -38,7 +40,10 @@ fn turso_translates_postgres_style_when_forced_on() -> Result<(), Box<dyn std::e
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         // Default translation off; per-call override forces $1 -> ?1.
-        let cap = ConfigAndPool::new_turso_with_translation(":memory:".to_string(), false).await?;
+        let cap = ConfigAndPool::turso_builder(":memory:".to_string())
+            .translation(false)
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE t_force_on (id INTEGER, note TEXT);")
@@ -67,7 +72,10 @@ fn turso_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn std:
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         // Pool default on; per-call override should skip translation.
-        let cap = ConfigAndPool::new_turso_with_translation(":memory:".to_string(), true).await?;
+        let cap = ConfigAndPool::turso_builder(":memory:".to_string())
+            .translation(true)
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE t_force_off (id INTEGER);")
@@ -92,7 +100,10 @@ fn turso_translation_skips_comments_and_literals() -> Result<(), Box<dyn std::er
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         // Default off; override forces $n -> ?n for SQLite/Turso.
-        let cap = ConfigAndPool::new_turso_with_translation(":memory:".to_string(), false).await?;
+        let cap = ConfigAndPool::turso_builder(":memory:".to_string())
+            .translation(false)
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         // Comment should not be translated; $1 outside comment should be.

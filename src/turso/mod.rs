@@ -14,6 +14,7 @@ pub mod query;
 pub mod transaction;
 
 // Re-export the public API for convenience
+pub use config::{TursoOptions, TursoOptionsBuilder};
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
 pub use prepared::TursoNonTxPreparedStatement;

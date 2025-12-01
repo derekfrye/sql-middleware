@@ -24,7 +24,11 @@ fn unique_db_path(prefix: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error::Error>> {
-    let cap = Arc::new(ConfigAndPool::new_sqlite(unique_db_path("stress").to_string()).await?);
+    let cap = Arc::new(
+        ConfigAndPool::sqlite_builder(unique_db_path("stress").to_string())
+            .build()
+            .await?,
+    );
     let sem = Arc::new(Semaphore::new(1));
     let mut conn = cap.get_connection().await?;
     apply_pragmas(&mut conn).await?;
@@ -107,7 +111,8 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("block").to_string())
+    let mut conn = ConfigAndPool::sqlite_builder(unique_db_path("block").to_string())
+        .build()
         .await?
         .get_connection()
         .await?;
@@ -134,7 +139,8 @@ async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Er
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_id_mismatch_errors_cleanly() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("mismatch").to_string())
+    let mut conn = ConfigAndPool::sqlite_builder(unique_db_path("mismatch").to_string())
+        .build()
         .await?
         .get_connection()
         .await?;
@@ -165,7 +171,8 @@ async fn sqlite_tx_id_mismatch_errors_cleanly() -> Result<(), Box<dyn std::error
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("drop").to_string())
+    let mut conn = ConfigAndPool::sqlite_builder(unique_db_path("drop").to_string())
+        .build()
         .await?
         .get_connection()
         .await?;
@@ -209,7 +216,8 @@ async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sqlite_tx_rejects_second_begin() -> Result<(), Box<dyn std::error::Error>> {
-    let mut conn = ConfigAndPool::new_sqlite(unique_db_path("second").to_string())
+    let mut conn = ConfigAndPool::sqlite_builder(unique_db_path("second").to_string())
+        .build()
         .await?
         .get_connection()
         .await?;

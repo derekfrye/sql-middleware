@@ -2,42 +2,73 @@ use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
 
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
-impl ConfigAndPool {
-    /// Asynchronous initializer for `ConfigAndPool` with Sqlite using `deadpool_sqlite`
-    ///
-    /// # Errors
-    /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
-    pub async fn new_sqlite(db_path: String) -> Result<Self, SqlMiddlewareDbError> {
-        Self::new_sqlite_with_translation(db_path, false).await
+/// Options for configuring a SQLite pool.
+#[derive(Debug, Clone)]
+pub struct SqliteOptions {
+    pub db_path: String,
+    pub translate_placeholders: bool,
+}
+
+impl SqliteOptions {
+    #[must_use]
+    pub fn new(db_path: String) -> Self {
+        Self {
+            db_path,
+            translate_placeholders: false,
+        }
     }
 
-    /// Asynchronous initializer for `ConfigAndPool` with Sqlite using `deadpool_sqlite`
-    /// and optional placeholder translation default.
+    #[must_use]
+    pub fn with_translation(mut self, translate_placeholders: bool) -> Self {
+        self.translate_placeholders = translate_placeholders;
+        self
+    }
+}
+
+/// Fluent builder for SQLite options.
+#[derive(Debug, Clone)]
+pub struct SqliteOptionsBuilder {
+    opts: SqliteOptions,
+}
+
+impl SqliteOptionsBuilder {
+    #[must_use]
+    pub fn new(db_path: String) -> Self {
+        Self {
+            opts: SqliteOptions::new(db_path),
+        }
+    }
+
+    #[must_use]
+    pub fn translation(mut self, translate_placeholders: bool) -> Self {
+        self.opts.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn finish(self) -> SqliteOptions {
+        self.opts
+    }
+
+    pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
+        ConfigAndPool::new_sqlite(self.finish()).await
+    }
+}
+
+impl ConfigAndPool {
+    #[must_use]
+    pub fn sqlite_builder(db_path: String) -> SqliteOptionsBuilder {
+        SqliteOptionsBuilder::new(db_path)
+    }
+
+    /// Asynchronous initializer for `ConfigAndPool` with Sqlite using `deadpool_sqlite`.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
-    ///
-    /// Warning: translation skips placeholders inside quoted strings, comments, and dollar-quoted
-    /// blocks via a lightweight state machine; it may miss edge cases in complex SQL. Prefer
-    /// backend-specific SQL instead of relying on translation:
-    /// ```rust
-    /// # use sql_middleware::prelude::*;
-    /// let query = match &conn {
-    ///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
-    /// BEGIN
-    ///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
-    /// END;
-    /// $function$"#,
-    ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
-    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
-    ///     }
-    /// };
-    /// ```
-    pub async fn new_sqlite_with_translation(
-        db_path: String,
-        translate_placeholders: bool,
-    ) -> Result<Self, SqlMiddlewareDbError> {
-        // Configure deadpool_sqlite
+    pub async fn new_sqlite(opts: SqliteOptions) -> Result<Self, SqlMiddlewareDbError> {
+        let db_path = opts.db_path;
+        let translate_placeholders = opts.translate_placeholders;
+
         let cfg: DeadpoolSqliteConfig = DeadpoolSqliteConfig::new(db_path.clone());
 
         // Create the pool

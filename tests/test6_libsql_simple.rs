@@ -10,7 +10,9 @@ mod libsql_tests {
         let rt = Runtime::new()?;
         rt.block_on(async {
             // Create in-memory libsql database
-            let config_and_pool = ConfigAndPool::new_libsql(":memory:".to_string()).await?;
+            let config_and_pool = ConfigAndPool::libsql_builder(":memory:".to_string())
+                .build()
+                .await?;
             assert_eq!(config_and_pool.db_type, DatabaseType::Libsql);
             println!("✓ Created LibSQL connection pool");
 

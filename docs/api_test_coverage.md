@@ -40,40 +40,58 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Acquire pooled connection with pool defaults; public entry point.
 - `ConfigAndPool::new_libsql`
   - **Coverage:** `tests/test5b_libsql.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
-  - **Purpose:** Local LibSQL constructor; public to initialize pool.
+  - **Purpose:** Local LibSQL constructor taking `LibsqlOptions`; public to initialize pool.
+- `ConfigAndPool::libsql_builder`
+  - **Coverage:** `tests/test5b_libsql.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
+  - **Purpose:** Fluent builder wrapper for `LibsqlOptions` to avoid option permutations.
+- `LibsqlOptions`
+  - **Coverage:** Indirect via builder; not constructed directly in tests.
+  - **Purpose:** Local LibSQL config (path + translation default) for pool creation.
 - `ConfigAndPool::new_libsql_remote`
   - **Coverage:** **Not covered**.
-  - **Purpose:** Remote LibSQL/Turso URL constructor; public for remote deployments.
-- `ConfigAndPool::new_libsql_remote_with_translation`
+  - **Purpose:** Remote LibSQL/Turso URL constructor taking `LibsqlRemoteOptions`; public for remote deployments.
+- `ConfigAndPool::libsql_remote_builder`
   - **Coverage:** **Not covered**.
-  - **Purpose:** Remote LibSQL with translation default; public for placeholder rewrites on remote.
-- `ConfigAndPool::new_libsql_with_translation`
+  - **Purpose:** Fluent builder for remote LibSQL options (URL/auth + translation default).
+- `LibsqlRemoteOptions`
   - **Coverage:** **Not covered**.
-  - **Purpose:** LibSQL constructor with translation default; public for translation-on pools.
+  - **Purpose:** Remote LibSQL config (URL/auth + translation default) for pool creation.
 - `ConfigAndPool::new_mssql`
   - **Coverage:** **Not covered**.
-  - **Purpose:** MSSQL constructor; public for SQL Server consumers.
-- `ConfigAndPool::new_mssql_with_translation`
+  - **Purpose:** MSSQL constructor taking `MssqlOptions`; public for SQL Server consumers.
+- `ConfigAndPool::mssql_builder`
   - **Coverage:** **Not covered**.
-  - **Purpose:** MSSQL constructor with translation default; public for placeholder control.
+  - **Purpose:** Fluent builder for MSSQL options (server/db/auth/port/instance + translation default).
+- `MssqlOptions`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** MSSQL config container for pool creation.
 - `ConfigAndPool::new_postgres`
   - **Coverage:** `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
-  - **Purpose:** Primary Postgres constructor; public for consumer setup.
-- `ConfigAndPool::new_postgres_with_translation`
-  - **Coverage:** `tests/test6_postgres_translation.rs`.
-  - **Purpose:** Postgres constructor with translation default; public for apps needing placeholder rewrites.
+  - **Purpose:** Primary Postgres constructor taking `PostgresOptions`; public for consumer setup.
+- `ConfigAndPool::postgres_builder`
+  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
+  - **Purpose:** Fluent builder for `PostgresOptions` to toggle translation defaults without more constructors.
+- `PostgresOptions`
+  - **Coverage:** `tests/test2_postgres.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
+  - **Purpose:** Postgres config wrapper (deadpool config + translation default) for pool creation.
 - `ConfigAndPool::new_sqlite`
   - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
-  - **Purpose:** Primary SQLite constructor; public for consumer setup.
-- `ConfigAndPool::new_sqlite_with_translation`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** SQLite constructor with default translation toggle; public for apps wanting translation-on by default.
+  - **Purpose:** Primary SQLite constructor taking `SqliteOptions`; public for consumer setup.
+- `ConfigAndPool::sqlite_builder`
+  - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
+  - **Purpose:** Fluent builder for `SqliteOptions` to set defaults (e.g., translation) without constructor variants.
+- `SqliteOptions`
+  - **Coverage:** Indirect via builder; not constructed directly in tests.
+  - **Purpose:** SQLite config (path + translation default) for pool creation.
 - `ConfigAndPool::new_turso`
   - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5d_turso.rs`, `tests/test6_turso_translation.rs`.
-  - **Purpose:** Local Turso constructor; public for Turso setup.
-- `ConfigAndPool::new_turso_with_translation`
-  - **Coverage:** `tests/test6_turso_translation.rs`.
-  - **Purpose:** Turso constructor with translation default; public for translation-on pools.
+  - **Purpose:** Local Turso constructor taking `TursoOptions`; public for Turso setup.
+- `ConfigAndPool::turso_builder`
+  - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5d_turso.rs`, `tests/test6_turso_translation.rs`.
+  - **Purpose:** Fluent builder for `TursoOptions` to set defaults (e.g., translation) without constructor permutations.
+- `TursoOptions`
+  - **Coverage:** Indirect via builder; not constructed directly in tests.
+  - **Purpose:** Turso config (path + translation default) for pool creation.
 - `MiddlewarePool`
   - **Coverage:** Type used indirectly; method `get` **Not covered** directly.
   - **Purpose:** Erased pool enum across backends; public for advanced pooling control.

@@ -107,7 +107,9 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
             match test_case {
                 TestCase::Sqlite(connection_string) => {
                     // Initialize Sqlite pool
-                    let config_and_pool = ConfigAndPool2::new_sqlite(connection_string).await?;
+                    let config_and_pool = ConfigAndPool2::sqlite_builder(connection_string)
+                        .build()
+                        .await?;
                     conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
@@ -116,7 +118,9 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 #[cfg(feature = "postgres")]
                 TestCase::Postgres(cfg) => {
                     // Initialize Postgres pool
-                    let config_and_pool = ConfigAndPool2::new_postgres(*cfg).await?;
+                    let config_and_pool = ConfigAndPool2::postgres_builder((*cfg).clone())
+                        .build()
+                        .await?;
                     conn = config_and_pool.get_connection().await?;
 
                     // Execute test logic
@@ -125,7 +129,9 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 #[cfg(feature = "turso")]
                 TestCase::Turso(connection_string) => {
                     // Initialize Turso connection (no deadpool pooling)
-                    let config_and_pool = ConfigAndPool2::new_turso(connection_string).await?;
+                    let config_and_pool = ConfigAndPool2::turso_builder(connection_string)
+                        .build()
+                        .await?;
                     conn = config_and_pool.get_connection().await?;
                 }
             }

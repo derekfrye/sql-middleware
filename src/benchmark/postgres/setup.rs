@@ -1,4 +1,4 @@
-use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PostgresOptions};
 use postgresql_embedded::PostgreSQL;
 
 const POSTGRES_BENCH_DDL: &str = "CREATE TABLE IF NOT EXISTS test (
@@ -77,7 +77,7 @@ pub(super) async fn ensure_target_user(
     admin_cfg.password = Some(settings.password.clone());
     admin_cfg.dbname = Some(String::from("postgres"));
 
-    let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
+    let admin_pool = ConfigAndPool::new_postgres(PostgresOptions::new(admin_cfg)).await?;
     let admin_conn = admin_pool.get_connection().await?;
 
     if let MiddlewarePoolConnection::Postgres { client: pgconn, .. } = admin_conn {

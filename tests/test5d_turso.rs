@@ -7,7 +7,9 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         // Turso isn't pooled in via deadpool yet; `get_connection` creates a fresh connection each time.
-        let cap = ConfigAndPool::new_turso(":memory:".to_string()).await?;
+        let cap = ConfigAndPool::turso_builder(":memory:".to_string())
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")

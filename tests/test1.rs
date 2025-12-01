@@ -68,9 +68,9 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
         rt.block_on(async {
             // Build config/pool
             let cap = match case {
-                TestCase::Sqlite(path) => ConfigAndPool::new_sqlite(path).await?,
+                TestCase::Sqlite(path) => ConfigAndPool::sqlite_builder(path).build().await?,
                 #[cfg(feature = "turso")]
-                TestCase::Turso(path) => ConfigAndPool::new_turso(path).await?,
+                TestCase::Turso(path) => ConfigAndPool::turso_builder(path).build().await?,
             };
 
             let mut conn = cap.get_connection().await?;

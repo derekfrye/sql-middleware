@@ -5,7 +5,8 @@ use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 
 use sql_middleware::middleware::{
-    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, QueryAndParams, RowValues,
+    ConfigAndPool, ConversionMode, MiddlewarePoolConnection, PostgresOptions, QueryAndParams,
+    RowValues,
 };
 use sql_middleware::postgres::{
     Params as PostgresParams, build_result_set as postgres_build_result_set,
@@ -57,7 +58,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );";
 
-        let config_and_pool = ConfigAndPool::new_postgres(cfg).await?;
+        let config_and_pool = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
         let conn = config_and_pool.get_connection().await?;
         let mut pgconn = match conn {
             MiddlewarePoolConnection::Postgres { client, .. } => client,

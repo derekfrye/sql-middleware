@@ -8,7 +8,9 @@ use sql_middleware::sqlite::Params as SqliteParams;
 fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".to_string()).await?;
+        let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+            .build()
+            .await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")

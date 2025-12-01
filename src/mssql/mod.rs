@@ -19,6 +19,8 @@ pub use client::create_mssql_client;
 #[allow(unused_imports)]
 pub use config::MssqlClient;
 #[allow(unused_imports)]
+pub use config::{MssqlOptions, MssqlOptionsBuilder};
+#[allow(unused_imports)]
 pub use executor::{execute_batch, execute_dml, execute_select};
 #[allow(unused_imports)]
 pub use params::Params;
