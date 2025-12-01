@@ -215,57 +215,66 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Typed extraction; public for consumers.
 
 ## Backend-specific re-exports
-- LibSQL `execute_batch`, `execute_dml`, `execute_select`
+### LibSQL
+- `execute_batch`, `execute_dml`, `execute_select`
   - **Coverage:** Indirect via connection calls; not direct.
   - **Purpose:** Direct backend helpers; public for manual execution.
-- LibSQL `Params`
+- `Params`
   - **Coverage:** **Not covered** (LibSQL tests use `&[RowValues]`).
   - **Purpose:** Param wrapper for backend parity; public for converters.
-- LibSQL `build_result_set`
+- `build_result_set`
   - **Coverage:** Not directly called in tests.
   - **Purpose:** Build results from libsql rows; public for manual execution.
-- LibSQL `transaction::{Prepared, Tx, begin_transaction}`
+- `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test5b_libsql.rs`.
   - **Purpose:** Transaction helpers; public for explicit transactions.
-- MSSQL `create_mssql_client`, `MssqlClient`, `execute_batch`, `execute_dml`, `execute_select`, `Params`, `build_result_set`
+
+### MSSQL
+- `create_mssql_client`, `MssqlClient`, `execute_batch`, `execute_dml`, `execute_select`, `Params`, `build_result_set`
   - **Coverage:** **Not covered**.
   - **Purpose:** SQL Server support; public for consumers targeting MSSQL (awaiting tests).
-- Postgres `execute_batch`, `execute_dml`, `execute_select`
+
+### Postgres
+- `execute_batch`, `execute_dml`, `execute_select`
   - **Coverage:** Indirect via pooled connections; no direct calls from tests.
   - **Purpose:** Direct backend helpers; public for callers bypassing pool abstraction.
-- Postgres `Params`
+- `Params`
   - **Coverage:** Used with `convert_sql_params` in postgres tests.
   - **Purpose:** Backend-specific parameter wrapper; public for conversions.
-- Postgres `build_result_set`
+- `build_result_set`
   - **Coverage:** Used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`.
   - **Purpose:** Build `ResultSet` from raw rows; public for manual execution paths.
-- Postgres `transaction::{Prepared, Tx, begin_transaction}`
+- `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** **Not covered** directly (tests use client-level transactions instead).
   - **Purpose:** Prepared/transaction helpers; public for explicit transaction control.
-- SQLite `execute_batch`, `execute_dml`, `execute_select`
+
+### SQLite
+- `execute_batch`, `execute_dml`, `execute_select`
   - **Coverage:** Indirect via connections; not directly called in tests.
   - **Purpose:** Direct backend helpers; public for manual execution.
-- SQLite `Params`
+- `Params`
   - **Coverage:** Used in `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** SQLite param wrapper; public for conversion.
-- SQLite `SqlitePreparedStatement`
+- `SqlitePreparedStatement`
   - **Coverage:** Used in `tests/test5c_sqlite.rs`.
   - **Purpose:** Prepared statement handle; public for reuse.
-- SQLite `build_result_set`
+- `build_result_set`
   - **Coverage:** Used in `tests/test4_AnyConnWrapper.rs`.
   - **Purpose:** Build results from rusqlite rows; public for manual execution.
-- SQLite `transaction::{Prepared, Tx, begin_transaction}`
+- `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Transaction helpers on worker; public for explicit transaction control.
-- Turso `execute_batch`, `execute_dml`, `execute_select`
+
+### Turso
+- `execute_batch`, `execute_dml`, `execute_select`
   - **Coverage:** Indirect via connection methods.
   - **Purpose:** Direct backend helpers; public for manual execution.
-- Turso `Params`
+- `Params`
   - **Coverage:** **Not covered**.
   - **Purpose:** Param wrapper for parity; public for manual conversions.
-- Turso `prepared::TursoNonTxPreparedStatement`
+- `prepared::TursoNonTxPreparedStatement`
   - **Coverage:** **Not covered**.
   - **Purpose:** Non-transaction prepared handle; public for prepared execution without transactions.
-- Turso `transaction::{Prepared, Tx, begin_transaction}`
+- `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test5d_turso.rs`.
   - **Purpose:** Transaction helpers; public for explicit transaction flows.
