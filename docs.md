@@ -88,7 +88,9 @@ SQLite pooling runs through a worker thread so blocking `rusqlite` calls never s
 ```rust,no_run
 use sql_middleware::prelude::*;
 
-let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".into())
+    .build()
+    .await?;
 let mut conn = cap.get_connection().await?;
 
 // Borrow the raw rusqlite::Connection on the worker for batched work.

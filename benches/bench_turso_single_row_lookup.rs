@@ -62,7 +62,10 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
 
 static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
     TOKIO_RUNTIME
-        .block_on(ConfigAndPool::new_turso(DATASET.path().to_string()))
+        .block_on(
+            ConfigAndPool::turso_builder(DATASET.path().to_string())
+                .build(),
+        )
         .expect("create Turso middleware pool")
 });
 
@@ -147,7 +150,9 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
         let _ = fs::remove_file(format!("{owned}-shm"));
     }
 
-    let config = ConfigAndPool::new_turso(path.to_string_lossy().into_owned()).await?;
+    let config = ConfigAndPool::turso_builder(path.to_string_lossy().into_owned())
+        .build()
+        .await?;
     let mut conn = config.get_connection().await?;
 
     conn.execute_batch(

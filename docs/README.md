@@ -359,7 +359,7 @@ See further examples in the tests directory:
 
 ## Placeholder Translation
 
-- Default off. Enable at pool creation with the `*_with_translation(..., true)` constructors (or by toggling `translate_placeholders` on `ConfigAndPool`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
+- Default off. Enable at pool creation via backend options/builders (e.g., `PostgresOptions::new(cfg).with_translation(true)` or `ConfigAndPool::sqlite_builder(path).translation(true)`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
 - Override per call via the query builder: `.translation(TranslationMode::ForceOff | ForceOn)` or `.options(...)`.
 - Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
 - *Limitations*: Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched. Basically, don't rely on this to try to translate `?X` to `$X` in complicated, per-dialect specific stuff (like `$tag$...$tag$` in postgres, this translation is meant to cover 90% of use cases).
@@ -388,12 +388,12 @@ let rows = conn
 
 ### Our use of `[allow(...)]`s
 
-- `#[allow(clippy::unused_async)]` keeps public constructors async so the signature stays consistent even when the current body has no awaits. You’ll see this on `ConfigAndPool::new_postgres` (`src/postgres/config.rs:10`), `ConfigAndPool::new_mssql` (`src/mssql/config.rs:19`), and `MiddlewarePool::get` (`src/pool/types.rs:66`). We also call out the rationale in **[Async Design Decisions](async.md)**.
+- `#[allow(clippy::unused_async)]` keeps public constructors async so the signature stays consistent even when the current body has no awaits. You’ll see this on `ConfigAndPool::new_postgres` (src/postgres/config.rs), `ConfigAndPool::new_mssql` (src/mssql/config.rs), and `MiddlewarePool::get` (src/pool/types.rs). We also call out the rationale in **[Async Design Decisions](async.md)**.
 - `#[allow(clippy::useless_conversion)]` is used once to satisfy `rusqlite::params_from_iter`, which requires an iterator type that Clippy would otherwise collapse away (`src/sqlite/params.rs:79`).
 - `#[allow(unreachable_patterns)]` guards catch-all branches that only fire when a backend feature is disabled, preventing false positives when matching on `MiddlewarePoolConnection` (`src/pool/connection.rs:102`, `src/executor.rs:64`, `src/executor.rs:97`, `src/executor.rs:130`, `src/pool/interaction.rs:40`, `src/pool/interaction.rs:78`).
 - `#[allow(unused_variables)]` appears around the interaction helpers because the higher-order functions take arguments that are only needed for certain backend combinations (`src/pool/interaction.rs:10`, `src/pool/interaction.rs:51`).
 
 ## Release Notes
 
-- 0.3.0 (unreleased): Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
+- 0.3.0 (unreleased): Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, switched pool constructors to backend options + builders (instead of per-feature constructor permutations), and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
 - 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).
