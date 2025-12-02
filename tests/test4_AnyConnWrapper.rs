@@ -1,3 +1,6 @@
+#[cfg(feature = "mssql")]
+use std::{fs, path::Path};
+
 use sql_middleware::postgres::{
     Params as PostgresParams, build_result_set as postgres_build_result_set,
 };
@@ -9,6 +12,8 @@ use sql_middleware::{
         MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
 };
+#[cfg(feature = "mssql")]
+use sql_middleware::middleware::MssqlOptions;
 use tokio::runtime::Runtime;
 
 fn unique_path(prefix: &str) -> String {
@@ -32,6 +37,13 @@ impl Drop for FileCleanup {
     }
 }
 
+#[cfg(feature = "mssql")]
+fn read_sql_server_password() -> Result<String, Box<dyn std::error::Error>> {
+    let pwd_path = Path::new("tests/sql_server_pwd.txt");
+    let pwd = fs::read_to_string(pwd_path)?;
+    Ok(pwd.trim().to_string())
+}
+
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
     #[allow(unused_mut)]
@@ -48,6 +60,18 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(String::new());
         test_cases.push(TestCase::Postgres(Box::new(cfg)));
+    }
+    #[cfg(feature = "mssql")]
+    {
+        let pwd = read_sql_server_password()?;
+        test_cases.push(TestCase::Mssql(MssqlOptions::new(
+            "10.3.0.202".to_string(),
+            "testing".to_string(),
+            "testlogin".to_string(),
+            pwd,
+            Some(1433),
+            None,
+        )));
     }
     #[cfg(feature = "turso")]
     {
@@ -101,6 +125,11 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                     db_type = DatabaseType::Postgres;
                     None
                 }
+                #[cfg(feature = "mssql")]
+                TestCase::Mssql(_) => {
+                    db_type = DatabaseType::Mssql;
+                    None
+                }
             };
 
             let mut conn: MiddlewarePoolConnection;
@@ -114,6 +143,11 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
 
                     // Execute test logic
                     // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
+                }
+                #[cfg(feature = "mssql")]
+                TestCase::Mssql(opts) => {
+                    let config_and_pool = ConfigAndPool2::new_mssql(opts).await?;
+                    conn = config_and_pool.get_connection().await?;
                 }
                 #[cfg(feature = "postgres")]
                 TestCase::Postgres(cfg) => {
@@ -149,6 +183,20 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .await?;
             }
+            #[cfg(feature = "mssql")]
+            if db_type == DatabaseType::Mssql {
+                conn.execute_batch(
+                    r"
+                    IF OBJECT_ID('dbo.eup_statistic', 'U') IS NOT NULL DROP TABLE dbo.eup_statistic;
+                    IF OBJECT_ID('dbo.event_user_player', 'U') IS NOT NULL DROP TABLE dbo.event_user_player;
+                    IF OBJECT_ID('dbo.bettor', 'U') IS NOT NULL DROP TABLE dbo.bettor;
+                    IF OBJECT_ID('dbo.golfer', 'U') IS NOT NULL DROP TABLE dbo.golfer;
+                    IF OBJECT_ID('dbo.event', 'U') IS NOT NULL DROP TABLE dbo.event;
+                    IF OBJECT_ID('dbo.test', 'U') IS NOT NULL DROP TABLE dbo.test;
+                    ",
+                )
+                .await?;
+            }
             run_test_logic(&mut conn, db_type).await?;
         }
 
@@ -165,6 +213,8 @@ enum TestCase {
     Sqlite(String),
     #[cfg(feature = "postgres")]
     Postgres(Box<deadpool_postgres::Config>),
+    #[cfg(feature = "mssql")]
+    Mssql(MssqlOptions),
     #[cfg(feature = "turso")]
     Turso(String),
     // #[cfg(feature = "libsql")]
@@ -194,13 +244,76 @@ async fn run_test_logic(
             include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
             include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
         ],
+        #[cfg(feature = "mssql")]
         DatabaseType::Mssql => vec![
-            // Use SQLite scripts for MSSQL in test
-            include_str!("../tests/sqlite/test4/00_event.sql"),
-            include_str!("../tests/sqlite/test4/02_golfer.sql"),
-            include_str!("../tests/sqlite/test4/03_bettor.sql"),
-            include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
-            include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
+            r#"
+IF OBJECT_ID('dbo.event', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.event (
+        event_id INT IDENTITY(1,1) PRIMARY KEY,
+        espn_id INT NOT NULL UNIQUE,
+        year INT NOT NULL,
+        name NVARCHAR(255) NOT NULL,
+        ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    );
+END;
+"#,
+            r#"
+IF OBJECT_ID('dbo.golfer', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.golfer (
+        golfer_id INT IDENTITY(1,1) PRIMARY KEY,
+        espn_id INT NOT NULL UNIQUE,
+        name NVARCHAR(255) NOT NULL UNIQUE,
+        ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    );
+END;
+"#,
+            r#"
+IF OBJECT_ID('dbo.bettor', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.bettor (
+        user_id INT IDENTITY(1,1) PRIMARY KEY,
+        name NVARCHAR(255) NOT NULL,
+        ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+    );
+END;
+"#,
+            r#"
+IF OBJECT_ID('dbo.event_user_player', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.event_user_player (
+        eup_id INT IDENTITY(1,1) PRIMARY KEY,
+        event_id INT NOT NULL REFERENCES dbo.event(event_id),
+        user_id INT NOT NULL REFERENCES dbo.bettor(user_id),
+        golfer_id INT NOT NULL REFERENCES dbo.golfer(golfer_id),
+        last_refresh_ts DATETIME2 NULL,
+        ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT uq_event_user_player UNIQUE (event_id, user_id, golfer_id)
+    );
+END;
+"#,
+            r#"
+IF OBJECT_ID('dbo.eup_statistic', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.eup_statistic (
+        eup_stat_id INT IDENTITY(1,1) PRIMARY KEY,
+        event_espn_id INT NOT NULL REFERENCES dbo.event(espn_id),
+        golfer_espn_id INT NOT NULL REFERENCES dbo.golfer(espn_id),
+        eup_id INT NOT NULL REFERENCES dbo.event_user_player(eup_id),
+        grp INT NOT NULL,
+        rounds NVARCHAR(MAX) NOT NULL,
+        round_scores NVARCHAR(MAX) NOT NULL,
+        tee_times NVARCHAR(MAX) NOT NULL,
+        holes_completed_by_round NVARCHAR(MAX) NOT NULL,
+        line_scores NVARCHAR(MAX) NOT NULL,
+        total_score INT NOT NULL,
+        upd_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT uq_eup_stat UNIQUE (golfer_espn_id, eup_id)
+    );
+END;
+"#,
         ],
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => vec![
@@ -246,16 +359,22 @@ async fn run_test_logic(
         DatabaseType::Libsql => include_str!("test4.sql"),
         #[cfg(feature = "turso")]
         DatabaseType::Turso => include_str!("../tests/turso/test4/setup.sql"),
+        #[cfg(feature = "mssql")]
         DatabaseType::Mssql => include_str!("test4.sql"),
     };
     conn.execute_batch(setup_queries).await?;
 
-    let test_tbl_query = "CREATE TABLE test (id bigint, name text);";
+    let test_tbl_query = match db_type {
+        #[cfg(feature = "mssql")]
+        DatabaseType::Mssql => "CREATE TABLE test (id BIGINT, name NVARCHAR(255));",
+        _ => "CREATE TABLE test (id bigint, name text);",
+    };
     conn.execute_batch(test_tbl_query).await?;
 
     let parameterized_query = match db_type {
         DatabaseType::Postgres => "INSERT INTO test (id, name) VALUES ($1, $2);",
         DatabaseType::Sqlite => "INSERT INTO test (id, name) VALUES (?1, ?2);",
+        #[cfg(feature = "mssql")]
         DatabaseType::Mssql => "INSERT INTO test (id, name) VALUES (@p1, @p2);",
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => "INSERT INTO test (id, name) VALUES (?1, ?2);",
@@ -336,6 +455,7 @@ async fn run_test_logic(
                 .await?;
             res?;
         }
+        #[cfg(feature = "mssql")]
         DatabaseType::Mssql => {
             // For this test, skip the MSSQL implementation
             // Simply insert the data using the middleware connection
@@ -448,8 +568,21 @@ async fn run_test_logic(
                 .await?;
             res?;
         }
-        DatabaseType::Mssql | DatabaseType::Turso | DatabaseType::Libsql => {
+        #[cfg(feature = "mssql")]
+        DatabaseType::Mssql => {
             // For MS SQL, insert data using the middleware connection
+            for param in params {
+                conn.query(parameterized_query).params(&param).dml().await?;
+            }
+        }
+        #[cfg(feature = "turso")]
+        DatabaseType::Turso => {
+            for param in params {
+                conn.query(parameterized_query).params(&param).dml().await?;
+            }
+        }
+        #[cfg(feature = "libsql")]
+        DatabaseType::Libsql => {
             for param in params {
                 conn.query(parameterized_query).params(&param).dml().await?;
             }
@@ -486,8 +619,13 @@ async fn run_test_logic(
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
         }
+        #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql { .. } => {
-            // For MSSQL, just execute the query using the middleware
+            // For MSSQL, execute twice to match duplicate insert expectation
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
+                .await?;
             conn.query(&query_and_params.query)
                 .params(&query_and_params.params)
                 .dml()
