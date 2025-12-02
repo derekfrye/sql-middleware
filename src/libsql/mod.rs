@@ -1,8 +1,8 @@
-//! LibSQL backend glue (local or remote).
+//! `LibSQL` backend glue (local or remote).
 //!
 //! Mirrors the SQLite/Turso module layout:
 //! - `config`: connection configuration and pool setup
-//! - `params`: parameter conversion between middleware and LibSQL types
+//! - `params`: parameter conversion between middleware and `LibSQL` types
 //! - `query`: result extraction and building
 //! - `executor`: database operation execution
 

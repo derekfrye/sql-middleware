@@ -21,7 +21,8 @@ pub struct Prepared {
 /// Begin a new transaction on the provided SQL Server connection.
 ///
 /// # Errors
-/// Returns an error if issuing the BEGIN TRANSACTION fails.
+///
+/// Returns `SqlMiddlewareDbError::ExecutionError` if issuing the BEGIN statement fails.
 pub async fn begin_transaction(client: &mut MssqlClient) -> Result<Tx<'_>, SqlMiddlewareDbError> {
     Query::new("BEGIN TRANSACTION")
         .execute(client)
@@ -38,13 +39,17 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if preparing the statement fails (validation is done on first use).
-    pub async fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
+    pub fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
         Ok(Prepared {
             sql: sql.to_string(),
         })
     }
 
     /// Execute a batch of SQL statements inside the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         Query::new(sql).execute(self.client).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("MSSQL tx execute_batch error: {e}"))
@@ -53,6 +58,10 @@ impl Tx<'_> {
     }
 
     /// Execute a prepared DML statement and return affected rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails or the affected row count cannot be converted.
     pub async fn execute_prepared(
         &mut self,
         prepared: &Prepared,
@@ -70,6 +79,10 @@ impl Tx<'_> {
     }
 
     /// Execute a prepared SELECT and return a `ResultSet`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
     pub async fn query_prepared(
         &mut self,
         prepared: &Prepared,
@@ -79,10 +92,14 @@ impl Tx<'_> {
     }
 
     /// Commit the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if commit fails.
     pub async fn commit(mut self) -> Result<(), SqlMiddlewareDbError> {
         if self.open {
             Query::new("COMMIT TRANSACTION")
-                .execute(&mut self.client)
+                .execute(self.client)
                 .await
                 .map_err(|e| {
                     SqlMiddlewareDbError::ExecutionError(format!("MSSQL commit error: {e}"))
@@ -93,10 +110,14 @@ impl Tx<'_> {
     }
 
     /// Roll back the transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if rollback fails.
     pub async fn rollback(mut self) -> Result<(), SqlMiddlewareDbError> {
         if self.open {
             Query::new("ROLLBACK TRANSACTION")
-                .execute(&mut self.client)
+                .execute(self.client)
                 .await
                 .map_err(|e| {
                     SqlMiddlewareDbError::ExecutionError(format!("MSSQL rollback error: {e}"))

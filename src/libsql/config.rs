@@ -2,7 +2,7 @@ use deadpool_libsql::{Manager, Pool};
 
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
-/// Options for configuring a local LibSQL database.
+/// Options for configuring a local `LibSQL` database.
 #[derive(Debug, Clone)]
 pub struct LibsqlOptions {
     pub db_path: String,
@@ -56,7 +56,7 @@ impl LibsqlRemoteOptions {
     }
 }
 
-/// Fluent builder for local LibSQL options.
+/// Fluent builder for local `LibSQL` options.
 #[derive(Debug, Clone)]
 pub struct LibsqlOptionsBuilder {
     opts: LibsqlOptions,
@@ -81,12 +81,17 @@ impl LibsqlOptionsBuilder {
         self.opts
     }
 
+    /// Build a `ConfigAndPool` from the configured options.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
         ConfigAndPool::new_libsql(self.finish()).await
     }
 }
 
-/// Fluent builder for remote LibSQL options.
+/// Fluent builder for remote `LibSQL` options.
 #[derive(Debug, Clone)]
 pub struct LibsqlRemoteOptionsBuilder {
     opts: LibsqlRemoteOptions,
@@ -117,6 +122,11 @@ impl LibsqlRemoteOptionsBuilder {
         self.opts
     }
 
+    /// Build a `ConfigAndPool` for remote `LibSQL`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
         ConfigAndPool::new_libsql_remote(self.finish()).await
     }

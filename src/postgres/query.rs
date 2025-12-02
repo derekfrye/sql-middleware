@@ -62,14 +62,10 @@ fn postgres_extract_value(
     // For simplicity, we'll handle common types. You may need to expand this.
     if type_info.name() == "int2" {
         let val: Option<i16> = row.try_get(idx)?;
-        Ok(val
-            .map(|v| RowValues::Int(i64::from(v)))
-            .unwrap_or(RowValues::Null))
+        Ok(val.map_or(RowValues::Null, |v| RowValues::Int(i64::from(v))))
     } else if type_info.name() == "int4" {
         let val: Option<i32> = row.try_get(idx)?;
-        Ok(val
-            .map(|v| RowValues::Int(i64::from(v)))
-            .unwrap_or(RowValues::Null))
+        Ok(val.map_or(RowValues::Null, |v| RowValues::Int(i64::from(v))))
     } else if type_info.name() == "int8" {
         let val: Option<i64> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))

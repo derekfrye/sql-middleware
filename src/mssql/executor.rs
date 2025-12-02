@@ -4,7 +4,11 @@ use super::config::MssqlManager;
 use super::query::{bind_query_params, build_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
-/// Execute a batch of SQL statements for SQL Server
+/// Execute a batch of SQL statements for SQL Server.
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails.
 #[allow(dead_code)]
 pub async fn execute_batch(
     mssql_client: &mut Object<MssqlManager>,
@@ -22,7 +26,11 @@ pub async fn execute_batch(
     Ok(())
 }
 
-/// Execute a SELECT query with parameters
+/// Execute a SELECT query with parameters.
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError::ExecutionError` if execution or result processing fails.
 #[allow(dead_code)]
 pub async fn execute_select(
     mssql_client: &mut Object<MssqlManager>,
@@ -36,7 +44,11 @@ pub async fn execute_select(
     build_result_set(client, query, params).await
 }
 
-/// Execute a DML query (INSERT, UPDATE, DELETE) with parameters
+/// Execute a DML query (INSERT, UPDATE, DELETE) with parameters.
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails or rows affected cannot be converted.
 #[allow(dead_code)]
 pub async fn execute_dml(
     mssql_client: &mut Object<MssqlManager>,

@@ -2,7 +2,7 @@ use deadpool_sqlite::{Config as DeadpoolSqliteConfig, Runtime};
 
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
-/// Options for configuring a SQLite pool.
+/// Options for configuring a `SQLite` pool.
 #[derive(Debug, Clone)]
 pub struct SqliteOptions {
     pub db_path: String,
@@ -25,7 +25,7 @@ impl SqliteOptions {
     }
 }
 
-/// Fluent builder for SQLite options.
+/// Fluent builder for `SQLite` options.
 #[derive(Debug, Clone)]
 pub struct SqliteOptionsBuilder {
     opts: SqliteOptions,
@@ -50,6 +50,11 @@ impl SqliteOptionsBuilder {
         self.opts
     }
 
+    /// Build a `ConfigAndPool` for `SQLite`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if pool creation or the initial smoke test fails.
     pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
         ConfigAndPool::new_sqlite(self.finish()).await
     }

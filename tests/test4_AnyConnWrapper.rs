@@ -46,6 +46,13 @@ fn read_sql_server_password() -> Result<String, Box<dyn std::error::Error>> {
 
 #[test]
 fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
+    let test_cases = assemble_test_cases()?;
+    let rt = Runtime::new().unwrap();
+    rt.block_on(async { run_test_cases(test_cases).await })
+}
+
+#[allow(unused_mut)]
+fn assemble_test_cases() -> Result<Vec<TestCase>, Box<dyn std::error::Error>> {
     #[allow(unused_mut)]
     let mut test_cases = vec![
         TestCase::Sqlite("file::memory:?cache=shared".to_string()),
@@ -79,133 +86,122 @@ fn test4_trait() -> Result<(), Box<dyn std::error::Error>> {
         test_cases.push(TestCase::Turso(unique_path("test_turso")));
     }
 
+    Ok(test_cases)
+}
+
+async fn run_test_cases(test_cases: Vec<TestCase>) -> Result<(), Box<dyn std::error::Error>> {
     // #[cfg(feature = "libsql")]
     // {
     //     test_cases.push(TestCase::Libsql(":memory:".to_string()));
     //     test_cases.push(TestCase::Libsql("test_libsql.db".to_string()));
     // }
 
-    let rt = Runtime::new().unwrap();
-    rt.block_on(async {
-        let mut db_type: DatabaseType;
+    for test_case in test_cases {
+        let (mut conn, db_type, _cleanup) = init_connection(test_case).await?;
+        reset_backend(&mut conn, &db_type).await?;
+        run_test_logic(&mut conn, db_type).await?;
+    }
 
-        // Drop guard to clean up file-backed DBs even on failure
-        for test_case in test_cases {
-            // Clean up database files if they exist, and register cleanup guard
-            let _cleanup_guard = match &test_case {
-                TestCase::Sqlite(connection_string) => {
-                    db_type = DatabaseType::Sqlite;
-                    if connection_string == "file::memory:?cache=shared" {
-                        None
-                    } else {
-                        let _ = std::fs::remove_file(connection_string);
-                        Some(FileCleanup(vec![connection_string.clone()]))
-                    }
-                }
-                #[cfg(feature = "turso")]
-                TestCase::Turso(connection_string) => {
-                    db_type = DatabaseType::Turso;
-                    if connection_string == ":memory:" {
-                        None
-                    } else {
-                        let _ = std::fs::remove_file(connection_string);
-                        let _ = std::fs::remove_file(format!("{connection_string}-wal"));
-                        let _ = std::fs::remove_file(format!("{connection_string}-shm"));
-                        Some(FileCleanup(vec![connection_string.clone()]))
-                    }
-                }
-                // #[cfg(feature = "libsql")]
-                // TestCase::Libsql(connection_string) => {
-                //     if connection_string != ":memory:" {
-                //         let _ = std::fs::remove_file(&connection_string);
-                //     }
-                // }
-                #[cfg(feature = "postgres")]
-                TestCase::Postgres(_) => {
-                    db_type = DatabaseType::Postgres;
-                    None
-                }
-                #[cfg(feature = "mssql")]
-                TestCase::Mssql(_) => {
-                    db_type = DatabaseType::Mssql;
-                    None
-                }
-            };
+    Ok(())
+}
 
-            let mut conn: MiddlewarePoolConnection;
-            match test_case {
-                TestCase::Sqlite(connection_string) => {
-                    // Initialize Sqlite pool
-                    let config_and_pool = ConfigAndPool2::sqlite_builder(connection_string)
-                        .build()
-                        .await?;
-                    conn = config_and_pool.get_connection().await?;
-
-                    // Execute test logic
-                    // run_test_logic(&mut conn, DatabaseType::Sqlite).await?;
-                }
-                #[cfg(feature = "mssql")]
-                TestCase::Mssql(opts) => {
-                    let config_and_pool = ConfigAndPool2::new_mssql(opts).await?;
-                    conn = config_and_pool.get_connection().await?;
-                }
-                #[cfg(feature = "postgres")]
-                TestCase::Postgres(cfg) => {
-                    // Initialize Postgres pool
-                    let config_and_pool = ConfigAndPool2::postgres_builder((*cfg).clone())
-                        .build()
-                        .await?;
-                    conn = config_and_pool.get_connection().await?;
-
-                    // Execute test logic
-                    // run_test_logic(&mut conn, DatabaseType::Postgres).await?;
-                }
-                #[cfg(feature = "turso")]
-                TestCase::Turso(connection_string) => {
-                    // Initialize Turso connection (no deadpool pooling)
-                    let config_and_pool = ConfigAndPool2::turso_builder(connection_string)
-                        .build()
-                        .await?;
-                    conn = config_and_pool.get_connection().await?;
-                }
+async fn init_connection(
+    test_case: TestCase,
+) -> Result<(MiddlewarePoolConnection, DatabaseType, Option<FileCleanup>), Box<dyn std::error::Error>>
+{
+    let db_type: DatabaseType;
+    let cleanup_guard = match &test_case {
+        TestCase::Sqlite(connection_string) => {
+            db_type = DatabaseType::Sqlite;
+            if connection_string == "file::memory:?cache=shared" {
+                None
+            } else {
+                let _ = std::fs::remove_file(connection_string);
+                Some(FileCleanup(vec![connection_string.clone()]))
             }
-            if db_type == DatabaseType::Postgres {
-                // Ensure a clean slate when reusing a shared Postgres instance.
-                conn.execute_batch(
-                    r"
-                    DROP TABLE IF EXISTS eup_statistic CASCADE;
-                    DROP TABLE IF EXISTS event_user_player CASCADE;
-                    DROP TABLE IF EXISTS bettor CASCADE;
-                    DROP TABLE IF EXISTS golfer CASCADE;
-                    DROP TABLE IF EXISTS event CASCADE;
-                    DROP TABLE IF EXISTS test CASCADE;
-                    ",
-                )
-                .await?;
-            }
-            #[cfg(feature = "mssql")]
-            if db_type == DatabaseType::Mssql {
-                conn.execute_batch(
-                    r"
-                    IF OBJECT_ID('dbo.eup_statistic', 'U') IS NOT NULL DROP TABLE dbo.eup_statistic;
-                    IF OBJECT_ID('dbo.event_user_player', 'U') IS NOT NULL DROP TABLE dbo.event_user_player;
-                    IF OBJECT_ID('dbo.bettor', 'U') IS NOT NULL DROP TABLE dbo.bettor;
-                    IF OBJECT_ID('dbo.golfer', 'U') IS NOT NULL DROP TABLE dbo.golfer;
-                    IF OBJECT_ID('dbo.event', 'U') IS NOT NULL DROP TABLE dbo.event;
-                    IF OBJECT_ID('dbo.test', 'U') IS NOT NULL DROP TABLE dbo.test;
-                    ",
-                )
-                .await?;
-            }
-            run_test_logic(&mut conn, db_type).await?;
         }
+        #[cfg(feature = "turso")]
+        TestCase::Turso(connection_string) => {
+            db_type = DatabaseType::Turso;
+            if connection_string == ":memory:" {
+                None
+            } else {
+                let _ = std::fs::remove_file(connection_string);
+                let _ = std::fs::remove_file(format!("{connection_string}-wal"));
+                let _ = std::fs::remove_file(format!("{connection_string}-shm"));
+                Some(FileCleanup(vec![connection_string.clone()]))
+            }
+        }
+        #[cfg(feature = "postgres")]
+        TestCase::Postgres(_) => {
+            db_type = DatabaseType::Postgres;
+            None
+        }
+        #[cfg(feature = "mssql")]
+        TestCase::Mssql(_) => {
+            db_type = DatabaseType::Mssql;
+            None
+        }
+    };
 
-        // Ok(())
-        Ok::<(), Box<dyn std::error::Error>>(())
+    let conn = match test_case {
+        TestCase::Sqlite(connection_string) => {
+            ConfigAndPool2::sqlite_builder(connection_string)
+                .build()
+                .await?
+                .get_connection()
+                .await?
+        }
+        #[cfg(feature = "mssql")]
+        TestCase::Mssql(opts) => ConfigAndPool2::new_mssql(opts).await?.get_connection().await?,
+        #[cfg(feature = "postgres")]
+        TestCase::Postgres(cfg) => ConfigAndPool2::postgres_builder((*cfg).clone())
+            .build()
+            .await?
+            .get_connection()
+            .await?,
+        #[cfg(feature = "turso")]
+        TestCase::Turso(connection_string) => ConfigAndPool2::turso_builder(connection_string)
+            .build()
+            .await?
+            .get_connection()
+            .await?,
+    };
 
-        // ... rest of your test code ...
-    })?;
+    Ok((conn, db_type, cleanup_guard))
+}
 
+async fn reset_backend(
+    conn: &mut MiddlewarePoolConnection,
+    db_type: &DatabaseType,
+) -> Result<(), SqlMiddlewareDbError> {
+    if db_type == &DatabaseType::Postgres {
+        conn.execute_batch(
+            r"
+            DROP TABLE IF EXISTS eup_statistic CASCADE;
+            DROP TABLE IF EXISTS event_user_player CASCADE;
+            DROP TABLE IF EXISTS bettor CASCADE;
+            DROP TABLE IF EXISTS golfer CASCADE;
+            DROP TABLE IF EXISTS event CASCADE;
+            DROP TABLE IF EXISTS test CASCADE;
+            ",
+        )
+        .await?;
+    }
+    #[cfg(feature = "mssql")]
+    if db_type == &DatabaseType::Mssql {
+        conn.execute_batch(
+            r"
+            IF OBJECT_ID('dbo.eup_statistic', 'U') IS NOT NULL DROP TABLE dbo.eup_statistic;
+            IF OBJECT_ID('dbo.event_user_player', 'U') IS NOT NULL DROP TABLE dbo.event_user_player;
+            IF OBJECT_ID('dbo.bettor', 'U') IS NOT NULL DROP TABLE dbo.bettor;
+            IF OBJECT_ID('dbo.golfer', 'U') IS NOT NULL DROP TABLE dbo.golfer;
+            IF OBJECT_ID('dbo.event', 'U') IS NOT NULL DROP TABLE dbo.event;
+            IF OBJECT_ID('dbo.test', 'U') IS NOT NULL DROP TABLE dbo.test;
+            ",
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -246,7 +242,7 @@ async fn run_test_logic(
         ],
         #[cfg(feature = "mssql")]
         DatabaseType::Mssql => vec![
-            r#"
+            r"
 IF OBJECT_ID('dbo.event', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.event (
@@ -257,8 +253,8 @@ BEGIN
         ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;
-"#,
-            r#"
+",
+            r"
 IF OBJECT_ID('dbo.golfer', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.golfer (
@@ -268,8 +264,8 @@ BEGIN
         ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;
-"#,
-            r#"
+",
+            r"
 IF OBJECT_ID('dbo.bettor', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.bettor (
@@ -278,8 +274,8 @@ BEGIN
         ins_ts DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;
-"#,
-            r#"
+",
+            r"
 IF OBJECT_ID('dbo.event_user_player', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.event_user_player (
@@ -292,8 +288,8 @@ BEGIN
         CONSTRAINT uq_event_user_player UNIQUE (event_id, user_id, golfer_id)
     );
 END;
-"#,
-            r#"
+",
+            r"
 IF OBJECT_ID('dbo.eup_statistic', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.eup_statistic (
@@ -313,7 +309,7 @@ BEGIN
         CONSTRAINT uq_eup_stat UNIQUE (golfer_espn_id, eup_id)
     );
 END;
-"#,
+",
         ],
         #[cfg(feature = "libsql")]
         DatabaseType::Libsql => vec![

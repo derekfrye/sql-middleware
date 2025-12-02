@@ -112,5 +112,5 @@ assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
 ```
 
 // For more in-depth examples (batch queries, query builder usage, benchmarks),
-// see the project README: https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md
+// see the project README: <https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md>
 ```

@@ -9,19 +9,19 @@ use crate::middleware::{
 use super::params::Params;
 use super::worker::SqliteConnection;
 
-/// Transaction handle for SQLite backed by the worker thread.
+/// Transaction handle for `SQLite` backed by the worker thread.
 pub struct Tx {
     conn: SqliteConnection,
-    tx_id: u64,
+    id: u64,
     completed: AtomicBool,
 }
 
-/// Prepared statement tied to a SQLite transaction.
+/// Prepared statement tied to a `SQLite` transaction.
 pub struct Prepared {
     sql: Arc<String>,
 }
 
-/// Begin a transaction on the worker-owned SQLite connection.
+/// Begin a transaction on the worker-owned `SQLite` connection.
 ///
 /// # Errors
 /// Returns an error if the worker fails to start a transaction.
@@ -29,7 +29,7 @@ pub async fn begin_transaction(conn: &SqliteConnection) -> Result<Tx, SqlMiddlew
     let tx_id = conn.begin_transaction().await?;
     Ok(Tx {
         conn: conn.clone(),
-        tx_id,
+        id: tx_id,
         completed: AtomicBool::new(false),
     })
 }
@@ -38,7 +38,7 @@ impl Tx {
     /// Test hook to fetch the underlying transaction id (not part of the public API surface).
     #[doc(hidden)]
     pub fn test_id(&self) -> u64 {
-        self.tx_id
+        self.id
     }
 
     /// Prepare a statement within this transaction.
@@ -64,7 +64,7 @@ impl Tx {
             <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
 
         self.conn
-            .execute_tx_dml(self.tx_id, Arc::clone(&prepared.sql), converted.0)
+            .execute_tx_dml(self.id, Arc::clone(&prepared.sql), converted.0)
             .await
     }
 
@@ -81,7 +81,7 @@ impl Tx {
             <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
 
         self.conn
-            .execute_tx_query(self.tx_id, Arc::clone(&prepared.sql), converted.0)
+            .execute_tx_query(self.id, Arc::clone(&prepared.sql), converted.0)
             .await
     }
 
@@ -90,7 +90,7 @@ impl Tx {
     /// # Errors
     /// Returns an error if execution fails.
     pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        self.conn.execute_tx_batch(self.tx_id, sql.to_owned()).await
+        self.conn.execute_tx_batch(self.id, sql.to_owned()).await
     }
 
     /// Commit the transaction.
@@ -98,7 +98,7 @@ impl Tx {
     /// # Errors
     /// Returns an error if the commit fails.
     pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
-        self.conn.commit_tx(self.tx_id).await?;
+        self.conn.commit_tx(self.id).await?;
         self.completed.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -108,7 +108,7 @@ impl Tx {
     /// # Errors
     /// Returns an error if the rollback fails.
     pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
-        self.conn.rollback_tx(self.tx_id).await?;
+        self.conn.rollback_tx(self.id).await?;
         self.completed.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -122,7 +122,7 @@ impl Drop for Tx {
         // Best-effort async rollback to avoid leaving the worker in a stuck transaction loop.
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let conn = self.conn.clone();
-            let tx_id = self.tx_id;
+            let tx_id = self.id;
             handle.spawn(async move {
                 let _ = conn.rollback_tx(tx_id).await;
             });

@@ -109,6 +109,11 @@ impl MssqlOptionsBuilder {
         self.opts
     }
 
+    /// Build a `ConfigAndPool` for SQL Server.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
         ConfigAndPool::new_mssql(self.finish()).await
     }

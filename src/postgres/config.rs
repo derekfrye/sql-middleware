@@ -50,6 +50,11 @@ impl PostgresOptionsBuilder {
         self.opts
     }
 
+    /// Build a `ConfigAndPool` for `PostgreSQL`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
         ConfigAndPool::new_postgres(self.finish()).await
     }

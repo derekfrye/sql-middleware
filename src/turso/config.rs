@@ -48,6 +48,11 @@ impl TursoOptionsBuilder {
         self.opts
     }
 
+    /// Build a `ConfigAndPool` for Turso.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if database creation or connection testing fails.
     pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
         ConfigAndPool::new_turso(self.finish()).await
     }

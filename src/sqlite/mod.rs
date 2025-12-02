@@ -1,4 +1,4 @@
-//! SQLite backend glue.
+//! `SQLite` backend glue.
 //!
 //! Blocking `rusqlite` work runs on a dedicated worker thread behind each pooled connection, so
 //! async tasks do not stall the runtime. Key helpers:
@@ -8,7 +8,7 @@
 //!
 //! Submodules:
 //! - `config`: connection configuration and pool setup
-//! - `params`: parameter conversion between middleware and SQLite types
+//! - `params`: parameter conversion between middleware and `SQLite` types
 //! - `query`: result extraction and building
 //! - `executor`: database operation execution
 

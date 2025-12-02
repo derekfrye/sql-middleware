@@ -4,7 +4,11 @@ use rusqlite::{Statement, ToSql};
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
-/// Extract a `RowValues` from a `SQLite` row
+/// Extract a `RowValues` from a `SQLite` row.
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` if the value cannot be converted.
 pub fn sqlite_extract_value_sync(
     row: &rusqlite::Row,
     idx: usize,

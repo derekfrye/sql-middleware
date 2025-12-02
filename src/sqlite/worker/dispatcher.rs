@@ -3,11 +3,18 @@ use std::sync::mpsc::Receiver;
 
 use deadpool_sqlite::Object;
 use deadpool_sqlite::rusqlite;
+use tokio::sync::oneshot::Sender;
 
 use crate::middleware::{ResultSet, SqlMiddlewareDbError};
 use crate::sqlite::query::build_result_set;
 
 use super::channel::{BoxedCallback, BoxedResponse, Command};
+
+fn send_no_tx_err<T>(respond_to: Sender<Result<T, SqlMiddlewareDbError>>, ctx: &str) {
+    let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(format!(
+        "No active SQLite transaction ({ctx})"
+    ))));
+}
 
 pub(super) fn run_sqlite_worker(object: &Object, receiver: &Receiver<Command>) {
     let mut conn_guard = match object.lock() {
@@ -38,31 +45,11 @@ pub(super) fn run_sqlite_worker(object: &Object, receiver: &Receiver<Command>) {
                     let _ = respond_to.send(Err(SqlMiddlewareDbError::SqliteError(err)));
                 }
             },
-            Command::ExecuteTxBatch { respond_to, .. } => {
-                let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(
-                    "No active SQLite transaction".into(),
-                )));
-            }
-            Command::ExecuteTxQuery { respond_to, .. } => {
-                let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(
-                    "No active SQLite transaction".into(),
-                )));
-            }
-            Command::ExecuteTxDml { respond_to, .. } => {
-                let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(
-                    "No active SQLite transaction".into(),
-                )));
-            }
-            Command::CommitTx { respond_to, .. } => {
-                let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(
-                    "No active SQLite transaction".into(),
-                )));
-            }
-            Command::RollbackTx { respond_to, .. } => {
-                let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(
-                    "No active SQLite transaction".into(),
-                )));
-            }
+            Command::ExecuteTxBatch { respond_to, .. } => send_no_tx_err(respond_to, "execute batch"),
+            Command::ExecuteTxQuery { respond_to, .. } => send_no_tx_err(respond_to, "execute query"),
+            Command::ExecuteTxDml { respond_to, .. } => send_no_tx_err(respond_to, "execute dml"),
+            Command::CommitTx { respond_to, .. } => send_no_tx_err(respond_to, "commit"),
+            Command::RollbackTx { respond_to, .. } => send_no_tx_err(respond_to, "rollback"),
             Command::ExecuteBatch { query, respond_to } => {
                 let _ = respond_to.send(execute_batch(&mut conn_guard, &query));
             }
@@ -181,26 +168,20 @@ fn run_tx_loop(tx_id: u64, mut tx: rusqlite::Transaction<'_>, receiver: &Receive
                     "SQLite transaction already in progress".into(),
                 )));
             }
-            Command::ExecuteBatch { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
-            }
-            Command::ExecuteSelect { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
-            }
-            Command::ExecuteDml { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
-            }
+            Command::ExecuteBatch { respond_to, .. } => send_no_tx_err(respond_to, "execute batch"),
+            Command::ExecuteSelect { respond_to, .. } => send_no_tx_err(respond_to, "execute select"),
+            Command::ExecuteDml { respond_to, .. } => send_no_tx_err(respond_to, "execute dml"),
             Command::PrepareStatement { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
+                send_no_tx_err(respond_to, "prepare statement");
             }
             Command::ExecutePreparedSelect { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
+                send_no_tx_err(respond_to, "execute prepared select");
             }
             Command::ExecutePreparedDml { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
+                send_no_tx_err(respond_to, "execute prepared dml");
             }
             Command::WithConnection { respond_to, .. } => {
-                let _ = respond_to.send(Err(tx_in_progress_error()));
+                send_no_tx_err(respond_to, "with connection");
             }
         }
     }
@@ -306,12 +287,6 @@ where
     let rows = action(&tx, &param_refs[..])?;
     tx.commit()?;
     Ok(rows)
-}
-
-fn tx_in_progress_error() -> SqlMiddlewareDbError {
-    SqlMiddlewareDbError::ExecutionError(
-        "SQLite transaction in progress; operation not permitted".into(),
-    )
 }
 
 fn values_as_tosql(values: &[rusqlite::types::Value]) -> Vec<&dyn rusqlite::ToSql> {

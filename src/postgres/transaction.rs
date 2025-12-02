@@ -26,7 +26,7 @@ pub async fn begin_transaction(conn: &mut Object) -> Result<Tx<'_>, SqlMiddlewar
     Ok(Tx { tx })
 }
 
-impl<'a> Tx<'a> {
+impl Tx<'_> {
     /// Prepare a SQL statement tied to this transaction.
     ///
     /// # Errors

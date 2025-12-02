@@ -125,8 +125,12 @@ fn extract_value(row: &tiberius::Row, idx: usize) -> Option<RowValues> {
     None
 }
 
-/// Bind parameters directly to the query for SQL Server
-/// Return a query builder with parameters already bound
+/// Bind parameters directly to the query for SQL Server.
+///
+/// # Errors
+///
+/// This function does not execute and therefore cannot error; callers must handle execution errors.
+#[must_use]
 pub fn bind_query_params<'a>(query: &'a str, params: &[RowValues]) -> Query<'a> {
     // Create the query builder
     let mut query_builder = Query::new(query);
