@@ -61,10 +61,7 @@ static TOKIO_RUNTIME: LazyLock<Runtime> =
 
 static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
     TOKIO_RUNTIME
-        .block_on(
-            ConfigAndPool::sqlite_builder(DATASET.path().to_string())
-                .build(),
-        )
+        .block_on(ConfigAndPool::sqlite_builder(DATASET.path().to_string()).build())
         .expect("create middleware pool")
 });
 

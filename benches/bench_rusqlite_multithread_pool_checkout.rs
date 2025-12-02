@@ -146,10 +146,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
 // Middleware pool initialised once so subsequent benchmark iterations exercise steady-state behaviour.
 static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
     TOKIO_RUNTIME
-        .block_on(
-            ConfigAndPool::sqlite_builder(DATASET.path().to_string())
-                .build(),
-        )
+        .block_on(ConfigAndPool::sqlite_builder(DATASET.path().to_string()).build())
         .expect("create middleware config and pool")
 });
 

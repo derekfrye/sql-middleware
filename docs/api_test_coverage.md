@@ -57,13 +57,13 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** **Not covered**.
   - **Purpose:** Remote LibSQL config (URL/auth + translation default) for pool creation.
 - `ConfigAndPool::new_mssql`
-  - **Coverage:** **Not covered**.
+  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL constructor taking `MssqlOptions`; public for SQL Server consumers.
 - `ConfigAndPool::mssql_builder`
   - **Coverage:** **Not covered**.
   - **Purpose:** Fluent builder for MSSQL options (server/db/auth/port/instance + translation default).
 - `MssqlOptions`
-  - **Coverage:** **Not covered**.
+  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL config container for pool creation.
 - `ConfigAndPool::new_postgres`
   - **Coverage:** `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
@@ -233,6 +233,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `create_mssql_client`, `MssqlClient`, `execute_batch`, `execute_dml`, `execute_select`, `Params`, `build_result_set`
   - **Coverage:** **Not covered**.
   - **Purpose:** SQL Server support; public for consumers targeting MSSQL (awaiting tests).
+- `transaction::{Prepared, Tx, begin_transaction}`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Explicit SQL Server transaction + prepared helpers to mirror other backends.
+- `prepared::MssqlNonTxPreparedStatement`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Non-transaction prepared handle for reuse on a dedicated SQL Server connection.
 
 ### Postgres
 - `execute_batch`, `execute_dml`, `execute_select`

@@ -62,10 +62,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
 
 static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
     TOKIO_RUNTIME
-        .block_on(
-            ConfigAndPool::turso_builder(DATASET.path().to_string())
-                .build(),
-        )
+        .block_on(ConfigAndPool::turso_builder(DATASET.path().to_string()).build())
         .expect("create Turso middleware pool")
 });
 

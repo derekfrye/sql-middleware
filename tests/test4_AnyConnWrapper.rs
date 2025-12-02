@@ -1,6 +1,8 @@
 #[cfg(feature = "mssql")]
 use std::{fs, path::Path};
 
+#[cfg(feature = "mssql")]
+use sql_middleware::middleware::MssqlOptions;
 use sql_middleware::postgres::{
     Params as PostgresParams, build_result_set as postgres_build_result_set,
 };
@@ -12,8 +14,6 @@ use sql_middleware::{
         MiddlewarePoolConnection, QueryAndParams, RowValues,
     },
 };
-#[cfg(feature = "mssql")]
-use sql_middleware::middleware::MssqlOptions;
 use tokio::runtime::Runtime;
 
 fn unique_path(prefix: &str) -> String {
