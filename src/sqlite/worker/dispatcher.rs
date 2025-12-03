@@ -16,6 +16,12 @@ fn send_no_tx_err<T>(respond_to: Sender<Result<T, SqlMiddlewareDbError>>, ctx: &
     ))));
 }
 
+fn send_in_progress_err<T>(respond_to: Sender<Result<T, SqlMiddlewareDbError>>, ctx: &str) {
+    let _ = respond_to.send(Err(SqlMiddlewareDbError::ExecutionError(format!(
+        "SQLite transaction in progress; operation not permitted ({ctx})"
+    ))));
+}
+
 pub(super) fn run_sqlite_worker(object: &Object, receiver: &Receiver<Command>) {
     let mut conn_guard = match object.lock() {
         Ok(guard) => guard,
@@ -168,20 +174,24 @@ fn run_tx_loop(tx_id: u64, mut tx: rusqlite::Transaction<'_>, receiver: &Receive
                     "SQLite transaction already in progress".into(),
                 )));
             }
-            Command::ExecuteBatch { respond_to, .. } => send_no_tx_err(respond_to, "execute batch"),
-            Command::ExecuteSelect { respond_to, .. } => send_no_tx_err(respond_to, "execute select"),
-            Command::ExecuteDml { respond_to, .. } => send_no_tx_err(respond_to, "execute dml"),
+            Command::ExecuteBatch { respond_to, .. } => send_in_progress_err(respond_to, "execute batch"),
+            Command::ExecuteSelect { respond_to, .. } => {
+                send_in_progress_err(respond_to, "execute select");
+            }
+            Command::ExecuteDml { respond_to, .. } => {
+                send_in_progress_err(respond_to, "execute dml");
+            }
             Command::PrepareStatement { respond_to, .. } => {
-                send_no_tx_err(respond_to, "prepare statement");
+                send_in_progress_err(respond_to, "prepare statement");
             }
             Command::ExecutePreparedSelect { respond_to, .. } => {
-                send_no_tx_err(respond_to, "execute prepared select");
+                send_in_progress_err(respond_to, "execute prepared select");
             }
             Command::ExecutePreparedDml { respond_to, .. } => {
-                send_no_tx_err(respond_to, "execute prepared dml");
+                send_in_progress_err(respond_to, "execute prepared dml");
             }
             Command::WithConnection { respond_to, .. } => {
-                send_no_tx_err(respond_to, "with connection");
+                send_in_progress_err(respond_to, "with connection");
             }
         }
     }
