@@ -137,18 +137,39 @@ pub async fn get_scores_from_db(
 
 ### Batch query w/o params
 
-Same api regardless of db backend. Use `execute_batch` when you have no parameters to pass. 
+Same API regardless of db backend. Full setup, including imports and pool creation:
 
 ```rust
-// simple api for batch queries
-let ddl_query =
-    include_str!("/path/to/test1.sql");
-// on a pooled connection (auto BEGIN/COMMIT per backend helper)
-conn.execute_batch(&ddl_query).await?;
-
-// or use the unified top-level helper with either a connection or a transaction
+use sql_middleware::middleware::{ConfigAndPool, RowValues};
 use sql_middleware::prelude::execute_batch;
-execute_batch((&mut conn).into(), ddl_query).await?;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Choose backend via CLI: `sqlite` (default) or `turso`.
+    let app_backend = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "sqlite".to_string());
+
+    let cap = match app_backend.as_str() {
+        "sqlite" => ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+            .build()
+            .await?,
+        "turso" => ConfigAndPool::turso_builder(":memory:".to_string())
+            .build()
+            .await?,
+        other => return Err(format!("unsupported backend {other}").into()),
+    };
+    let mut conn = cap.get_connection().await?;
+
+    // simple api for batch queries
+    let ddl_query = include_str!("/path/to/test1.sql");
+    // on a pooled connection (auto BEGIN/COMMIT per backend helper)
+    conn.execute_batch(&ddl_query).await?;
+
+    // or use the unified top-level helper with either a connection or a transaction
+    execute_batch((&mut conn).into(), ddl_query).await?;
+    Ok(())
+}
 ```
 
 You can also pass a backend transaction to keep manual control of commit/rollback:
