@@ -36,6 +36,17 @@ impl Tx<'_> {
         })
     }
 
+    /// Execute a batch of SQL statements within this transaction.
+    ///
+    /// # Errors
+    /// Returns an error if the underlying libsql batch execution fails.
+    pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
+        self.conn.execute_batch(sql).await.map_err(|error| {
+            SqlMiddlewareDbError::ExecutionError(format!("libsql tx execute_batch error: {error}"))
+        })?;
+        Ok(())
+    }
+
     /// Commit the active transaction.
     ///
     /// # Errors

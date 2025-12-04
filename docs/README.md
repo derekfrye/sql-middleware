@@ -143,7 +143,25 @@ Same api regardless of db backend. Use `execute_batch` when you have no paramete
 // simple api for batch queries
 let ddl_query =
     include_str!("/path/to/test1.sql");
+// on a pooled connection (auto BEGIN/COMMIT per backend helper)
 conn.execute_batch(&ddl_query).await?;
+
+// or use the unified top-level helper with either a connection or a transaction
+use sql_middleware::prelude::execute_batch;
+execute_batch((&mut conn).into(), ddl_query).await?;
+```
+
+You can also pass a backend transaction to keep manual control of commit/rollback:
+```rust
+use sql_middleware::prelude::{execute_batch, query, TranslationMode};
+
+let mut conn = config_and_pool.get_connection().await?;
+let mut tx = sql_middleware::postgres::begin_transaction(&mut pg_client).await?;
+
+// run a batch inside the caller-managed transaction
+execute_batch((&mut tx).into(), "CREATE TEMP TABLE t (id INT);").await?;
+// caller decides when to commit/rollback
+tx.commit().await?;
 ```
 ### Queries without parameters
 
@@ -156,6 +174,10 @@ let results = conn.query(&query.query).select().await?;
 
 // Or pass the SQL string directly
 let results2 = conn.query("SELECT * FROM users").select().await?;
+
+// Using the unified builder entry point (works with pooled connections or transactions)
+use sql_middleware::prelude::query;
+let results3 = query((&mut conn).into(), "SELECT * FROM users").select().await?;
 ```
 
 ### Custom logic in between transactions

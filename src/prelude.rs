@@ -4,9 +4,9 @@
 //! to make it easier to get started with the library.
 
 pub use crate::middleware::{
-    AnyConnWrapper, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool,
-    MiddlewarePoolConnection, QueryAndParams, QueryBuilder, ResultSet, RowValues,
-    SqlMiddlewareDbError,
+    AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
+    MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, QueryBuilder, QueryTarget, ResultSet,
+    RowValues, SqlMiddlewareDbError, execute_batch, query,
 };
 
 pub use crate::conversion::convert_sql_params;

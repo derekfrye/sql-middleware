@@ -51,8 +51,12 @@ pub(super) fn run_sqlite_worker(object: &Object, receiver: &Receiver<Command>) {
                     let _ = respond_to.send(Err(SqlMiddlewareDbError::SqliteError(err)));
                 }
             },
-            Command::ExecuteTxBatch { respond_to, .. } => send_no_tx_err(respond_to, "execute batch"),
-            Command::ExecuteTxQuery { respond_to, .. } => send_no_tx_err(respond_to, "execute query"),
+            Command::ExecuteTxBatch { respond_to, .. } => {
+                send_no_tx_err(respond_to, "execute batch");
+            }
+            Command::ExecuteTxQuery { respond_to, .. } => {
+                send_no_tx_err(respond_to, "execute query");
+            }
             Command::ExecuteTxDml { respond_to, .. } => send_no_tx_err(respond_to, "execute dml"),
             Command::CommitTx { respond_to, .. } => send_no_tx_err(respond_to, "commit"),
             Command::RollbackTx { respond_to, .. } => send_no_tx_err(respond_to, "rollback"),
@@ -174,7 +178,9 @@ fn run_tx_loop(tx_id: u64, mut tx: rusqlite::Transaction<'_>, receiver: &Receive
                     "SQLite transaction already in progress".into(),
                 )));
             }
-            Command::ExecuteBatch { respond_to, .. } => send_in_progress_err(respond_to, "execute batch"),
+            Command::ExecuteBatch { respond_to, .. } => {
+                send_in_progress_err(respond_to, "execute batch");
+            }
             Command::ExecuteSelect { respond_to, .. } => {
                 send_in_progress_err(respond_to, "execute select");
             }

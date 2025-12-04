@@ -6,7 +6,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `conversion::convert_sql_params` (module + root/prelude export)
   - **Coverage:** Used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test5c_sqlite.rs`.
   - **Purpose:** Convert `RowValues` into backend-specific parameter types through `ParamConverter`; exposed both at `conversion::` and the crate root/prelude for convenience.
-- `middleware` re-exports (`AnyConnWrapper`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
+- `middleware` re-exports (`AnyConnWrapper`, `BatchTarget`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `QueryTarget`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `execute_batch`, `query`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
   - **Coverage:** See per-item below.
   - **Purpose:** Single import path via `prelude`.
 - `middleware::SqlMiddlewareDbError`
@@ -106,9 +106,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `MiddlewarePoolConnection` variants (`Postgres`, `Sqlite`, `Mssql`, `Libsql`, `Turso`)
   - **Coverage:** Postgres in `tests/test2_postgres.rs`/`tests/test6_postgres_translation.rs`; SQLite in `tests/test1.rs`/`tests/test3_sqlite.rs`/`tests/test5c_sqlite.rs`/`tests/test7_new_rusqlite.rs`; LibSQL in `tests/test5b_libsql.rs`/`tests/test6_libsql.rs`; Turso in `tests/test5d_turso.rs`/`tests/test6_turso_translation.rs`; MSSQL only pattern-matched in `tests/test2_postgres.rs` and `tests/test4_AnyConnWrapper.rs` (no live connections).
   - **Purpose:** Erased connection handle; public so callers can branch on backend.
-- `MiddlewarePoolConnection::execute_batch`
+- `execute_batch` (crate root/prelude) + `MiddlewarePoolConnection::execute_batch`
   - **Coverage:** Used across backends in `tests/test1.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test5b_libsql.rs`, `tests/test5c_sqlite.rs`, `tests/test5d_turso.rs`, `tests/test6_postgres_translation.rs`, `tests/test6_libsql.rs`, `tests/test6_turso_translation.rs`, `tests/test7_new_rusqlite.rs`.
-  - **Purpose:** Run batch SQL without params; public convenience.
+  - **Purpose:** Run batch SQL without params; public convenience. Top-level `execute_batch` now accepts pooled connections or backend transactions via `BatchTarget`, while the method form remains for pooled connections.
 - `MiddlewarePoolConnection::interact_async`
   - **Coverage:** **Not covered**.
   - **Purpose:** Async access to raw backend client (Postgres/MSSQL/LibSQL); public escape hatch.
@@ -132,9 +132,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Run blocking `rusqlite` work on worker thread; public for advanced SQLite hooks.
 
 ## Query builder and execution
-- `QueryBuilder::dml`
+- `query` (crate root/prelude) + `QueryBuilder::dml`
   - **Coverage:** Broad test usage.
-  - **Purpose:** Execute DML returning rows affected; public write path.
+  - **Purpose:** Start the fluent builder on a pooled connection or backend transaction via `QueryTarget`; `dml` executes writes returning rows affected.
 - `QueryBuilder::options`
   - **Coverage:** **Not covered**.
   - **Purpose:** Supply `QueryOptions` object; public for structured overrides.
@@ -143,7 +143,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Attach params slice to builder; public for fluent chaining.
 - `QueryBuilder::select`
   - **Coverage:** Broad test usage.
-  - **Purpose:** Execute SELECT returning `ResultSet`; public primary read path.
+  - **Purpose:** Execute SELECT returning `ResultSet`; works for pooled connections and backend transactions via `QueryTarget`.
 - `QueryBuilder::translation`
   - **Coverage:** `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
   - **Purpose:** Set translation mode; public ergonomic toggle.

@@ -1,15 +1,17 @@
 use std::borrow::Cow;
 
 use crate::error::SqlMiddlewareDbError;
-use crate::executor::{execute_dml_dispatch, execute_select_dispatch, translate_query};
+use crate::executor::{
+    QueryTarget, QueryTargetKind, execute_dml_dispatch, execute_select_dispatch,
+};
 use crate::pool::MiddlewarePoolConnection;
 use crate::results::ResultSet;
-use crate::translation::{QueryOptions, TranslationMode};
+use crate::translation::{QueryOptions, TranslationMode, translate_placeholders};
 use crate::types::RowValues;
 
 /// Fluent builder for query execution with optional placeholder translation.
 pub struct QueryBuilder<'conn, 'q> {
-    conn: &'conn mut MiddlewarePoolConnection,
+    target: QueryTarget<'conn>,
     sql: Cow<'q, str>,
     params: Cow<'q, [RowValues]>,
     options: QueryOptions,
@@ -18,7 +20,16 @@ pub struct QueryBuilder<'conn, 'q> {
 impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     pub(crate) fn new(conn: &'conn mut MiddlewarePoolConnection, sql: &'q str) -> Self {
         Self {
-            conn,
+            target: conn.into(),
+            sql: Cow::Borrowed(sql),
+            params: Cow::Borrowed(&[]),
+            options: QueryOptions::default(),
+        }
+    }
+
+    pub(crate) fn new_target(target: QueryTarget<'conn>, sql: &'q str) -> Self {
+        Self {
+            target,
             sql: Cow::Borrowed(sql),
             params: Cow::Borrowed(&[]),
             options: QueryOptions::default(),
@@ -72,13 +83,59 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     /// # Errors
     /// Returns an error if placeholder translation fails or the backend query execution fails.
     pub async fn select(self) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let translated = translate_query(
-            self.conn,
+        let translated = translate_query_for_target(
+            &self.target,
             self.sql.as_ref(),
             self.params.as_ref(),
             self.options,
         );
-        execute_select_dispatch(self.conn, translated.as_ref(), self.params.as_ref()).await
+
+        match self.target {
+            QueryTarget {
+                kind: QueryTargetKind::Connection(conn),
+                ..
+            } => execute_select_dispatch(conn, translated.as_ref(), self.params.as_ref()).await,
+            #[cfg(feature = "postgres")]
+            QueryTarget {
+                kind: QueryTargetKind::PostgresTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref()).await?;
+                tx.query_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "sqlite")]
+            QueryTarget {
+                kind: QueryTargetKind::SqliteTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref())?;
+                tx.query_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "mssql")]
+            QueryTarget {
+                kind: QueryTargetKind::MssqlTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref())?;
+                tx.query_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "libsql")]
+            QueryTarget {
+                kind: QueryTargetKind::LibsqlTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref())?;
+                tx.query_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "turso")]
+            QueryTarget {
+                kind: QueryTargetKind::TursoTx(tx),
+                ..
+            } => {
+                let mut prepared = tx.prepare(translated.as_ref()).await?;
+                tx.query_prepared(&mut prepared, self.params.as_ref()).await
+            }
+        }
     }
 
     /// Execute a DML statement and return rows affected.
@@ -86,12 +143,77 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     /// # Errors
     /// Returns an error if placeholder translation fails or the backend DML execution fails.
     pub async fn dml(self) -> Result<usize, SqlMiddlewareDbError> {
-        let translated = translate_query(
-            self.conn,
+        let translated = translate_query_for_target(
+            &self.target,
             self.sql.as_ref(),
             self.params.as_ref(),
             self.options,
         );
-        execute_dml_dispatch(self.conn, translated.as_ref(), self.params.as_ref()).await
+
+        match self.target {
+            QueryTarget {
+                kind: QueryTargetKind::Connection(conn),
+                ..
+            } => execute_dml_dispatch(conn, translated.as_ref(), self.params.as_ref()).await,
+            #[cfg(feature = "postgres")]
+            QueryTarget {
+                kind: QueryTargetKind::PostgresTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref()).await?;
+                tx.execute_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "sqlite")]
+            QueryTarget {
+                kind: QueryTargetKind::SqliteTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref())?;
+                tx.execute_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "mssql")]
+            QueryTarget {
+                kind: QueryTargetKind::MssqlTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref())?;
+                tx.execute_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "libsql")]
+            QueryTarget {
+                kind: QueryTargetKind::LibsqlTx(tx),
+                ..
+            } => {
+                let prepared = tx.prepare(translated.as_ref())?;
+                tx.execute_prepared(&prepared, self.params.as_ref()).await
+            }
+            #[cfg(feature = "turso")]
+            QueryTarget {
+                kind: QueryTargetKind::TursoTx(tx),
+                ..
+            } => {
+                let mut prepared = tx.prepare(translated.as_ref()).await?;
+                tx.execute_prepared(&mut prepared, self.params.as_ref())
+                    .await
+            }
+        }
     }
+}
+
+fn translate_query_for_target<'a>(
+    target: &QueryTarget<'_>,
+    query: &'a str,
+    params: &[RowValues],
+    options: QueryOptions,
+) -> Cow<'a, str> {
+    if params.is_empty() {
+        return Cow::Borrowed(query);
+    }
+
+    let Some(style) = target.translation_target() else {
+        return Cow::Borrowed(query);
+    };
+
+    let enabled = options.translation.resolve(target.translation_default());
+    translate_placeholders(query, style, enabled)
 }

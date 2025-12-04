@@ -42,9 +42,9 @@ pub mod turso;
 
 // Direct exports for frequently used types
 pub use middleware::{
-    AnyConnWrapper, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool,
-    MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder, ResultSet, RowValues,
-    SqlMiddlewareDbError,
+    AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
+    MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder,
+    QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, execute_batch,
 };
 #[cfg(feature = "libsql")]
 pub use middleware::{

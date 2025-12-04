@@ -153,19 +153,28 @@ async fn init_connection(
                 .await?
         }
         #[cfg(feature = "mssql")]
-        TestCase::Mssql(opts) => ConfigAndPool2::new_mssql(opts).await?.get_connection().await?,
+        TestCase::Mssql(opts) => {
+            ConfigAndPool2::new_mssql(opts)
+                .await?
+                .get_connection()
+                .await?
+        }
         #[cfg(feature = "postgres")]
-        TestCase::Postgres(cfg) => ConfigAndPool2::postgres_builder((*cfg).clone())
-            .build()
-            .await?
-            .get_connection()
-            .await?,
+        TestCase::Postgres(cfg) => {
+            ConfigAndPool2::postgres_builder((*cfg).clone())
+                .build()
+                .await?
+                .get_connection()
+                .await?
+        }
         #[cfg(feature = "turso")]
-        TestCase::Turso(connection_string) => ConfigAndPool2::turso_builder(connection_string)
-            .build()
-            .await?
-            .get_connection()
-            .await?,
+        TestCase::Turso(connection_string) => {
+            ConfigAndPool2::turso_builder(connection_string)
+                .build()
+                .await?
+                .get_connection()
+                .await?
+        }
     };
 
     Ok((conn, db_type, cleanup_guard))
