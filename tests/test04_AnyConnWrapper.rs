@@ -359,13 +359,13 @@ END;
 
     // Define the setup queries
     let setup_queries = match db_type {
-        DatabaseType::Postgres | DatabaseType::Sqlite => include_str!("test4.sql"),
+        DatabaseType::Postgres | DatabaseType::Sqlite => include_str!("test04.sql"),
         #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => include_str!("test4.sql"),
+        DatabaseType::Libsql => include_str!("test04.sql"),
         #[cfg(feature = "turso")]
         DatabaseType::Turso => include_str!("../tests/turso/test4/setup.sql"),
         #[cfg(feature = "mssql")]
-        DatabaseType::Mssql => include_str!("test4.sql"),
+        DatabaseType::Mssql => include_str!("test04.sql"),
     };
     conn.execute_batch(setup_queries).await?;
 

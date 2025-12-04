@@ -3,14 +3,14 @@
 ## Project Structure & Module Organization
 - Source: `src/` with feature-gated modules (`postgres/`, `sqlite/`, `libsql/`, `mssql/`) and core (`conversion.rs`, `executor.rs`, `middleware.rs`, `pool/`, `query.rs`, `results/`, `types.rs`).
 - Public entry: `src/lib.rs` (forbids unsafe, re-exports key types; see `docs.md`).
-- Tests: `tests/` (integration-style, e.g., `test3_sqlite.rs`, `test2_postgres.rs`).
+- Tests: `tests/` (integration-style, e.g., `test03_sqlite.rs`, `test02_postgres.rs`).
 - Benchmarks: `benches/` with Criterion; helper `bench.sh`.
 - Docs: `docs/README.md` (symlinked as top-level `README.md`).
 
 ## Build, Test, and Development Commands
 - Build: `cargo build` (add features via `--features "sqlite,postgres"`).
 - Test (default features): `cargo test`.
-- Run a specific test: `cargo test test3_sqlite -- --nocapture`.
+- Run a specific test: `cargo test test03_sqlite -- --nocapture`.
 - Benchmarks: `cargo bench` or `BENCH_ROWS=10000 cargo bench`; helper: `./bench.sh 10000`.
 - Lint: `cargo clippy --all-targets --all-features -D warnings`.
 - Format: `cargo fmt --all` (run before commits).

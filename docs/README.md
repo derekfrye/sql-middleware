@@ -182,14 +182,18 @@ let results3 = query((&mut conn).into(), "SELECT * FROM users").select().await?;
 
 ### Custom logic in between transactions
 
-Here, because the underlying libraries are different, unfortunately, if you need custom app logic between `transaction()` and `commit()`, the code becomes a little less DRY.
+Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block four times.
 
 ```rust
+use sql_middleware::prelude::*;
 use sql_middleware::libsql::{
     begin_transaction as begin_libsql_tx, Params as LibsqlParams, Prepared as LibsqlPrepared,
     Tx as LibsqlTx,
 };
-use sql_middleware::prelude::*;
+use sql_middleware::postgres::{
+    begin_transaction as begin_postgres_tx, Params as PostgresParams, Prepared as PostgresPrepared,
+    Tx as PostgresTx,
+};
 use sql_middleware::sqlite::{
     begin_transaction as begin_sqlite_tx, Params as SqliteParams, Prepared as SqlitePrepared,
     Tx as SqliteTx,
@@ -197,10 +201,6 @@ use sql_middleware::sqlite::{
 use sql_middleware::turso::{
     begin_transaction as begin_turso_tx, Params as TursoParams, Prepared as TursoPrepared,
     Tx as TursoTx,
-};
-use sql_middleware::postgres::{
-    begin_transaction as begin_postgres_tx, Params as PostgresParams, Prepared as PostgresPrepared,
-    Tx as PostgresTx,
 };
 
 enum BackendTx<'conn> {
@@ -215,6 +215,68 @@ enum PreparedStmt {
     Postgres(PostgresPrepared),
     Sqlite(SqlitePrepared),
     Libsql(LibsqlPrepared),
+}
+
+impl<'conn> BackendTx<'conn> {
+    async fn commit(self) -> Result<(), SqlMiddlewareDbError> {
+        match self {
+            BackendTx::Turso(tx) => tx.commit().await,
+            BackendTx::Postgres(tx) => tx.commit().await,
+            BackendTx::Sqlite(tx) => tx.commit().await,
+            BackendTx::Libsql(tx) => tx.commit().await,
+        }
+    }
+
+    async fn rollback(self) -> Result<(), SqlMiddlewareDbError> {
+        match self {
+            // you could do some custom retry logic here
+            BackendTx::Turso(tx) => tx.rollback().await,
+            BackendTx::Postgres(tx) => tx.rollback().await,
+            BackendTx::Sqlite(tx) => tx.rollback().await,
+            BackendTx::Libsql(tx) => tx.rollback().await,
+        }
+    }
+}
+
+impl PreparedStmt {
+    async fn query_prepared(
+        &mut self,
+        tx: &BackendTx<'_>,
+        params: &[RowValues],
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        match (tx, self) {
+            (&BackendTx::Turso(tx), PreparedStmt::Turso(stmt)) => {
+                tx.query_prepared(stmt, params).await
+            }
+            (&BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
+                tx.query_prepared(stmt, params).await
+            }
+            (&BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
+                tx.query_prepared(stmt, params).await
+            }
+            (&BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
+                tx.query_prepared(stmt, params).await
+            }
+        }
+    }
+}
+
+async fn run_prepared_with_finalize<'conn>(
+    mut tx: BackendTx<'conn>,
+    mut stmt: PreparedStmt,
+    params: Vec<RowValues>,
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let result = stmt.query_prepared(&tx, &params).await;
+    match result {
+        Ok(rows) => {
+            tx.commit().await?;
+            Ok(rows)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 pub async fn get_scores_from_db(
@@ -264,61 +326,7 @@ pub async fn get_scores_from_db(
     let dynamic_params: Vec<RowValues> =
         todo!("fetch parameters for event_id {event_id}");
 
-    let rows = match (tx, stmt) {
-        (BackendTx::Turso(tx), PreparedStmt::Turso(mut stmt)) => {
-            let result = tx.query_prepared(&mut stmt, &dynamic_params).await;
-            match result {
-                Ok(rows) => {
-                    tx.commit().await?;
-                    rows
-                }
-                Err(e) => {
-                    let _ = tx.rollback().await;
-                    return Err(e);
-                }
-            }
-        }
-        (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
-            let result = tx.query_prepared(&stmt, &dynamic_params).await;
-            match result {
-                Ok(rows) => {
-                    tx.commit().await?;
-                    rows
-                }
-                Err(e) => {
-                    let _ = tx.rollback().await;
-                    return Err(e);
-                }
-            }
-        }
-        (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
-            let result = tx.query_prepared(&stmt, &dynamic_params).await;
-            match result {
-                Ok(rows) => {
-                    tx.commit().await?;
-                    rows
-                }
-                Err(e) => {
-                    let _ = tx.rollback().await;
-                    return Err(e);
-                }
-            }
-        }
-        (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
-            let result = tx.query_prepared(&stmt, &dynamic_params).await;
-            match result {
-                Ok(rows) => {
-                    tx.commit().await?;
-                    rows
-                }
-                Err(e) => {
-                    let _ = tx.rollback().await;
-                    return Err(e);
-                }
-            }
-        }
-        _ => unreachable!("transaction and statement variants always align"),
-    };
+    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params).await?;
 
     let parsed_scores = rows
         .results
@@ -374,10 +382,10 @@ async fn insert_user(
 ### Further examples
 
 See further examples in the tests directory:
-- [SQLite test example](/tests/test5c_sqlite.rs), [SQLite bench example 1](../benches/bench_rusqlite_single_row_lookup.rs), [SQLite bench example 2](../benches/bench_rusqlite_multithread_pool_checkout.rs)
-- [Turso test example](/tests/test5d_turso.rs), [Turso bench example 1](../benches/bench_turso_single_row_lookup.rs)
-- [PostgreSQL test example](/tests/test5a_postgres.rs)
-- [LibSQL test example](/tests/test5b_libsql.rs)
+- [SQLite test example](/tests/test05c_sqlite.rs), [SQLite bench example 1](../benches/bench_rusqlite_single_row_lookup.rs), [SQLite bench example 2](../benches/bench_rusqlite_multithread_pool_checkout.rs)
+- [Turso test example](/tests/test05d_turso.rs), [Turso bench example 1](../benches/bench_turso_single_row_lookup.rs)
+- [PostgreSQL test example](/tests/test05a_postgres.rs)
+- [LibSQL test example](/tests/test05b_libsql.rs)
 
 ## Placeholder Translation
 

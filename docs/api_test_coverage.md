@@ -4,7 +4,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 
 ## Core exports (lib.rs / prelude)
 - `conversion::convert_sql_params` (module + root/prelude export)
-  - **Coverage:** Used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test5c_sqlite.rs`.
+  - **Coverage:** Used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test05c_sqlite.rs`.
   - **Purpose:** Convert `RowValues` into backend-specific parameter types through `ParamConverter`; exposed both at `conversion::` and the crate root/prelude for convenience.
 - `middleware` re-exports (`AnyConnWrapper`, `BatchTarget`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `QueryTarget`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `execute_batch`, `query`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
   - **Coverage:** See per-item below.
@@ -13,7 +13,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Error type used across tests; individual variants largely untested.
   - **Purpose:** Unified error surface across backends; public for consumer error handling.
 - `test_helpers::create_test_row`
-  - **Coverage:** Used in `tests/test2_postgres.rs`.
+  - **Coverage:** Used in `tests/test02_postgres.rs`.
   - **Purpose:** Helper for constructing `CustomDbRow`; public for legacy compatibility/tests.
 - `translation::PlaceholderStyle`
   - **Coverage:** **Not covered**.
@@ -25,7 +25,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** **Not covered**.
   - **Purpose:** Fluent builder for `QueryOptions`; public for ergonomic options construction.
 - `translation::TranslationMode`
-  - **Coverage:** Used via `QueryBuilder::translation` in `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
+  - **Coverage:** Used via `QueryBuilder::translation` in `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Per-call toggle relative to pool default; public to let callers force on/off.
 - `translation::translate_placeholders`
   - **Coverage:** Only unit tests in `src/translation.rs`.
@@ -39,10 +39,10 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Used widely across integration tests.
   - **Purpose:** Acquire pooled connection with pool defaults; public entry point.
 - `ConfigAndPool::new_libsql`
-  - **Coverage:** `tests/test5b_libsql.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
+  - **Coverage:** `tests/test05b_libsql.rs`, `tests/test06_libsql.rs`, `tests/test06_libsql_simple.rs`.
   - **Purpose:** Local LibSQL constructor taking `LibsqlOptions`; public to initialize pool.
 - `ConfigAndPool::libsql_builder`
-  - **Coverage:** `tests/test5b_libsql.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
+  - **Coverage:** `tests/test05b_libsql.rs`, `tests/test06_libsql.rs`, `tests/test06_libsql_simple.rs`.
   - **Purpose:** Fluent builder wrapper for `LibsqlOptions` to avoid option permutations.
 - `LibsqlOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
@@ -57,37 +57,37 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** **Not covered**.
   - **Purpose:** Remote LibSQL config (URL/auth + translation default) for pool creation.
 - `ConfigAndPool::new_mssql`
-  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL constructor taking `MssqlOptions`; public for SQL Server consumers.
 - `ConfigAndPool::mssql_builder`
   - **Coverage:** **Not covered**.
   - **Purpose:** Fluent builder for MSSQL options (server/db/auth/port/instance + translation default).
 - `MssqlOptions`
-  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL config container for pool creation.
 - `ConfigAndPool::new_postgres`
-  - **Coverage:** `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
+  - **Coverage:** `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test06_postgres_translation.rs`.
   - **Purpose:** Primary Postgres constructor taking `PostgresOptions`; public for consumer setup.
 - `ConfigAndPool::postgres_builder`
-  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Fluent builder for `PostgresOptions` to toggle translation defaults without more constructors.
 - `PostgresOptions`
-  - **Coverage:** `tests/test2_postgres.rs`, `tests/test5a_postgres.rs`, `tests/test6_postgres_translation.rs`.
+  - **Coverage:** `tests/test02_postgres.rs`, `tests/test05a_postgres.rs`, `tests/test06_postgres_translation.rs`.
   - **Purpose:** Postgres config wrapper (deadpool config + translation default) for pool creation.
 - `ConfigAndPool::new_sqlite`
-  - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
+  - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Primary SQLite constructor taking `SqliteOptions`; public for consumer setup.
 - `ConfigAndPool::sqlite_builder`
-  - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
+  - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Fluent builder for `SqliteOptions` to set defaults (e.g., translation) without constructor variants.
 - `SqliteOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
   - **Purpose:** SQLite config (path + translation default) for pool creation.
 - `ConfigAndPool::new_turso`
-  - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5d_turso.rs`, `tests/test6_turso_translation.rs`.
+  - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05d_turso.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Local Turso constructor taking `TursoOptions`; public for Turso setup.
 - `ConfigAndPool::turso_builder`
-  - **Coverage:** `tests/test1.rs`, `tests/test3_sqlite.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5d_turso.rs`, `tests/test6_turso_translation.rs`.
+  - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05d_turso.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Fluent builder for `TursoOptions` to set defaults (e.g., translation) without constructor permutations.
 - `TursoOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
@@ -104,31 +104,31 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Invoked indirectly via `ConfigAndPool::get_connection` throughout integration tests that borrow pooled connections; not called directly in tests.
   - **Purpose:** Attach pool-level translation defaults while checking out a connection; public for callers that hold a `MiddlewarePool` without `ConfigAndPool`.
 - `MiddlewarePoolConnection` variants (`Postgres`, `Sqlite`, `Mssql`, `Libsql`, `Turso`)
-  - **Coverage:** Postgres in `tests/test2_postgres.rs`/`tests/test6_postgres_translation.rs`; SQLite in `tests/test1.rs`/`tests/test3_sqlite.rs`/`tests/test5c_sqlite.rs`/`tests/test7_new_rusqlite.rs`; LibSQL in `tests/test5b_libsql.rs`/`tests/test6_libsql.rs`; Turso in `tests/test5d_turso.rs`/`tests/test6_turso_translation.rs`; MSSQL only pattern-matched in `tests/test2_postgres.rs` and `tests/test4_AnyConnWrapper.rs` (no live connections).
+  - **Coverage:** Postgres in `tests/test02_postgres.rs`/`tests/test06_postgres_translation.rs`; SQLite in `tests/test01.rs`/`tests/test03_sqlite.rs`/`tests/test05c_sqlite.rs`/`tests/test7_new_rusqlite.rs`; LibSQL in `tests/test05b_libsql.rs`/`tests/test06_libsql.rs`; Turso in `tests/test05d_turso.rs`/`tests/test06_turso_translation.rs`; MSSQL only pattern-matched in `tests/test02_postgres.rs` and `tests/test04_AnyConnWrapper.rs` (no live connections).
   - **Purpose:** Erased connection handle; public so callers can branch on backend.
 - `execute_batch` (crate root/prelude) + `MiddlewarePoolConnection::execute_batch`
-  - **Coverage:** Used across backends in `tests/test1.rs`, `tests/test4_AnyConnWrapper.rs`, `tests/test5a_postgres.rs`, `tests/test5b_libsql.rs`, `tests/test5c_sqlite.rs`, `tests/test5d_turso.rs`, `tests/test6_postgres_translation.rs`, `tests/test6_libsql.rs`, `tests/test6_turso_translation.rs`, `tests/test7_new_rusqlite.rs`.
+  - **Coverage:** Used across backends in `tests/test01.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test05b_libsql.rs`, `tests/test05c_sqlite.rs`, `tests/test05d_turso.rs`, `tests/test06_postgres_translation.rs`, `tests/test06_libsql.rs`, `tests/test06_turso_translation.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Run batch SQL without params; public convenience. Top-level `execute_batch` now accepts pooled connections or backend transactions via `BatchTarget`, while the method form remains for pooled connections.
 - `MiddlewarePoolConnection::interact_async`
   - **Coverage:** **Not covered**.
   - **Purpose:** Async access to raw backend client (Postgres/MSSQL/LibSQL); public escape hatch.
 - `MiddlewarePoolConnection::interact_sync`
-  - **Coverage:** `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Sync access to SQLite connection; public escape hatch.
 - `MiddlewarePoolConnection::prepare_sqlite_statement`
-  - **Coverage:** `tests/test5c_sqlite.rs` (also used in SQLite benchmarks).
+  - **Coverage:** `tests/test05c_sqlite.rs` (also used in SQLite benchmarks).
   - **Purpose:** Prepare cached SQLite statement on the worker thread using the pooled connection and pool translation defaults; public so callers can stay on the type-erased `MiddlewarePoolConnection` without dropping into backend types while reusing statements. Use backend-specific exports like `sql_middleware::sqlite::SqlitePreparedStatement` or `sql_middleware::sqlite::prepared::Prepared` when driving your own raw SQLite client/connection.
 - `MiddlewarePoolConnection::prepare_turso_statement`
   - **Coverage:** **Not covered** by tests (exercised only in Turso benchmarks).
   - **Purpose:** Prepare a Turso statement tied to the pooled connection while keeping callers on the type-erased API; public for parity with SQLite prepared support without requiring backend client types. Use backend-specific exports like `sql_middleware::turso::prepared::TursoNonTxPreparedStatement` when you already manage your own Turso connection handle.
 - `MiddlewarePoolConnection::query`
-  - **Coverage:** Entry point for queries across the integration suite (`tests/test1.rs` through `tests/test7_new_rusqlite.rs`).
+  - **Coverage:** Entry point for queries across the integration suite (`tests/test01.rs` through `tests/test7_new_rusqlite.rs`).
   - **Purpose:** Entry to `QueryBuilder`; public fluent API.
 - `MiddlewarePoolConnection::translation_default`
   - **Coverage:** **Not covered** directly; used internally by query translation.
   - **Purpose:** Exposes pool-level translation toggle; public for inspection/tweaks.
 - `MiddlewarePoolConnection::with_blocking_sqlite`
-  - **Coverage:** `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`.
+  - **Coverage:** `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`.
   - **Purpose:** Run blocking `rusqlite` work on worker thread; public for advanced SQLite hooks.
 
 ## Query builder and execution
@@ -145,12 +145,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Broad test usage.
   - **Purpose:** Execute SELECT returning `ResultSet`; works for pooled connections and backend transactions via `QueryTarget`.
 - `QueryBuilder::translation`
-  - **Coverage:** `tests/test6_postgres_translation.rs`, `tests/test6_turso_translation.rs`.
+  - **Coverage:** `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Set translation mode; public ergonomic toggle.
 
 ## Query and parameter helpers
 - `AnyConnWrapper`
-  - **Coverage:** Used in `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Type-erased raw connection wrapper for `interact_*`; public escape hatch.
 - `ConversionMode`
   - **Coverage:** Used in convert_sql_params calls across multiple tests.
@@ -159,7 +159,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Implementations exercised via convert_sql_params; trait itself not directly tested.
   - **Purpose:** Backend param conversion contract; must stay public because `convert_sql_params` is public and generic over this trait, and to allow custom converters.
 - `QueryAndParams`
-  - **Coverage:** Type used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs` via struct literal.
+  - **Coverage:** Type used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs` via struct literal.
   - **Purpose:** Bundles SQL and params to keep them aligned; public helper for reusable queries.
 - `QueryAndParams::new`
   - **Coverage:** **Not covered**.
@@ -170,7 +170,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 
 ## Results
 - `CustomDbRow`
-  - **Coverage:** Accessed in many tests via `get`; constructed via helper in `tests/test2_postgres.rs`.
+  - **Coverage:** Accessed in many tests via `get`; constructed via helper in `tests/test02_postgres.rs`.
   - **Purpose:** Row wrapper with name lookup; public for result consumption.
 - `CustomDbRow::get`
   - **Coverage:** Widely used in tests.
@@ -205,13 +205,13 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 
 ## Values and types
 - `DatabaseType` enum
-  - **Coverage:** Used in `tests/test4_AnyConnWrapper.rs`, `tests/test6_libsql.rs`, `tests/test6_libsql_simple.rs`.
+  - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`, `tests/test06_libsql.rs`, `tests/test06_libsql_simple.rs`.
   - **Purpose:** Identify backend; public for branching logic.
 - `RowValues` enum
   - **Coverage:** All variants used across tests (`Int`, `Float`, `Text`, `Bool`, `Timestamp`, `Null`, `JSON`, `Blob`).
   - **Purpose:** Unified value representation; public for params/results.
 - `RowValues` accessors (`is_null`, `as_int`, `as_text`, `as_bool`, `as_timestamp`, `as_float`, `as_blob`)
-  - **Coverage:** `as_int`/`as_text`/`as_bool`/`as_timestamp`/`as_float`/`as_blob` used across tests; `is_null` used in `tests/test6_libsql.rs`.
+  - **Coverage:** `as_int`/`as_text`/`as_bool`/`as_timestamp`/`as_float`/`as_blob` used across tests; `is_null` used in `tests/test06_libsql.rs`.
   - **Purpose:** Typed extraction; public for consumers.
 
 ## Backend-specific re-exports
@@ -226,7 +226,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Not directly called in tests.
   - **Purpose:** Build results from libsql rows; public for manual execution.
 - `transaction::{Prepared, Tx, begin_transaction}`
-  - **Coverage:** Used in `tests/test5b_libsql.rs`.
+  - **Coverage:** Used in `tests/test05b_libsql.rs`.
   - **Purpose:** Transaction helpers; public for explicit transactions.
 
 ### MSSQL
@@ -248,7 +248,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Used with `convert_sql_params` in postgres tests.
   - **Purpose:** Backend-specific parameter wrapper; public for conversions.
 - `build_result_set`
-  - **Coverage:** Used in `tests/test2_postgres.rs`, `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** Used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Build `ResultSet` from raw rows; public for manual execution paths.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** **Not covered** directly (tests use client-level transactions instead).
@@ -259,13 +259,13 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Indirect via connections; not directly called in tests.
   - **Purpose:** Direct backend helpers; public for manual execution.
 - `Params`
-  - **Coverage:** Used in `tests/test4_AnyConnWrapper.rs`, `tests/test5c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
+  - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** SQLite param wrapper; public for conversion.
 - `SqlitePreparedStatement`
-  - **Coverage:** Used in `tests/test5c_sqlite.rs`.
+  - **Coverage:** Used in `tests/test05c_sqlite.rs`.
   - **Purpose:** Prepared statement handle; public for reuse.
 - `build_result_set`
-  - **Coverage:** Used in `tests/test4_AnyConnWrapper.rs`.
+  - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Build results from rusqlite rows; public for manual execution.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test7_new_rusqlite.rs`.
@@ -282,5 +282,5 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** **Not covered**.
   - **Purpose:** Non-transaction prepared handle; public for prepared execution without transactions.
 - `transaction::{Prepared, Tx, begin_transaction}`
-  - **Coverage:** Used in `tests/test5d_turso.rs`.
+  - **Coverage:** Used in `tests/test05d_turso.rs`.
   - **Purpose:** Transaction helpers; public for explicit transaction flows.
