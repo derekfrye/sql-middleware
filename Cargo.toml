@@ -67,7 +67,7 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", features = ["benchmarks", "mssql", "libsql", "turso", "test-utils"] }
+sql-middleware = { path = ".", features = ["benchmarks", "mssql", "turso", "test-utils"] }
 rusqlite = "0"
 tempfile = "3"
 

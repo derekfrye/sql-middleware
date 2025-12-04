@@ -227,6 +227,7 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             )
             .await?;
             run_roundtrip(&mut conn).await?;
+            println!("sqlite backend run successful");
         }
 
         // Postgres using the same auth flow as test06_*.
@@ -243,6 +244,7 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             run_roundtrip(&mut conn).await?;
             conn.execute_batch("DROP TABLE IF EXISTS custom_logic_txn;")
                 .await?;
+            println!("postgres backend run successful");
         }
 
         // LibSQL (optional feature)
@@ -257,6 +259,7 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             )
             .await?;
             run_roundtrip(&mut conn).await?;
+            println!("libsql backend run successful");
         }
 
         // Turso (optional feature)
@@ -271,6 +274,7 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             )
             .await?;
             run_roundtrip(&mut conn).await?;
+            println!("turso backend run successful");
         }
 
         Ok::<(), SqlMiddlewareDbError>(())
