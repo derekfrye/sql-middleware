@@ -32,11 +32,13 @@ impl ManageConnection for TursoManager {
     type Connection = turso::Connection;
     type Error = turso::Error;
 
+    #[allow(clippy::manual_async_fn)]
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let db = self.db.clone();
         async move { db.connect() }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn is_valid(
         &self,
         conn: &mut Self::Connection,

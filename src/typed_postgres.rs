@@ -35,6 +35,7 @@ impl ManageConnection for PgManager {
     type Connection = Client;
     type Error = tokio_postgres::Error;
 
+    #[allow(clippy::manual_async_fn)]
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let cfg = self.config.clone();
         async move {
@@ -48,6 +49,7 @@ impl ManageConnection for PgManager {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn is_valid(
         &self,
         conn: &mut Self::Connection,

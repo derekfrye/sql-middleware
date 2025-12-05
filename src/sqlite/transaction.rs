@@ -85,12 +85,12 @@ impl Tx {
 
 impl Drop for Tx {
     fn drop(&mut self) {
-        if let Some(mut conn) = self.conn.take() {
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move {
-                    let _ = conn.rollback().await;
-                });
-            }
+        if let Some(mut conn) = self.conn.take()
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            handle.spawn(async move {
+                let _ = conn.rollback().await;
+            });
         }
     }
 }

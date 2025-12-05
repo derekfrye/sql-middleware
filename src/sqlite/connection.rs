@@ -78,11 +78,7 @@ impl SqliteConnection {
             let affected = stmt
                 .execute(&refs[..])
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
-            usize::try_from(affected).map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!(
-                    "sqlite affected rows conversion error: {e}"
-                ))
-            })
+            Ok(affected)
         })
         .await
     }
@@ -164,11 +160,7 @@ impl SqliteConnection {
             let affected = stmt
                 .execute(&refs[..])
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
-            usize::try_from(affected).map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!(
-                    "sqlite affected rows conversion error: {e}"
-                ))
-            })
+            Ok(affected)
         })
         .await
     }
@@ -254,10 +246,6 @@ impl SqliteConnection {
         Ok(crate::sqlite::prepared::SqlitePreparedStatement::new(self, query_arc))
     }
 
-    pub(crate) fn into_target<'a>(&'a mut self, in_tx: bool) -> QueryTarget<'a> {
-        QueryTarget::from_typed_sqlite(&mut self.conn, in_tx)
-    }
-
     fn conn_handle(&self) -> SharedSqliteConnection {
         Arc::clone(&*self.conn)
     }
@@ -318,11 +306,7 @@ pub async fn dml(
         let affected = stmt
             .execute(&refs[..])
             .map_err(SqlMiddlewareDbError::SqliteError)?;
-        usize::try_from(affected).map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!(
-                "sqlite affected rows conversion error: {e}"
-            ))
-        })
+        Ok(affected)
     })
     .await
 }

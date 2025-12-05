@@ -20,6 +20,7 @@ pub trait Queryable {
 pub trait BeginTx: Sized {
     type Tx: TxConn<Idle = Self>;
 
+    #[allow(clippy::manual_async_fn)]
     fn begin(self) -> impl std::future::Future<Output = Result<Self::Tx, SqlMiddlewareDbError>>;
 }
 
@@ -27,7 +28,9 @@ pub trait BeginTx: Sized {
 pub trait TxConn {
     type Idle;
 
+    #[allow(clippy::manual_async_fn)]
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>>;
+    #[allow(clippy::manual_async_fn)]
     fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>>;
 }
 
@@ -48,12 +51,12 @@ pub enum AnyTx {
 }
 
 impl Queryable for AnyIdle {
-    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
+    fn query<'a>(&'a mut self, _sql: &'a str) -> QueryBuilder<'a, 'a> {
         match self {
             #[cfg(feature = "typed-postgres")]
-            AnyIdle::Postgres(conn) => conn.query(sql),
+            AnyIdle::Postgres(conn) => conn.query(_sql),
             #[cfg(feature = "typed-turso")]
-            AnyIdle::Turso(conn) => conn.query(sql),
+            AnyIdle::Turso(conn) => conn.query(_sql),
             #[allow(unreachable_patterns)]
             _ => unreachable!("typed backends are not enabled"),
         }
@@ -61,12 +64,12 @@ impl Queryable for AnyIdle {
 }
 
 impl Queryable for AnyTx {
-    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
+    fn query<'a>(&'a mut self, _sql: &'a str) -> QueryBuilder<'a, 'a> {
         match self {
             #[cfg(feature = "typed-postgres")]
-            AnyTx::Postgres(conn) => conn.query(sql),
+            AnyTx::Postgres(conn) => conn.query(_sql),
             #[cfg(feature = "typed-turso")]
-            AnyTx::Turso(conn) => conn.query(sql),
+            AnyTx::Turso(conn) => conn.query(_sql),
             #[allow(unreachable_patterns)]
             _ => unreachable!("typed backends are not enabled"),
         }
@@ -76,6 +79,7 @@ impl Queryable for AnyTx {
 impl BeginTx for AnyIdle {
     type Tx = AnyTx;
 
+    #[allow(clippy::manual_async_fn)]
     fn begin(self) -> impl std::future::Future<Output = Result<Self::Tx, SqlMiddlewareDbError>> {
         async move {
             match self {
@@ -93,6 +97,7 @@ impl BeginTx for AnyIdle {
 impl TxConn for AnyTx {
     type Idle = AnyIdle;
 
+    #[allow(clippy::manual_async_fn)]
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move {
             match self {
@@ -106,6 +111,7 @@ impl TxConn for AnyTx {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move {
             match self {
@@ -139,6 +145,7 @@ impl Queryable for PgConnection<PgInTx> {
 impl BeginTx for PgConnection<PgIdle> {
     type Tx = PgConnection<PgInTx>;
 
+    #[allow(clippy::manual_async_fn)]
     fn begin(self) -> impl std::future::Future<Output = Result<Self::Tx, SqlMiddlewareDbError>> {
         async move { self.begin().await }
     }
@@ -148,10 +155,12 @@ impl BeginTx for PgConnection<PgIdle> {
 impl TxConn for PgConnection<PgInTx> {
     type Idle = PgConnection<PgIdle>;
 
+    #[allow(clippy::manual_async_fn)]
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.commit().await }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.rollback().await }
     }
@@ -176,6 +185,7 @@ impl Queryable for TursoConnection<TuInTx> {
 impl BeginTx for TursoConnection<TuIdle> {
     type Tx = TursoConnection<TuInTx>;
 
+    #[allow(clippy::manual_async_fn)]
     fn begin(self) -> impl std::future::Future<Output = Result<Self::Tx, SqlMiddlewareDbError>> {
         async move { self.begin().await }
     }
@@ -185,10 +195,12 @@ impl BeginTx for TursoConnection<TuIdle> {
 impl TxConn for TursoConnection<TuInTx> {
     type Idle = TursoConnection<TuIdle>;
 
+    #[allow(clippy::manual_async_fn)]
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.commit().await }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.rollback().await }
     }

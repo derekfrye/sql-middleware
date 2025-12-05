@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sql_middleware::prelude::*;
-use sql_middleware::sqlite::{Params as SqliteParams, begin_transaction};
+use sql_middleware::sqlite::begin_transaction;
 use tempfile::tempdir;
 use tokio::sync::Semaphore;
 use tokio::time::sleep;

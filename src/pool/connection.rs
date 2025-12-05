@@ -200,7 +200,7 @@ impl MiddlewarePoolConnection {
     pub async fn prepare_sqlite_statement(
         &mut self,
         query: &str,
-    ) -> Result<SqlitePreparedStatement, SqlMiddlewareDbError> {
+    ) -> Result<SqlitePreparedStatement<'_>, SqlMiddlewareDbError> {
         let conn = self.sqlite_conn_mut()?;
         conn.prepare_statement(query).await
     }
