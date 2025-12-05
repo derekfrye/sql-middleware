@@ -9,7 +9,6 @@ use bb8::{ManageConnection, Pool, PooledConnection};
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
 use crate::turso::params::Params as TursoParams;
-use crate::turso::query::build_result_set as turso_build_result_set;
 use crate::types::{ConversionMode, ParamConverter};
 use crate::executor::QueryTarget;
 
@@ -35,7 +34,12 @@ impl ManageConnection for TursoManager {
 
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let db = self.db.clone();
-        async move { db.connect() }
+        async move {
+            eprintln!("[typed_turso::connect] attempting db.connect()");
+            let out = db.connect();
+            eprintln!("[typed_turso::connect] db.connect() returned");
+            out
+        }
     }
 
     fn is_valid(
@@ -43,7 +47,19 @@ impl ManageConnection for TursoManager {
         conn: &mut Self::Connection,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async move {
-            conn.execute("SELECT 1", ()).await.map(|_| ())
+            eprintln!("[typed_turso::is_valid] running SELECT 1");
+            match conn.query("SELECT 1", ()).await {
+                Ok(mut rows) => {
+                    // Consume one row to keep the iterator clean.
+                    let _ = rows.next().await;
+                    eprintln!("[typed_turso::is_valid] SELECT 1 ok");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("[typed_turso::is_valid] SELECT 1 error: {e}");
+                    Err(e)
+                }
+            }
         }
     }
 
@@ -71,9 +87,11 @@ impl TursoManager {
 impl TursoConnection<Idle> {
     /// Checkout a connection from the pool.
     pub async fn from_pool(pool: &Pool<TursoManager>) -> Result<Self, SqlMiddlewareDbError> {
+        eprintln!("[typed_turso::from_pool] waiting for pooled connection");
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("turso checkout error: {e}"))
         })?;
+        eprintln!("[typed_turso::from_pool] acquired pooled connection");
         Ok(Self {
             conn,
             _state: PhantomData,
@@ -126,13 +144,8 @@ impl TursoConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<crate::results::ResultSet, SqlMiddlewareDbError> {
-        let converted = TursoParams::convert_sql_params(params, ConversionMode::Query)?;
-        let rows = self
-            .conn
-            .query(query, converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso query error: {e}")))?;
-        turso_build_result_set(rows, None).await
+        // Reuse the shared Turso select path so column names are preserved in the `ResultSet`.
+        crate::turso::execute_select(&self.conn, query, params).await
     }
 
     /// Start a query builder (auto-commit per operation).
@@ -199,13 +212,7 @@ impl TursoConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<crate::results::ResultSet, SqlMiddlewareDbError> {
-        let converted = TursoParams::convert_sql_params(params, ConversionMode::Query)?;
-        let rows = self
-            .conn
-            .query(query, converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso tx query error: {e}")))?;
-        turso_build_result_set(rows, None).await
+        crate::turso::execute_select(&self.conn, query, params).await
     }
 
     /// Start a query builder within the open transaction.
@@ -220,12 +227,7 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<crate::results::ResultSet, SqlMiddlewareDbError> {
-    let converted = TursoParams::convert_sql_params(params, ConversionMode::Query)?;
-    let rows = conn
-        .query(query, converted.0)
-        .await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso select error: {e}")))?;
-    turso_build_result_set(rows, None).await
+    crate::turso::execute_select(&*conn, query, params).await
 }
 
 /// Adapter for query builder dml (typed-turso target).

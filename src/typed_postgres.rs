@@ -2,10 +2,11 @@
 //! Provides `PgConnection<Idle>` / `PgConnection<InTx>` using an owned client
 //! and explicit BEGIN/COMMIT/ROLLBACK.
 
-use std::{future::Future, marker::PhantomData};
+use std::{error::Error as StdError, future::Future, marker::PhantomData};
 
 use bb8::{ManageConnection, Pool, PooledConnection};
 use tokio_postgres::{Client, NoTls};
+use tokio::time::{Duration, timeout};
 
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::postgres::params::Params as PgParams;
@@ -38,7 +39,27 @@ impl ManageConnection for PgManager {
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let cfg = self.config.clone();
         async move {
-            let (client, connection) = cfg.connect(NoTls).await?;
+            eprintln!("[typed_postgres::connect] starting connect");
+            let connect_result =
+                timeout(Duration::from_secs(10), cfg.connect(NoTls)).await;
+
+            let (client, connection) = match connect_result {
+                Ok(Ok((client, connection))) => {
+                    eprintln!("[typed_postgres::connect] connect returned, spawning connection task");
+                    (client, connection)
+                }
+                Ok(Err(e)) => {
+                    eprintln!(
+                        "[typed_postgres::connect] connect error: {e} | source: {:?}",
+                        e.source()
+                    );
+                    return Err(e);
+                }
+                Err(elapsed) => {
+                    eprintln!("[typed_postgres::connect] connect timed out after {:?}", elapsed);
+                    return Err(tokio_postgres::Error::__private_api_timeout());
+                }
+            };
             tokio::spawn(async move {
                 if let Err(_e) = connection.await {
                     // drop error
@@ -52,7 +73,10 @@ impl ManageConnection for PgManager {
         &self,
         conn: &mut Self::Connection,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        async move { conn.simple_query("SELECT 1").await.map(|_| ()) }
+        async move {
+            eprintln!("[typed_postgres::is_valid] running SELECT 1");
+            conn.simple_query("SELECT 1").await.map(|_| ())
+        }
     }
 
     fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
@@ -81,9 +105,11 @@ impl PgConnection<Idle> {
     pub async fn from_pool(
         pool: &Pool<PgManager>,
     ) -> Result<Self, SqlMiddlewareDbError> {
+        eprintln!("[typed_postgres::from_pool] waiting for pooled connection");
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("postgres checkout error: {e}"))
         })?;
+        eprintln!("[typed_postgres::from_pool] acquired pooled connection");
         Ok(Self {
             conn,
             _state: PhantomData,
