@@ -17,6 +17,8 @@ use sql_middleware::postgres::{
     begin_transaction as begin_postgres_tx, Prepared as PostgresPrepared, Tx as PostgresTx,
     PostgresOptions,
 };
+#[cfg(feature = "typed-postgres")]
+use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 #[cfg(feature = "sqlite")]
 use sql_middleware::sqlite::{
     begin_transaction as begin_sqlite_tx, Prepared as SqlitePrepared, Tx as SqliteTx,
@@ -211,6 +213,52 @@ async fn run_roundtrip(
     Ok(())
 }
 
+#[cfg(all(feature = "typed-postgres", feature = "postgres"))]
+async fn run_typed_pg_roundtrip(mut conn: PgConnection<PgIdle>) -> Result<(), SqlMiddlewareDbError> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS custom_logic_txn;
+         CREATE TABLE custom_logic_txn (id BIGINT PRIMARY KEY, note TEXT);",
+    )
+    .await?;
+
+    // Success path should commit.
+    {
+        let mut tx = conn.begin().await?;
+        let rows = tx
+            .dml(
+                "INSERT INTO custom_logic_txn (id, note) VALUES ($1, $2)",
+                &[RowValues::Int(1), RowValues::Text("ok".into())],
+            )
+            .await?;
+        assert_eq!(rows, 1);
+        conn = tx.commit().await?;
+    }
+
+    // Duplicate insert should roll back and propagate the error.
+    {
+        let mut tx = conn.begin().await?;
+        let res = tx
+            .dml(
+                "INSERT INTO custom_logic_txn (id, note) VALUES ($1, $2)",
+                &[RowValues::Int(1), RowValues::Text("dup".into())],
+            )
+            .await;
+        assert!(res.is_err(), "expected duplicate key to fail");
+        conn = tx.rollback().await?;
+    }
+
+    // Verify only the committed row exists.
+    let rs = conn
+        .select("SELECT COUNT(*) AS cnt FROM custom_logic_txn", &[])
+        .await?;
+    let count = *rs.results[0].get("cnt").unwrap().as_int().unwrap();
+    assert_eq!(count, 1);
+
+    conn.execute_batch("DROP TABLE IF EXISTS custom_logic_txn;")
+        .await?;
+    Ok(())
+}
+
 #[test]
 fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
@@ -245,6 +293,33 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             conn.execute_batch("DROP TABLE IF EXISTS custom_logic_txn;")
                 .await?;
             println!("postgres backend run successful");
+        }
+
+        // Typed Postgres mirror of the same flow.
+        #[cfg(all(feature = "typed-postgres", feature = "postgres"))]
+        {
+            let cfg = postgres_config();
+            let mut pg_cfg = tokio_postgres::Config::new();
+            if let Some(user) = cfg.user.as_deref() {
+                pg_cfg.user(user);
+            }
+            if let Some(password) = cfg.password.as_deref() {
+                pg_cfg.password(password);
+            }
+            if let Some(host) = cfg.host.as_deref() {
+                pg_cfg.host(host);
+            }
+            if let Some(port) = cfg.port {
+                pg_cfg.port(port);
+            }
+            if let Some(dbname) = cfg.dbname.as_deref() {
+                pg_cfg.dbname(dbname);
+            }
+
+            let pool = PgManager::new(pg_cfg).build_pool().await?;
+            let typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
+            run_typed_pg_roundtrip(typed_conn).await?;
+            println!("typed-postgres backend run successful");
         }
 
         // LibSQL (optional feature)
