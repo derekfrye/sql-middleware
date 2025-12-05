@@ -17,6 +17,7 @@ pub mod translation;
 pub mod typed;
 #[cfg(feature = "typed-postgres")]
 pub mod typed_postgres;
+pub mod typed_api;
 
 // Core modules (public for docs/advanced use)
 pub mod error;
