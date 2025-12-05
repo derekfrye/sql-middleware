@@ -54,6 +54,8 @@ impl Queryable for AnyIdle {
             AnyIdle::Postgres(conn) => conn.query(sql),
             #[cfg(feature = "typed-turso")]
             AnyIdle::Turso(conn) => conn.query(sql),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("typed backends are not enabled"),
         }
     }
 }
@@ -65,6 +67,8 @@ impl Queryable for AnyTx {
             AnyTx::Postgres(conn) => conn.query(sql),
             #[cfg(feature = "typed-turso")]
             AnyTx::Turso(conn) => conn.query(sql),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("typed backends are not enabled"),
         }
     }
 }
@@ -79,6 +83,8 @@ impl BeginTx for AnyIdle {
                 AnyIdle::Postgres(conn) => Ok(AnyTx::Postgres(conn.begin().await?)),
                 #[cfg(feature = "typed-turso")]
                 AnyIdle::Turso(conn) => Ok(AnyTx::Turso(conn.begin().await?)),
+                #[allow(unreachable_patterns)]
+                _ => unreachable!("typed backends are not enabled"),
             }
         }
     }
@@ -94,6 +100,8 @@ impl TxConn for AnyTx {
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.commit().await?)),
                 #[cfg(feature = "typed-turso")]
                 AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.commit().await?)),
+                #[allow(unreachable_patterns)]
+                _ => unreachable!("typed backends are not enabled"),
             }
         }
     }
@@ -105,6 +113,8 @@ impl TxConn for AnyTx {
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.rollback().await?)),
                 #[cfg(feature = "typed-turso")]
                 AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.rollback().await?)),
+                #[allow(unreachable_patterns)]
+                _ => unreachable!("typed backends are not enabled"),
             }
         }
     }

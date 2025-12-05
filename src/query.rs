@@ -6,7 +6,7 @@ use tokio::net::TcpStream;
 use tokio_util::compat::Compat;
 
 #[cfg(feature = "sqlite")]
-use deadpool_sqlite::rusqlite::Connection as SqliteConnectionType;
+use rusqlite::Connection as SqliteConnectionType;
 
 use crate::types::RowValues;
 

@@ -143,10 +143,10 @@ impl ManageConnection for SqliteManager {
         let conn = Arc::clone(conn);
         async move {
             spawn_blocking(move || {
-                let mut guard = conn
+                let guard = conn
                     .blocking_lock();
                 guard
-                    .execute("SELECT 1", [])
+                    .execute("SELECT 1", rusqlite::params![])
                     .map(|_| ())
                     .map_err(SqlMiddlewareDbError::SqliteError)
             })
@@ -163,4 +163,3 @@ impl ManageConnection for SqliteManager {
         false
     }
 }
-

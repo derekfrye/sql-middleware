@@ -97,7 +97,7 @@ impl<'conn> BackendTx<'conn> {
 impl PreparedStmt {
     async fn execute_prepared(
         &mut self,
-        tx: &BackendTx<'_>,
+        tx: &mut BackendTx<'_>,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
         match (tx, self) {
@@ -123,12 +123,12 @@ impl PreparedStmt {
 }
 
 async fn run_execute_with_finalize<'conn>(
-    tx: BackendTx<'conn>,
+    mut tx: BackendTx<'conn>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
     conn_slot: &mut Option<MiddlewarePoolConnection>,
 ) -> Result<usize, SqlMiddlewareDbError> {
-    let result = stmt.execute_prepared(&tx, &params).await;
+    let result = stmt.execute_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
             if let Some(restored) = tx.commit().await? {
@@ -173,7 +173,7 @@ async fn prepare_backend_tx_and_stmt<'conn>(
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite {
             conn,
-            translate_placeholders,
+            translate_placeholders: translate_default,
         } => {
             let sqlite_conn = conn
                 .take()
@@ -186,7 +186,7 @@ async fn prepare_backend_tx_and_stmt<'conn>(
             let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
             let stmt = tx.prepare(q.as_ref())?;
             Ok((
-                BackendTx::Sqlite(tx, *translate_placeholders),
+                BackendTx::Sqlite(tx, *translate_default),
                 PreparedStmt::Sqlite(stmt),
             ))
         }

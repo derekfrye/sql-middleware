@@ -529,7 +529,7 @@ END;
                                     let query = "select count(*) as cnt from test;";
 
                                     let mut stmt = tx.prepare(query)?;
-                                    let mut res = stmt.query([])?;
+                                    let mut res = stmt.query(rusqlite::params![])?;
                                     // let cnt: i64 = res.next().unwrap().get(0)?;
                                     let x: i32 = if let Some(row) = res.next()? {
                                         row.get(0)?
@@ -552,7 +552,7 @@ END;
                                     let query = "select count(*) as cnt from test;";
 
                                     let mut stmt = tx.prepare(query)?;
-                                    let mut res = stmt.query([])?;
+                                    let mut res = stmt.query(rusqlite::params![])?;
                                     // let cnt: i64 = res.next().unwrap().get(0)?;
                                     let x: i32 = if let Some(row) = res.next()? {
                                         row.get(0)?

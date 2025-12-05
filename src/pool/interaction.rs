@@ -61,12 +61,17 @@ impl MiddlewarePoolConnection {
             MiddlewarePoolConnection::Sqlite {
                 conn: sqlite_conn, ..
             } => {
-                sqlite_conn
-                    .with_connection(move |conn| {
-                        let wrapper = AnyConnWrapper::Sqlite(conn);
-                        Ok(f(wrapper))
-                    })
-                    .await
+                let conn = sqlite_conn.as_ref().ok_or_else(|| {
+                    SqlMiddlewareDbError::ExecutionError(
+                        "SQLite connection already taken from pool wrapper".into(),
+                    )
+                })?;
+
+                conn.with_connection(move |conn| {
+                    let wrapper = AnyConnWrapper::Sqlite(conn);
+                    Ok(f(wrapper))
+                })
+                .await
             }
             #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres { .. } => Err(SqlMiddlewareDbError::Unimplemented(

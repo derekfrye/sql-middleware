@@ -259,7 +259,7 @@ impl SqliteConnection {
     }
 
     fn conn_handle(&self) -> SharedSqliteConnection {
-        Arc::clone(self.conn.as_ref())
+        Arc::clone(&*self.conn)
     }
 
     fn ensure_not_in_tx(&self, ctx: &str) -> Result<(), SqlMiddlewareDbError> {
@@ -290,7 +290,7 @@ pub async fn select(
     let converted = Params::convert(params)?.0;
     let sql_owned = query.to_owned();
     let params_owned = converted.clone();
-    let handle = Arc::clone(conn.as_ref());
+    let handle = Arc::clone(&*conn);
     run_blocking(handle, move |guard| {
         let mut stmt = guard
             .prepare(&sql_owned)
@@ -309,7 +309,7 @@ pub async fn dml(
     let converted = Params::convert(params)?.0;
     let sql_owned = query.to_owned();
     let params_owned = converted.clone();
-    let handle = Arc::clone(conn.as_ref());
+    let handle = Arc::clone(&*conn);
     run_blocking(handle, move |guard| {
         let mut stmt = guard
             .prepare(&sql_owned)
@@ -347,7 +347,7 @@ where
 
 /// Apply WAL pragmas to a pooled connection.
 pub async fn apply_wal_pragmas(conn: &mut SqlitePooledConnection) -> Result<(), SqlMiddlewareDbError> {
-    let handle = Arc::clone(conn.as_ref());
+    let handle = Arc::clone(&*conn);
     run_blocking(handle, |guard| {
         guard
             .execute_batch("PRAGMA journal_mode = WAL;")

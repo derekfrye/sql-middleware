@@ -75,7 +75,7 @@ static MIDDLEWARE_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyL
     TOKIO_RUNTIME
         .block_on(async {
             let mut conn = MIDDLEWARE_CONFIG.get_connection().await?;
-            let prepared = conn
+            let mut prepared = conn
                 .prepare_sqlite_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
                 .await?;
             let params = [RowValues::Int(1)];
@@ -285,7 +285,7 @@ fn benchmark_middleware(
                         .get_connection()
                         .await
                         .expect("acquire middleware connection");
-                    let prepared = conn
+                    let mut prepared = conn
                         .prepare_sqlite_statement(
                             "SELECT id, name, score, active FROM test WHERE id = ?1",
                         )

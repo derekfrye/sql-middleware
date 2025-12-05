@@ -48,7 +48,7 @@ pub async fn clean_sqlite_tables(
 
     if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
         conn.with_blocking_sqlite(move |connection| {
-            connection.execute("DROP TABLE IF EXISTS test", [])?;
+            connection.execute("DROP TABLE IF EXISTS test", rusqlite::params![])?;
 
             let create_sql = "CREATE TABLE IF NOT EXISTS test (
             recid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +56,7 @@ pub async fn clean_sqlite_tables(
             d real, e boolean, f blob, g json,
             h text, i text, j text, k text, l text, m text, n text, o text, p text
         )";
-            connection.execute(create_sql, [])?;
+            connection.execute(create_sql, rusqlite::params![])?;
 
             Ok::<_, SqlMiddlewareDbError>(())
         })
