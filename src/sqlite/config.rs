@@ -80,10 +80,8 @@ impl ConfigAndPool {
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
     pub async fn new_sqlite(opts: SqliteOptions) -> Result<Self, SqlMiddlewareDbError> {
-        eprintln!("[sqlite::config] building pool for {}", opts.db_path);
         let manager = SqliteManager::new(opts.db_path.clone());
         let pool = manager.build_pool().await?;
-        eprintln!("[sqlite::config] pool ready for {}", opts.db_path);
 
         // Initialize the database with WAL and a simple health check.
         {
@@ -93,7 +91,6 @@ impl ConfigAndPool {
                 .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!(
                     "Failed to create SQLite pool: {e}"
                 )))?;
-            eprintln!("[sqlite::config] acquired connection for WAL pragmas on {}", opts.db_path);
 
             crate::sqlite::apply_wal_pragmas(&mut conn).await?;
         }
@@ -133,10 +130,8 @@ impl ManageConnection for SqliteManager {
     fn connect(&self) -> impl std::future::Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let path = self.db_path.clone();
         async move {
-            eprintln!("[sqlite::manager] opening connection to {path}");
             let conn = rusqlite::Connection::open(path)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
-            eprintln!("[sqlite::manager] opened connection ok");
             Ok(Arc::new(tokio::sync::Mutex::new(conn)))
         }
     }
