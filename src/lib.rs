@@ -13,6 +13,10 @@ pub mod benchmark;
 pub mod conversion;
 pub mod prelude;
 pub mod translation;
+#[cfg(feature = "typed-sqlite")]
+pub mod typed;
+#[cfg(feature = "typed-postgres")]
+pub mod typed_postgres;
 
 // Core modules (public for docs/advanced use)
 pub mod error;

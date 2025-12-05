@@ -95,6 +95,30 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
                 kind: QueryTargetKind::Connection(conn),
                 ..
             } => execute_select_dispatch(conn, translated.as_ref(), self.params.as_ref()).await,
+            #[cfg(feature = "typed-sqlite")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedSqlite { conn },
+                ..
+            } => crate::typed::typed_sqlite_select(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-sqlite")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedSqliteTx { conn },
+                ..
+            } => crate::typed::typed_sqlite_select(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-postgres")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedPostgres { conn },
+                ..
+            } => crate::typed_postgres::select(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-postgres")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedPostgresTx { conn },
+                ..
+            } => crate::typed_postgres::select(conn, translated.as_ref(), self.params.as_ref())
+                .await,
             #[cfg(feature = "postgres")]
             QueryTarget {
                 kind: QueryTargetKind::PostgresTx(tx),
@@ -155,6 +179,30 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
                 kind: QueryTargetKind::Connection(conn),
                 ..
             } => execute_dml_dispatch(conn, translated.as_ref(), self.params.as_ref()).await,
+            #[cfg(feature = "typed-sqlite")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedSqlite { conn },
+                ..
+            } => crate::typed::typed_sqlite_dml(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-sqlite")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedSqliteTx { conn },
+                ..
+            } => crate::typed::typed_sqlite_dml(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-postgres")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedPostgres { conn },
+                ..
+            } => crate::typed_postgres::dml(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-postgres")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedPostgresTx { conn },
+                ..
+            } => crate::typed_postgres::dml(conn, translated.as_ref(), self.params.as_ref())
+                .await,
             #[cfg(feature = "postgres")]
             QueryTarget {
                 kind: QueryTargetKind::PostgresTx(tx),

@@ -15,6 +15,18 @@ use crate::postgres;
 use crate::sqlite;
 #[cfg(feature = "turso")]
 use crate::turso;
+#[cfg(feature = "typed-sqlite")]
+use crate::typed;
+#[cfg(feature = "typed-sqlite")]
+use std::sync::Arc;
+#[cfg(feature = "typed-sqlite")]
+use tokio::sync::Mutex;
+#[cfg(feature = "typed-sqlite")]
+use rusqlite;
+#[cfg(feature = "typed-postgres")]
+use bb8::PooledConnection;
+#[cfg(feature = "typed-postgres")]
+use crate::typed_postgres::PgManager;
 
 /// Target for batch execution (connection or transaction).
 pub enum BatchTarget<'a> {
@@ -43,6 +55,14 @@ pub(crate) enum QueryTargetKind<'a> {
     PostgresTx(&'a postgres::transaction::Tx<'a>),
     #[cfg(feature = "sqlite")]
     SqliteTx(&'a sqlite::transaction::Tx),
+    #[cfg(feature = "typed-sqlite")]
+    TypedSqlite { conn: &'a Arc<Mutex<rusqlite::Connection>> },
+    #[cfg(feature = "typed-sqlite")]
+    TypedSqliteTx { conn: &'a Arc<Mutex<rusqlite::Connection>> },
+    #[cfg(feature = "typed-postgres")]
+    TypedPostgres { conn: &'a mut PooledConnection<'a, PgManager> },
+    #[cfg(feature = "typed-postgres")]
+    TypedPostgresTx { conn: &'a mut PooledConnection<'a, PgManager> },
     #[cfg(feature = "mssql")]
     MssqlTx(&'a mut mssql::transaction::Tx<'a>),
     #[cfg(feature = "libsql")]
@@ -97,6 +117,42 @@ impl<'a> From<&'a mut MiddlewarePoolConnection> for QueryTarget<'a> {
         QueryTarget {
             translation_default: conn.translation_default(),
             kind: QueryTargetKind::Connection(conn),
+        }
+    }
+}
+
+#[cfg(feature = "typed-sqlite")]
+impl<'a> QueryTarget<'a> {
+    pub(crate) fn from_typed_sqlite(
+        conn: &'a Arc<Mutex<rusqlite::Connection>>,
+        in_tx: bool,
+    ) -> Self {
+        let kind = if in_tx {
+            QueryTargetKind::TypedSqliteTx { conn }
+        } else {
+            QueryTargetKind::TypedSqlite { conn }
+        };
+        QueryTarget {
+            translation_default: false,
+            kind,
+        }
+    }
+}
+
+#[cfg(feature = "typed-postgres")]
+impl<'a> QueryTarget<'a> {
+    pub(crate) fn from_typed_postgres(
+        conn: &'a mut PooledConnection<'a, PgManager>,
+        in_tx: bool,
+    ) -> Self {
+        let kind = if in_tx {
+            QueryTargetKind::TypedPostgresTx { conn }
+        } else {
+            QueryTargetKind::TypedPostgres { conn }
+        };
+        QueryTarget {
+            translation_default: false,
+            kind,
         }
     }
 }
@@ -165,6 +221,14 @@ impl QueryTarget<'_> {
             QueryTargetKind::PostgresTx(_) => Some(PlaceholderStyle::Postgres),
             #[cfg(feature = "sqlite")]
             QueryTargetKind::SqliteTx(_) => Some(PlaceholderStyle::Sqlite),
+            #[cfg(feature = "typed-sqlite")]
+            QueryTargetKind::TypedSqlite { .. } => Some(PlaceholderStyle::Sqlite),
+            #[cfg(feature = "typed-sqlite")]
+            QueryTargetKind::TypedSqliteTx { .. } => Some(PlaceholderStyle::Sqlite),
+            #[cfg(feature = "typed-postgres")]
+            QueryTargetKind::TypedPostgres { .. } => Some(PlaceholderStyle::Postgres),
+            #[cfg(feature = "typed-postgres")]
+            QueryTargetKind::TypedPostgresTx { .. } => Some(PlaceholderStyle::Postgres),
             #[cfg(feature = "libsql")]
             QueryTargetKind::LibsqlTx(_) => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "turso")]

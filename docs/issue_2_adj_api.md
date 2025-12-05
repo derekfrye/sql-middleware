@@ -49,3 +49,63 @@ Context: an issue asked for a single `execute_batch` that works with either a po
 - **Custom logic in between transactions**: Instead of per-backend enums and manual dispatch, wrap the opened transaction in the unified target. Enum design: `let mut tx = begin_sqlite_tx(...)?; let rows = query((&mut tx).into(), base_query).translation(...).params(&dynamic_params).select().await?;` Caller still commits/rolls back. Trait design: same flow but pass `&mut tx` directly. Preparing statements can stay backend-specific, but the execute/dispatch surface can be unified via the target.
 
 - **Using the query builder in helpers**: Helper signature can accept any target (`impl Into<QueryTarget<'_>>` or `impl QueryCapable`). Enum design call site: `insert_user((&mut conn).into(), ...).await?` and within helper `query(target, "...").translation(...).dml().await?`. Trait design: `insert_user(&mut conn, ...)` and `insert_user(&mut tx, ...)` both work if helper is generic over `QueryCapable`.
+
+## Typestate sketch (requested follow-up)
+
+The follow-up request proposes a typestate wrapper so callers get compile-time states for “idle connection” vs “transaction” without abandoning deadpool or breaking the enum-based helpers. A possible shape:
+
+```rust
+use sql_middleware::typed::{Connection, Idle, InTx}; // new wrapper module
+use sql_middleware::middleware::{ConfigAndPool, RowValues};
+
+// User helper works in both modes (auto-commit or inside an existing tx).
+async fn update_user(conn: &mut Connection<impl UpdatableState>) -> Result<(), SqlMiddlewareDbError> {
+    conn.query("UPDATE users SET name = $1 WHERE id = $2")
+        .params(&[RowValues::Text("New Name".into()), RowValues::Int(42)])
+        .dml()
+        .await?;
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), SqlMiddlewareDbError> {
+    let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+        .build()
+        .await?;
+    let mut conn: Connection<Idle> = Connection::from(cap.get_connection().await?);
+
+    // Auto-commit path (matches today’s pooled-connection behavior).
+    update_user(&mut conn).await?;
+
+    // Explicit transaction path.
+    let mut tx_conn: Connection<InTx> = conn.begin().await?; // consumes Idle, returns InTx
+    update_user(&mut tx_conn).await?;
+    // more work...
+    conn = tx_conn.commit().await?; // or rollback()
+    Ok(())
+}
+```
+
+Notes on feasibility:
+- Built as an opt-in layer over existing enums/Tx types; deadpool stays.
+- `begin()` consumes `Connection<Idle>` and yields `Connection<InTx>`; `commit`/`rollback` consume `InTx` and return `Idle`.
+- Commit/rollback semantics across backends must be normalized (likely consume the tx wrapper).
+- Can ship alongside current enum-based APIs to avoid breakage; callers migrate gradually.
+
+### Implementation plan (owned tx + typestate)
+- Refactor backend transaction types to own their connections and use explicit `BEGIN/COMMIT/ROLLBACK`:
+  - Postgres: replace `tokio_postgres::Transaction<'_>`-based `Tx` with an owned `deadpool_postgres::Object` wrapper issuing `BEGIN/COMMIT/ROLLBACK` and preparing/executing directly.
+  - LibSQL/Turso: already use explicit statements; adjust to own the connection and consume on commit/rollback.
+  - SQLite: already owns a cloned worker handle; normalize commit/rollback to consume and return to idle state in the wrapper.
+  - MSSQL: mirror the owned approach with explicit transaction control.
+- Normalize commit/rollback to consume the tx handle across backends so the typestate can transition back to `Idle`.
+- Add a new `typed` module with `Connection<Idle>`/`Connection<InTx>` wrappers that move the owned connection into/out of the transaction state; expose `begin()/commit()/rollback()` on the wrapper.
+- Keep existing enum-based helpers (`BatchTarget`/`QueryTarget`, `execute_batch`/`query`) for compatibility; optionally implement them atop the new owned tx types.
+- Update docs/tests to cover the new typestate API; gate it behind an opt-in feature initially if needed.
+
+### Risks and caveats
+- Scope/complexity: cross-backend refactor plus a new API surface; significant testing needed across features.
+- Behavioral drift: switching Postgres from `client.transaction()` to explicit `BEGIN/COMMIT` may differ in error modes/session semantics.
+- User SQL containing txn control: once the wrapper issues `BEGIN`, user-issued `BEGIN/COMMIT` will error on PG and may behave oddly on SQLite/libsql/turso; recommend savepoints or document “no txn control inside managed tx.”
+- Pool pressure: owned tx handles keep connections checked out longer; caller forgets to commit/rollback can starve the pool.
+- Compatibility: even if the enum API stays, the new layer adds support burden; regressions possible during the refactor.

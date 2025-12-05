@@ -51,7 +51,7 @@ pub async fn build_result_set(
 }
 
 /// Extracts a `RowValues` from a `tokio_postgres` Row at the given index
-fn postgres_extract_value(
+pub fn postgres_extract_value(
     row: &tokio_postgres::Row,
     idx: usize,
 ) -> Result<RowValues, SqlMiddlewareDbError> {
