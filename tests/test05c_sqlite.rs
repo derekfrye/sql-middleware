@@ -49,7 +49,7 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // Exercise the prepared statement API to reuse the compiled select.
-        let prepared = conn
+        let mut prepared = conn
             .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
             .await?;
         let result_set = prepared.query(&[RowValues::Int(1)]).await?;

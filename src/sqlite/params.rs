@@ -1,5 +1,6 @@
-use deadpool_sqlite::rusqlite;
 use std::fmt::Write;
+
+use rusqlite;
 
 use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
 

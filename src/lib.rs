@@ -13,8 +13,6 @@ pub mod benchmark;
 pub mod conversion;
 pub mod prelude;
 pub mod translation;
-#[cfg(feature = "typed-sqlite")]
-pub mod typed;
 #[cfg(feature = "typed-postgres")]
 pub mod typed_postgres;
 #[cfg(feature = "typed-turso")]

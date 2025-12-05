@@ -1,4 +1,3 @@
-use deadpool_sqlite::rusqlite;
 use rusqlite::types::Value;
 use rusqlite::{Statement, ToSql};
 

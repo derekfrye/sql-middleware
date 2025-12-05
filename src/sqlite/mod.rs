@@ -1,28 +1,29 @@
-//! `SQLite` backend glue.
+//! `SQLite` backend glue backed by a bb8 pool of `rusqlite` connections.
 //!
-//! Blocking `rusqlite` work runs on a dedicated worker thread behind each pooled connection, so
-//! async tasks do not stall the runtime. Key helpers:
-//! - `with_blocking_sqlite` to run batched work against the raw `rusqlite::Connection`
-//! - `prepare_sqlite_statement` for cached prepared statements on the worker
-//! - `begin_transaction`/`Tx` for explicit transactions on the worker connection
+//! Blocking `rusqlite` work runs in `tokio::spawn_blocking` using the pooled connection's mutex,
+//! keeping the async runtime responsive while avoiding deadpool-sqlite.
 //!
 //! Submodules:
 //! - `config`: connection configuration and pool setup
 //! - `params`: parameter conversion between middleware and `SQLite` types
 //! - `query`: result extraction and building
 //! - `executor`: database operation execution
+//! - `transaction`: explicit transaction support
+//! - `prepared`: prepared statement helpers
 
 pub mod config;
+pub mod connection;
 pub mod executor;
 pub mod params;
 pub mod prepared;
 pub mod query;
 pub mod transaction;
-pub mod worker;
 
 // Re-export the public API
 #[allow(unused_imports)]
 pub use config::{SqliteOptions, SqliteOptionsBuilder};
+#[allow(unused_imports)]
+pub use connection::{SqliteConnection, apply_wal_pragmas};
 #[allow(unused_imports)]
 pub use executor::{execute_batch, execute_dml, execute_select};
 #[allow(unused_imports)]
@@ -32,4 +33,3 @@ pub use prepared::SqlitePreparedStatement;
 pub use query::build_result_set;
 #[allow(unused_imports)]
 pub use transaction::{Prepared, Tx, begin_transaction};
-pub(crate) use worker::SqliteConnection;

@@ -15,28 +15,20 @@ use crate::postgres;
 use crate::sqlite;
 #[cfg(feature = "turso")]
 use crate::turso;
-#[cfg(feature = "typed-sqlite")]
-use crate::typed;
-#[cfg(feature = "typed-sqlite")]
-use std::sync::Arc;
-#[cfg(feature = "typed-sqlite")]
-use tokio::sync::Mutex;
-#[cfg(feature = "typed-sqlite")]
-use rusqlite;
-#[cfg(feature = "typed-postgres")]
+#[cfg(any(feature = "typed-postgres", feature = "typed-turso", feature = "sqlite"))]
 use bb8::PooledConnection;
 #[cfg(feature = "typed-postgres")]
 use crate::typed_postgres::PgManager;
 #[cfg(feature = "typed-turso")]
 use crate::typed_turso::TursoManager;
+#[cfg(feature = "sqlite")]
+use crate::sqlite::config::SqliteManager;
 
 /// Target for batch execution (connection or transaction).
 pub enum BatchTarget<'a> {
     Connection(&'a mut MiddlewarePoolConnection),
     #[cfg(feature = "postgres")]
     PostgresTx(&'a postgres::transaction::Tx<'a>),
-    #[cfg(feature = "sqlite")]
-    SqliteTx(&'a sqlite::transaction::Tx),
     #[cfg(feature = "mssql")]
     MssqlTx(&'a mut mssql::transaction::Tx<'a>),
     #[cfg(feature = "libsql")]
@@ -60,11 +52,9 @@ pub(crate) enum QueryTargetKind<'a> {
     #[cfg(feature = "postgres")]
     PostgresTx(&'a postgres::transaction::Tx<'a>),
     #[cfg(feature = "sqlite")]
-    SqliteTx(&'a sqlite::transaction::Tx),
-    #[cfg(feature = "typed-sqlite")]
-    TypedSqlite { conn: &'a Arc<Mutex<rusqlite::Connection>> },
-    #[cfg(feature = "typed-sqlite")]
-    TypedSqliteTx { conn: &'a Arc<Mutex<rusqlite::Connection>> },
+    TypedSqlite { conn: &'a mut PooledConnection<'static, SqliteManager> },
+    #[cfg(feature = "sqlite")]
+    TypedSqliteTx { conn: &'a mut PooledConnection<'static, SqliteManager> },
     #[cfg(feature = "typed-postgres")]
     TypedPostgres { conn: &'a mut PooledConnection<'static, PgManager> },
     #[cfg(feature = "typed-postgres")]
@@ -91,13 +81,6 @@ impl<'a> From<&'a mut MiddlewarePoolConnection> for BatchTarget<'a> {
 impl<'a> From<&'a postgres::transaction::Tx<'a>> for BatchTarget<'a> {
     fn from(tx: &'a postgres::transaction::Tx<'a>) -> Self {
         BatchTarget::PostgresTx(tx)
-    }
-}
-
-#[cfg(feature = "sqlite")]
-impl<'a> From<&'a sqlite::transaction::Tx> for BatchTarget<'a> {
-    fn from(tx: &'a sqlite::transaction::Tx) -> Self {
-        BatchTarget::SqliteTx(tx)
     }
 }
 
@@ -131,10 +114,10 @@ impl<'a> From<&'a mut MiddlewarePoolConnection> for QueryTarget<'a> {
     }
 }
 
-#[cfg(feature = "typed-sqlite")]
+#[cfg(feature = "sqlite")]
 impl<'a> QueryTarget<'a> {
     pub(crate) fn from_typed_sqlite(
-        conn: &'a Arc<Mutex<rusqlite::Connection>>,
+        conn: &'a mut PooledConnection<'static, SqliteManager>,
         in_tx: bool,
     ) -> Self {
         let kind = if in_tx {
@@ -173,16 +156,6 @@ impl<'a> From<&'a postgres::transaction::Tx<'a>> for QueryTarget<'a> {
         QueryTarget {
             translation_default: false,
             kind: QueryTargetKind::PostgresTx(tx),
-        }
-    }
-}
-
-#[cfg(feature = "sqlite")]
-impl<'a> From<&'a sqlite::transaction::Tx> for QueryTarget<'a> {
-    fn from(tx: &'a sqlite::transaction::Tx) -> Self {
-        QueryTarget {
-            translation_default: false,
-            kind: QueryTargetKind::SqliteTx(tx),
         }
     }
 }
@@ -248,10 +221,8 @@ impl QueryTarget<'_> {
             #[cfg(feature = "postgres")]
             QueryTargetKind::PostgresTx(_) => Some(PlaceholderStyle::Postgres),
             #[cfg(feature = "sqlite")]
-            QueryTargetKind::SqliteTx(_) => Some(PlaceholderStyle::Sqlite),
-            #[cfg(feature = "typed-sqlite")]
             QueryTargetKind::TypedSqlite { .. } => Some(PlaceholderStyle::Sqlite),
-            #[cfg(feature = "typed-sqlite")]
+            #[cfg(feature = "sqlite")]
             QueryTargetKind::TypedSqliteTx { .. } => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "typed-postgres")]
             QueryTargetKind::TypedPostgres { .. } => Some(PlaceholderStyle::Postgres),
@@ -285,8 +256,6 @@ pub async fn execute_batch(
         BatchTarget::Connection(conn) => conn.execute_batch(query).await,
         #[cfg(feature = "postgres")]
         BatchTarget::PostgresTx(tx) => tx.execute_batch(query).await,
-        #[cfg(feature = "sqlite")]
-        BatchTarget::SqliteTx(tx) => tx.execute_batch(query).await,
         #[cfg(feature = "mssql")]
         BatchTarget::MssqlTx(tx) => tx.execute_batch(query).await,
         #[cfg(feature = "libsql")]
@@ -323,10 +292,10 @@ impl MiddlewarePoolConnection {
                 client: pg_client, ..
             } => postgres::execute_batch(pg_client, query).await,
             #[cfg(feature = "sqlite")]
-            MiddlewarePoolConnection::Sqlite {
-                conn: sqlite_client,
-                ..
-            } => sqlite::execute_batch(sqlite_client, query).await,
+            MiddlewarePoolConnection::Sqlite { .. } => {
+                let sqlite_client = self.sqlite_conn_mut()?;
+                sqlite::execute_batch(sqlite_client, query).await
+            }
             #[cfg(feature = "mssql")]
             MiddlewarePoolConnection::Mssql {
                 conn: mssql_client, ..
@@ -382,10 +351,10 @@ pub(crate) async fn execute_select_dispatch(
             client: pg_client, ..
         } => postgres::execute_select(pg_client, query, params).await,
         #[cfg(feature = "sqlite")]
-        MiddlewarePoolConnection::Sqlite {
-            conn: sqlite_client,
-            ..
-        } => sqlite::execute_select(sqlite_client, query, params).await,
+        MiddlewarePoolConnection::Sqlite { .. } => {
+            let sqlite_client = conn.sqlite_conn_mut()?;
+            sqlite::execute_select(sqlite_client, query, params).await
+        }
         #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql {
             conn: mssql_client, ..
@@ -417,10 +386,10 @@ pub(crate) async fn execute_dml_dispatch(
             client: pg_client, ..
         } => postgres::execute_dml(pg_client, query, params).await,
         #[cfg(feature = "sqlite")]
-        MiddlewarePoolConnection::Sqlite {
-            conn: sqlite_client,
-            ..
-        } => sqlite::execute_dml(sqlite_client, query, params).await,
+        MiddlewarePoolConnection::Sqlite { .. } => {
+            let sqlite_client = conn.sqlite_conn_mut()?;
+            sqlite::execute_dml(sqlite_client, query, params).await
+        }
         #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql {
             conn: mssql_client, ..

@@ -3,7 +3,7 @@ use thiserror::Error;
 #[cfg(feature = "libsql")]
 use deadpool_libsql;
 #[cfg(feature = "sqlite")]
-use deadpool_sqlite::rusqlite;
+use rusqlite;
 #[cfg(feature = "mssql")]
 use tiberius;
 #[cfg(feature = "postgres")]
@@ -28,10 +28,6 @@ pub enum SqlMiddlewareDbError {
     #[cfg(feature = "postgres")]
     #[error(transparent)]
     PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
-
-    #[cfg(feature = "sqlite")]
-    #[error(transparent)]
-    PoolErrorSqlite(#[from] deadpool::managed::PoolError<rusqlite::Error>),
 
     #[cfg(feature = "mssql")]
     #[error(transparent)]
@@ -70,4 +66,11 @@ pub enum SqlMiddlewareDbError {
 
     #[error("Other database error: {0}")]
     Other(String),
+}
+
+#[cfg(feature = "sqlite")]
+impl From<bb8::RunError<SqlMiddlewareDbError>> for SqlMiddlewareDbError {
+    fn from(err: bb8::RunError<SqlMiddlewareDbError>) -> Self {
+        SqlMiddlewareDbError::ConnectionError(format!("SQLite pool error: {err}"))
+    }
 }

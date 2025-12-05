@@ -4,9 +4,7 @@ use deadpool_postgres::Object as PostgresObject;
 #[cfg(feature = "sqlite")]
 use crate::sqlite::{SqliteConnection, SqlitePreparedStatement};
 #[cfg(feature = "sqlite")]
-use deadpool_sqlite::Object as SqliteObject;
-#[cfg(feature = "sqlite")]
-use deadpool_sqlite::rusqlite;
+use rusqlite;
 
 #[cfg(feature = "turso")]
 use crate::turso::TursoNonTxPreparedStatement;
@@ -26,7 +24,7 @@ pub enum MiddlewarePoolConnection {
     },
     #[cfg(feature = "sqlite")]
     Sqlite {
-        conn: SqliteConnection,
+        conn: Option<SqliteConnection>,
         translate_placeholders: bool,
     },
     #[cfg(feature = "mssql")]
@@ -90,13 +88,15 @@ impl MiddlewarePool {
             }
             #[cfg(feature = "sqlite")]
             MiddlewarePool::Sqlite(pool) => {
-                let conn: SqliteObject = pool
-                    .get()
+                let conn = pool
+                    .get_owned()
                     .await
-                    .map_err(SqlMiddlewareDbError::PoolErrorSqlite)?;
-                let worker_conn = SqliteConnection::new(conn)?;
+                    .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!(
+                        "sqlite checkout error: {e}"
+                    )))?;
+                let worker_conn = SqliteConnection::new(conn);
                 Ok(MiddlewarePoolConnection::Sqlite {
-                    conn: worker_conn,
+                    conn: Some(worker_conn),
                     translate_placeholders,
                 })
             }
@@ -169,12 +169,8 @@ impl MiddlewarePoolConnection {
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
         R: Send + 'static,
     {
-        match self {
-            MiddlewarePoolConnection::Sqlite { conn, .. } => conn.with_connection(func).await,
-            _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "with_blocking_sqlite is only available for SQLite connections".to_string(),
-            )),
-        }
+        let conn = self.sqlite_conn_mut()?;
+        conn.with_connection(func).await
     }
 
     /// Prepare a `SQLite` statement and obtain a reusable handle backed by the worker thread.
@@ -205,12 +201,8 @@ impl MiddlewarePoolConnection {
         &mut self,
         query: &str,
     ) -> Result<SqlitePreparedStatement, SqlMiddlewareDbError> {
-        match self {
-            MiddlewarePoolConnection::Sqlite { conn, .. } => conn.prepare_statement(query).await,
-            _ => Err(SqlMiddlewareDbError::Unimplemented(
-                "prepare_sqlite_statement is only available for SQLite connections".to_string(),
-            )),
-        }
+        let conn = self.sqlite_conn_mut()?;
+        conn.prepare_statement(query).await
     }
 
     /// Prepare a Turso statement and obtain a reusable handle tied to the pooled connection.
@@ -262,6 +254,55 @@ impl MiddlewarePoolConnection {
                 translate_placeholders,
                 ..
             } => *translate_placeholders,
+        }
+    }
+
+    #[cfg(feature = "sqlite")]
+    pub(crate) fn sqlite_conn_mut(
+        &mut self,
+    ) -> Result<&mut SqliteConnection, SqlMiddlewareDbError> {
+        match self {
+            MiddlewarePoolConnection::Sqlite { conn, .. } => conn.as_mut().ok_or_else(|| {
+                SqlMiddlewareDbError::ExecutionError(
+                    "SQLite connection already taken from pool wrapper".into(),
+                )
+            }),
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "SQLite helper called on non-sqlite connection".into(),
+            )),
+        }
+    }
+
+    /// Extract the SQLite connection, returning the translation flag alongside it.
+    #[cfg(feature = "sqlite")]
+    pub fn into_sqlite(self) -> Result<(SqliteConnection, bool), SqlMiddlewareDbError> {
+        match self {
+            MiddlewarePoolConnection::Sqlite {
+                mut conn,
+                translate_placeholders,
+            } => conn
+                .take()
+                .map(|conn| (conn, translate_placeholders))
+                .ok_or_else(|| {
+                    SqlMiddlewareDbError::ExecutionError(
+                        "SQLite connection already taken from pool wrapper".into(),
+                    )
+                }),
+            _ => Err(SqlMiddlewareDbError::Unimplemented(
+                "into_sqlite is only available for SQLite connections".to_string(),
+            )),
+        }
+    }
+
+    /// Rewrap a SQLite connection back into the enum with the original translation flag.
+    #[cfg(feature = "sqlite")]
+    pub fn from_sqlite_parts(
+        conn: SqliteConnection,
+        translate_placeholders: bool,
+    ) -> MiddlewarePoolConnection {
+        MiddlewarePoolConnection::Sqlite {
+            conn: Some(conn),
+            translate_placeholders,
         }
     }
 }

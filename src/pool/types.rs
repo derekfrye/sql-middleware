@@ -2,7 +2,9 @@
 use deadpool_postgres::Pool as DeadpoolPostgresPool;
 
 #[cfg(feature = "sqlite")]
-use deadpool_sqlite::Pool as DeadpoolSqlitePool;
+use crate::sqlite::config::SqliteManager;
+#[cfg(feature = "sqlite")]
+use bb8::Pool as Bb8SqlitePool;
 
 #[cfg(feature = "mssql")]
 use deadpool_tiberius::Pool as TiberiusPool;
@@ -25,7 +27,7 @@ pub enum MiddlewarePool {
     Postgres(DeadpoolPostgresPool),
     /// `SQLite` connection pool
     #[cfg(feature = "sqlite")]
-    Sqlite(DeadpoolSqlitePool),
+    Sqlite(Bb8SqlitePool<SqliteManager>),
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
     Mssql(TiberiusPool),
