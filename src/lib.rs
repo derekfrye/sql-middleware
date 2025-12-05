@@ -17,6 +17,8 @@ pub mod translation;
 pub mod typed;
 #[cfg(feature = "typed-postgres")]
 pub mod typed_postgres;
+#[cfg(feature = "typed-turso")]
+pub mod typed_turso;
 pub mod typed_api;
 
 // Core modules (public for docs/advanced use)

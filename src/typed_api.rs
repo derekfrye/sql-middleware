@@ -8,6 +8,8 @@ use crate::SqlMiddlewareDbError;
 
 #[cfg(feature = "typed-postgres")]
 use crate::typed_postgres::{Idle as PgIdle, InTx as PgInTx, PgConnection};
+#[cfg(feature = "typed-turso")]
+use crate::typed_turso::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
 
 /// Minimal query surface shared by idle and tx connections.
 pub trait Queryable {
@@ -33,12 +35,16 @@ pub trait TxConn {
 pub enum AnyIdle {
     #[cfg(feature = "typed-postgres")]
     Postgres(PgConnection<PgIdle>),
+    #[cfg(feature = "typed-turso")]
+    Turso(TursoConnection<TuIdle>),
 }
 
 /// Backend-neutral tx wrapper.
 pub enum AnyTx {
     #[cfg(feature = "typed-postgres")]
     Postgres(PgConnection<PgInTx>),
+    #[cfg(feature = "typed-turso")]
+    Turso(TursoConnection<TuInTx>),
 }
 
 impl Queryable for AnyIdle {
@@ -46,6 +52,8 @@ impl Queryable for AnyIdle {
         match self {
             #[cfg(feature = "typed-postgres")]
             AnyIdle::Postgres(conn) => conn.query(sql),
+            #[cfg(feature = "typed-turso")]
+            AnyIdle::Turso(conn) => conn.query(sql),
         }
     }
 }
@@ -55,6 +63,8 @@ impl Queryable for AnyTx {
         match self {
             #[cfg(feature = "typed-postgres")]
             AnyTx::Postgres(conn) => conn.query(sql),
+            #[cfg(feature = "typed-turso")]
+            AnyTx::Turso(conn) => conn.query(sql),
         }
     }
 }
@@ -67,6 +77,8 @@ impl BeginTx for AnyIdle {
             match self {
                 #[cfg(feature = "typed-postgres")]
                 AnyIdle::Postgres(conn) => Ok(AnyTx::Postgres(conn.begin().await?)),
+                #[cfg(feature = "typed-turso")]
+                AnyIdle::Turso(conn) => Ok(AnyTx::Turso(conn.begin().await?)),
             }
         }
     }
@@ -80,6 +92,8 @@ impl TxConn for AnyTx {
             match self {
                 #[cfg(feature = "typed-postgres")]
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.commit().await?)),
+                #[cfg(feature = "typed-turso")]
+                AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.commit().await?)),
             }
         }
     }
@@ -89,6 +103,8 @@ impl TxConn for AnyTx {
             match self {
                 #[cfg(feature = "typed-postgres")]
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.rollback().await?)),
+                #[cfg(feature = "typed-turso")]
+                AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.rollback().await?)),
             }
         }
     }
@@ -121,6 +137,43 @@ impl BeginTx for PgConnection<PgIdle> {
 #[cfg(feature = "typed-postgres")]
 impl TxConn for PgConnection<PgInTx> {
     type Idle = PgConnection<PgIdle>;
+
+    fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+        async move { self.commit().await }
+    }
+
+    fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+        async move { self.rollback().await }
+    }
+}
+
+// Turso impls
+#[cfg(feature = "typed-turso")]
+impl Queryable for TursoConnection<TuIdle> {
+    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
+        self.query(sql)
+    }
+}
+
+#[cfg(feature = "typed-turso")]
+impl Queryable for TursoConnection<TuInTx> {
+    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
+        self.query(sql)
+    }
+}
+
+#[cfg(feature = "typed-turso")]
+impl BeginTx for TursoConnection<TuIdle> {
+    type Tx = TursoConnection<TuInTx>;
+
+    fn begin(self) -> impl std::future::Future<Output = Result<Self::Tx, SqlMiddlewareDbError>> {
+        async move { self.begin().await }
+    }
+}
+
+#[cfg(feature = "typed-turso")]
+impl TxConn for TursoConnection<TuInTx> {
+    type Idle = TursoConnection<TuIdle>;
 
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.commit().await }

@@ -119,6 +119,18 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
                 ..
             } => crate::typed_postgres::select(conn, translated.as_ref(), self.params.as_ref())
                 .await,
+            #[cfg(feature = "typed-turso")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedTurso { conn },
+                ..
+            } => crate::typed_turso::select(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-turso")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedTursoTx { conn },
+                ..
+            } => crate::typed_turso::select(conn, translated.as_ref(), self.params.as_ref())
+                .await,
             #[cfg(feature = "postgres")]
             QueryTarget {
                 kind: QueryTargetKind::PostgresTx(tx),
@@ -202,6 +214,18 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
                 kind: QueryTargetKind::TypedPostgresTx { conn },
                 ..
             } => crate::typed_postgres::dml(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-turso")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedTurso { conn },
+                ..
+            } => crate::typed_turso::dml(conn, translated.as_ref(), self.params.as_ref())
+                .await,
+            #[cfg(feature = "typed-turso")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedTursoTx { conn },
+                ..
+            } => crate::typed_turso::dml(conn, translated.as_ref(), self.params.as_ref())
                 .await,
             #[cfg(feature = "postgres")]
             QueryTarget {

@@ -20,6 +20,7 @@ sqlite = ["deadpool-sqlite"]
 # typed-sqlite placeholder (disabled path); keeping feature to silence cfg warnings.
 typed-sqlite = []
 typed-postgres = ["bb8", "tokio-postgres", "postgres"]
+typed-turso = ["bb8", "turso"]
 postgres = ["tokio-postgres", "deadpool-postgres"]
 mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
 libsql = ["deadpool-libsql"]
