@@ -15,10 +15,33 @@ use sql_middleware::postgres::{
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
+#[cfg(feature = "typed-postgres")]
+use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 use sql_middleware::{SqlMiddlewareDbError, convert_sql_params};
 
 use std::vec;
 use tokio::runtime::Runtime;
+
+#[cfg(feature = "typed-postgres")]
+fn build_typed_pg_config(cfg: &deadpool_postgres::Config) -> tokio_postgres::Config {
+    let mut pg_cfg = tokio_postgres::Config::new();
+    if let Some(user) = cfg.user.as_deref() {
+        pg_cfg.user(user);
+    }
+    if let Some(password) = cfg.password.as_deref() {
+        pg_cfg.password(password);
+    }
+    if let Some(host) = cfg.host.as_deref() {
+        pg_cfg.host(host);
+    }
+    if let Some(port) = cfg.port {
+        pg_cfg.port(port);
+    }
+    if let Some(dbname) = cfg.dbname.as_deref() {
+        pg_cfg.dbname(dbname);
+    }
+    pg_cfg
+}
 
 #[allow(clippy::too_many_lines)]
 #[test]
@@ -58,6 +81,8 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );";
 
+        #[cfg(feature = "typed-postgres")]
+        let typed_pg_cfg = build_typed_pg_config(&cfg);
         let config_and_pool = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
         let conn = config_and_pool.get_connection().await?;
         let mut pgconn = match conn {
@@ -168,6 +193,41 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                 .collect();
 
             assert_eq!(left, right);
+        }
+
+        #[cfg(feature = "typed-postgres")]
+        {
+            let pool = PgManager::new(typed_pg_cfg).build_pool().await?;
+            let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
+
+            typed_conn.execute_batch("TRUNCATE test_2;").await?;
+            let typed_ts =
+                NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?;
+            let mut tx = typed_conn.begin().await?;
+            let inserted = tx
+                .dml(
+                    "INSERT INTO test_2 (espn_id, name, ins_ts) VALUES ($1, $2, $3)",
+                    &[
+                        RowValues::Int(123_456),
+                        RowValues::Text("test name".to_string()),
+                        RowValues::Timestamp(typed_ts),
+                    ],
+                )
+                .await?;
+            assert_eq!(inserted, 1);
+
+            let rs = tx
+                .select(
+                    "SELECT espn_id, name, ins_ts FROM test_2 WHERE espn_id = $1",
+                    &[RowValues::Int(123_456)],
+                )
+                .await?;
+            let _ = tx.commit().await?;
+            assert_eq!(rs.results.len(), 1);
+            let row = &rs.results[0];
+            assert_eq!(*row.get("espn_id").unwrap().as_int().unwrap(), 123_456);
+            assert_eq!(row.get("name").unwrap().as_text().unwrap(), "test name");
+            assert_eq!(row.get("ins_ts").unwrap().as_timestamp().unwrap(), typed_ts);
         }
 
         let query = "DROP TABLE test;

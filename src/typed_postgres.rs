@@ -2,7 +2,7 @@
 //! Provides `PgConnection<Idle>` / `PgConnection<InTx>` using an owned client
 //! and explicit BEGIN/COMMIT/ROLLBACK.
 
-use std::marker::PhantomData;
+use std::{future::Future, marker::PhantomData};
 
 use bb8::{ManageConnection, Pool, PooledConnection};
 use tokio_postgres::{Client, NoTls};
@@ -31,23 +31,28 @@ impl PgManager {
     }
 }
 
-#[async_trait::async_trait]
 impl ManageConnection for PgManager {
     type Connection = Client;
     type Error = tokio_postgres::Error;
 
-    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let (client, connection) = self.config.connect(NoTls).await?;
-        tokio::spawn(async move {
-            if let Err(_e) = connection.await {
-                // drop error
-            }
-        });
-        Ok(client)
+    fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
+        let cfg = self.config.clone();
+        async move {
+            let (client, connection) = cfg.connect(NoTls).await?;
+            tokio::spawn(async move {
+                if let Err(_e) = connection.await {
+                    // drop error
+                }
+            });
+            Ok(client)
+        }
     }
 
-    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        conn.simple_query("SELECT 1").await.map(|_| ())
+    fn is_valid(
+        &self,
+        conn: &mut Self::Connection,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        async move { conn.simple_query("SELECT 1").await.map(|_| ()) }
     }
 
     fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
@@ -56,8 +61,8 @@ impl ManageConnection for PgManager {
 }
 
 /// Typestate wrapper around a pooled Postgres client.
-pub struct PgConnection<'pool, State> {
-    conn: PooledConnection<'pool, PgManager>,
+pub struct PgConnection<State> {
+    conn: PooledConnection<'static, PgManager>,
     _state: PhantomData<State>,
 }
 
@@ -71,12 +76,12 @@ impl PgManager {
     }
 }
 
-impl<'pool> PgConnection<'pool, Idle> {
+impl PgConnection<Idle> {
     /// Checkout a connection from the pool.
     pub async fn from_pool(
-        pool: &'pool Pool<PgManager>,
+        pool: &Pool<PgManager>,
     ) -> Result<Self, SqlMiddlewareDbError> {
-        let conn = pool.get().await.map_err(|e| {
+        let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("postgres checkout error: {e}"))
         })?;
         Ok(Self {
@@ -86,7 +91,7 @@ impl<'pool> PgConnection<'pool, Idle> {
     }
 
     /// Begin an explicit transaction.
-    pub async fn begin(self) -> Result<PgConnection<'pool, InTx>, SqlMiddlewareDbError> {
+    pub async fn begin(self) -> Result<PgConnection<InTx>, SqlMiddlewareDbError> {
         self.conn
             .simple_query("BEGIN")
             .await
@@ -141,17 +146,14 @@ impl<'pool> PgConnection<'pool, Idle> {
     }
 
     /// Start a query builder (auto-commit per operation).
-    pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'pool, 'a>
-    where
-        'a: 'pool,
-    {
+    pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
         QueryBuilder::new_target(QueryTarget::from_typed_postgres(&mut self.conn, false), sql)
     }
 }
 
-impl<'pool> PgConnection<'pool, InTx> {
+impl PgConnection<InTx> {
     /// Commit and return to idle.
-    pub async fn commit(self) -> Result<PgConnection<'pool, Idle>, SqlMiddlewareDbError> {
+    pub async fn commit(self) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
         self.conn
             .simple_query("COMMIT")
             .await
@@ -163,7 +165,7 @@ impl<'pool> PgConnection<'pool, InTx> {
     }
 
     /// Rollback and return to idle.
-    pub async fn rollback(self) -> Result<PgConnection<'pool, Idle>, SqlMiddlewareDbError> {
+    pub async fn rollback(self) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
         self.conn
             .simple_query("ROLLBACK")
             .await
@@ -217,10 +219,7 @@ impl<'pool> PgConnection<'pool, InTx> {
     }
 
     /// Start a query builder within the open transaction.
-    pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'pool, 'a>
-    where
-        'a: 'pool,
-    {
+    pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
         QueryBuilder::new_target(QueryTarget::from_typed_postgres(&mut self.conn, true), sql)
     }
 }

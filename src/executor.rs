@@ -60,9 +60,9 @@ pub(crate) enum QueryTargetKind<'a> {
     #[cfg(feature = "typed-sqlite")]
     TypedSqliteTx { conn: &'a Arc<Mutex<rusqlite::Connection>> },
     #[cfg(feature = "typed-postgres")]
-    TypedPostgres { conn: &'a mut PooledConnection<'a, PgManager> },
+    TypedPostgres { conn: &'a mut PooledConnection<'static, PgManager> },
     #[cfg(feature = "typed-postgres")]
-    TypedPostgresTx { conn: &'a mut PooledConnection<'a, PgManager> },
+    TypedPostgresTx { conn: &'a mut PooledConnection<'static, PgManager> },
     #[cfg(feature = "mssql")]
     MssqlTx(&'a mut mssql::transaction::Tx<'a>),
     #[cfg(feature = "libsql")]
@@ -142,7 +142,7 @@ impl<'a> QueryTarget<'a> {
 #[cfg(feature = "typed-postgres")]
 impl<'a> QueryTarget<'a> {
     pub(crate) fn from_typed_postgres(
-        conn: &'a mut PooledConnection<'a, PgManager>,
+        conn: &'a mut PooledConnection<'static, PgManager>,
         in_tx: bool,
     ) -> Self {
         let kind = if in_tx {

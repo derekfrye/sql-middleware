@@ -6,6 +6,8 @@ use sql_middleware::prelude::*;
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
+#[cfg(feature = "typed-postgres")]
+use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 
 #[test]
 fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,7 +21,8 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(real_cfg)).await?;
+        let cap =
+            ConfigAndPool::new_postgres(PostgresOptions::new(real_cfg.clone())).await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")
@@ -50,6 +53,45 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             rs.results[0].get("name").unwrap().as_text().unwrap(),
             "alice"
         );
+
+        #[cfg(feature = "typed-postgres")]
+        {
+            // Exercise the typestate API against the same backend using a separate table.
+            let mut pg_cfg = tokio_postgres::Config::new();
+            pg_cfg
+                .user(real_cfg.user.as_deref().unwrap_or("postgres"))
+                .password(real_cfg.password.as_deref().unwrap_or_default())
+                .host(real_cfg.host.as_deref().unwrap_or("localhost"));
+            if let Some(port) = real_cfg.port {
+                pg_cfg.port(port);
+            }
+            if let Some(dbname) = &real_cfg.dbname {
+                pg_cfg.dbname(dbname);
+            }
+
+            let pool = PgManager::new(pg_cfg).build_pool().await?;
+            let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
+
+            typed_conn
+                .execute_batch("CREATE TABLE IF NOT EXISTS t_typed (id BIGINT, name TEXT);")
+                .await?;
+            let _ = typed_conn
+                .dml(
+                    "INSERT INTO t_typed (id, name) VALUES ($1, $2)",
+                    &[RowValues::Int(2), RowValues::Text("bob".into())],
+                )
+                .await?;
+            let rs = typed_conn
+                .select(
+                    "SELECT name FROM t_typed WHERE id = $1",
+                    &[RowValues::Int(2)],
+                )
+                .await?;
+            assert_eq!(
+                rs.results[0].get("name").unwrap().as_text().unwrap(),
+                "bob"
+            );
+        }
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
 

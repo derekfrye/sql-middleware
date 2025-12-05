@@ -682,8 +682,21 @@ END;
                 .await?)
         }
 
-        MiddlewarePoolConnection::Libsql { .. } | MiddlewarePoolConnection::Turso { .. } => {
+        #[cfg(feature = "libsql")]
+        MiddlewarePoolConnection::Libsql { .. } => {
             // For LibSQL, just execute the query using the middleware
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
+                .await?;
+            conn.query(&query_and_params.query)
+                .params(&query_and_params.params)
+                .dml()
+                .await?;
+            Ok::<_, SqlMiddlewareDbError>(result_set)
+        }
+        #[cfg(feature = "turso")]
+        MiddlewarePoolConnection::Turso { .. } => {
             conn.query(&query_and_params.query)
                 .params(&query_and_params.params)
                 .dml()
