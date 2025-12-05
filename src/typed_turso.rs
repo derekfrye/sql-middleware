@@ -34,12 +34,7 @@ impl ManageConnection for TursoManager {
 
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let db = self.db.clone();
-        async move {
-            eprintln!("[typed_turso::connect] attempting db.connect()");
-            let out = db.connect();
-            eprintln!("[typed_turso::connect] db.connect() returned");
-            out
-        }
+        async move { db.connect() }
     }
 
     fn is_valid(
@@ -47,16 +42,13 @@ impl ManageConnection for TursoManager {
         conn: &mut Self::Connection,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async move {
-            eprintln!("[typed_turso::is_valid] running SELECT 1");
             match conn.query("SELECT 1", ()).await {
                 Ok(mut rows) => {
                     // Consume one row to keep the iterator clean.
                     let _ = rows.next().await;
-                    eprintln!("[typed_turso::is_valid] SELECT 1 ok");
                     Ok(())
                 }
                 Err(e) => {
-                    eprintln!("[typed_turso::is_valid] SELECT 1 error: {e}");
                     Err(e)
                 }
             }
@@ -87,11 +79,9 @@ impl TursoManager {
 impl TursoConnection<Idle> {
     /// Checkout a connection from the pool.
     pub async fn from_pool(pool: &Pool<TursoManager>) -> Result<Self, SqlMiddlewareDbError> {
-        eprintln!("[typed_turso::from_pool] waiting for pooled connection");
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("turso checkout error: {e}"))
         })?;
-        eprintln!("[typed_turso::from_pool] acquired pooled connection");
         Ok(Self {
             conn,
             _state: PhantomData,
