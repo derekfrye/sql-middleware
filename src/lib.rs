@@ -15,7 +15,9 @@ pub mod benchmark;
 pub mod conversion;
 pub mod prelude;
 pub mod translation;
-pub mod typed_api;
+pub mod typed;
+/// Back-compat re-export: `typed_api` is now `typed`.
+pub use typed as typed_api;
 #[cfg(feature = "postgres")]
 pub mod typed_postgres;
 #[cfg(feature = "sqlite")]
