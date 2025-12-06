@@ -9,11 +9,9 @@ use tokio_postgres::{Client, NoTls};
 
 use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
-use crate::postgres::params::Params as PgParams;
-use crate::postgres::query::postgres_extract_value;
+use crate::postgres::query::{execute_dml_on_client, execute_query_on_client};
 use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
-use crate::types::ParamConverter;
 
 /// Marker types for typestate
 pub enum Idle {}
@@ -154,7 +152,7 @@ impl PgConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        exec_dml(&mut self.conn, query, params, "postgres tx execute error").await
+        execute_dml_on_client(&self.conn, query, params, "postgres tx execute error").await
     }
 
     /// Execute SELECT inside the open transaction.
@@ -163,7 +161,7 @@ impl PgConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        select_rows(&mut self.conn, query, params).await
+        execute_query_on_client(&self.conn, query, params).await
     }
 
     /// Start a query builder within the open transaction.
@@ -178,21 +176,7 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    select_rows(conn, query, params).await
-}
-
-/// Shared helper to run a SELECT against a pooled client and build a `ResultSet`.
-async fn select_rows(
-    conn: &mut PooledConnection<'_, PgManager>,
-    query: &str,
-    params: &[RowValues],
-) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let converted = PgParams::convert_sql_params(params, crate::types::ConversionMode::Query)?;
-    let rows = conn
-        .query(query, converted.as_refs())
-        .await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres select error: {e}")))?;
-    build_result_set_from_rows(&rows)
+    execute_query_on_client(conn, query, params).await
 }
 
 /// Adapter for query builder dml (typed-postgres target).
@@ -201,46 +185,7 @@ pub async fn dml(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
-    exec_dml(conn, query, params, "postgres dml error").await
-}
-
-fn build_result_set_from_rows(
-    rows: &[tokio_postgres::Row],
-) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let mut result_set = ResultSet::with_capacity(rows.len());
-    if let Some(row) = rows.first() {
-        let cols: Vec<String> = row.columns().iter().map(|c| c.name().to_string()).collect();
-        result_set.set_column_names(std::sync::Arc::new(cols));
-    }
-
-    for row in rows {
-        let col_count = row.columns().len();
-        let mut row_values = Vec::with_capacity(col_count);
-        for idx in 0..col_count {
-            row_values.push(postgres_extract_value(row, idx)?);
-        }
-        result_set.add_row_values(row_values);
-    }
-
-    Ok(result_set)
-}
-
-async fn exec_dml(
-    conn: &mut PooledConnection<'_, PgManager>,
-    query: &str,
-    params: &[RowValues],
-    err_label: &str,
-) -> Result<usize, SqlMiddlewareDbError> {
-    let converted = PgParams::convert_sql_params(params, crate::types::ConversionMode::Execute)?;
-    let rows = conn
-        .execute(query, converted.as_refs())
-        .await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("{err_label}: {e}")))?;
-    usize::try_from(rows).map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!(
-            "postgres affected rows conversion error: {e}"
-        ))
-    })
+    execute_dml_on_client(conn, query, params, "postgres dml error").await
 }
 
 impl PgConnection<InTx> {

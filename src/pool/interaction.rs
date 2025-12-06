@@ -20,7 +20,7 @@ impl MiddlewarePoolConnection {
             #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres { client: pg_obj, .. } => {
                 // `PooledConnection` dereferences to the underlying `tokio_postgres::Client`.
-                let client: &mut tokio_postgres::Client = &mut **pg_obj;
+                let client: &mut tokio_postgres::Client = pg_obj;
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
             #[cfg(feature = "mssql")]
