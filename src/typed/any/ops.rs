@@ -1,65 +1,8 @@
-//! Backend-neutral `AnyIdle` and `AnyTx` enum wrappers.
-
-use super::traits::{BeginTx, Queryable, TxConn, TypedConnOps};
 use crate::SqlMiddlewareDbError;
-use crate::{middleware::RowValues, query_builder::QueryBuilder, results::ResultSet};
+use crate::typed::traits::{BeginTx, TxConn, TypedConnOps};
+use crate::{middleware::RowValues, results::ResultSet};
 
-#[cfg(feature = "postgres")]
-use crate::postgres::typed::{Idle as PgIdle, InTx as PgInTx, PgConnection};
-#[cfg(feature = "sqlite")]
-use crate::sqlite::typed::{Idle as SqIdle, InTx as SqInTx, SqliteTypedConnection};
-#[cfg(feature = "turso")]
-use crate::turso::typed::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
-
-/// Backend-neutral idle wrapper.
-pub enum AnyIdle {
-    #[cfg(feature = "postgres")]
-    Postgres(PgConnection<PgIdle>),
-    #[cfg(feature = "sqlite")]
-    Sqlite(SqliteTypedConnection<SqIdle>),
-    #[cfg(feature = "turso")]
-    Turso(TursoConnection<TuIdle>),
-}
-
-/// Backend-neutral tx wrapper.
-pub enum AnyTx {
-    #[cfg(feature = "postgres")]
-    Postgres(PgConnection<PgInTx>),
-    #[cfg(feature = "sqlite")]
-    Sqlite(SqliteTypedConnection<SqInTx>),
-    #[cfg(feature = "turso")]
-    Turso(TursoConnection<TuInTx>),
-}
-
-impl Queryable for AnyIdle {
-    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
-        match self {
-            #[cfg(feature = "postgres")]
-            AnyIdle::Postgres(conn) => conn.query(sql),
-            #[cfg(feature = "sqlite")]
-            AnyIdle::Sqlite(conn) => conn.query(sql),
-            #[cfg(feature = "turso")]
-            AnyIdle::Turso(conn) => conn.query(sql),
-            #[allow(unreachable_patterns)]
-            _ => unreachable!("typed backends are not enabled"),
-        }
-    }
-}
-
-impl Queryable for AnyTx {
-    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
-        match self {
-            #[cfg(feature = "postgres")]
-            AnyTx::Postgres(conn) => conn.query(sql),
-            #[cfg(feature = "sqlite")]
-            AnyTx::Sqlite(conn) => conn.query(sql),
-            #[cfg(feature = "turso")]
-            AnyTx::Turso(conn) => conn.query(sql),
-            #[allow(unreachable_patterns)]
-            _ => unreachable!("typed backends are not enabled"),
-        }
-    }
-}
+use super::{AnyIdle, AnyTx};
 
 impl TypedConnOps for AnyIdle {
     #[allow(clippy::manual_async_fn)]

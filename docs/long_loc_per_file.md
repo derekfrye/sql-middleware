@@ -22,7 +22,7 @@
 
 ## src/typed/any.rs
 - Option 1: Split routing from type definitions: keep enums in `any/types.rs` and move the match-based dispatch impls (`Queryable`, `TypedConnOps`, `BeginTx`) into `any/dispatch.rs`.
-- Option 2: Break by trait: `any/queryable.rs` for `Queryable` impls, `any/ops.rs` for `TypedConnOps` and tx helpers, leaving `any/mod.rs` or `any/types.rs` for the enums and conversions.
+- Option 2: Break by trait: `any/queryable.rs` for `Queryable` impls, `any/ops.rs` for `TypedConnOps` and tx helpers, leaving `any/mod.rs` or `any/types.rs` for the enums and conversions. **Implemented (done).**
 
 ## src/executor.rs
 - Option 1: Separate targets from execution: `executor/targets.rs` for `BatchTarget`/`QueryTarget` and conversions, `executor/dispatch.rs` for `execute_*_dispatch` and per-backend arms, leaving `executor/mod.rs` as a thin facade. **Implemented (done).**
