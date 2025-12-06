@@ -13,16 +13,20 @@ use crate::mssql;
 use crate::postgres;
 #[cfg(feature = "sqlite")]
 use crate::sqlite;
+#[cfg(feature = "sqlite")]
+use crate::sqlite::config::SqliteManager;
 #[cfg(feature = "turso")]
 use crate::turso;
-#[cfg(any(feature = "typed-postgres", feature = "typed-turso", feature = "sqlite"))]
-use bb8::PooledConnection;
 #[cfg(feature = "typed-postgres")]
 use crate::typed_postgres::PgManager;
 #[cfg(feature = "typed-turso")]
 use crate::typed_turso::TursoManager;
-#[cfg(feature = "sqlite")]
-use crate::sqlite::config::SqliteManager;
+#[cfg(any(
+    feature = "typed-postgres",
+    feature = "typed-turso",
+    feature = "sqlite"
+))]
+use bb8::PooledConnection;
 
 /// Target for batch execution (connection or transaction).
 pub enum BatchTarget<'a> {
@@ -36,9 +40,13 @@ pub enum BatchTarget<'a> {
     #[cfg(feature = "turso")]
     TursoTx(&'a turso::transaction::Tx<'a>),
     #[cfg(feature = "typed-turso")]
-    TypedTurso { conn: &'a mut PooledConnection<'static, TursoManager> },
+    TypedTurso {
+        conn: &'a mut PooledConnection<'static, TursoManager>,
+    },
     #[cfg(feature = "typed-turso")]
-    TypedTursoTx { conn: &'a mut PooledConnection<'static, TursoManager> },
+    TypedTursoTx {
+        conn: &'a mut PooledConnection<'static, TursoManager>,
+    },
 }
 
 /// Target for query builder dispatch (connection or transaction) with a translation default.
@@ -52,17 +60,29 @@ pub(crate) enum QueryTargetKind<'a> {
     #[cfg(feature = "postgres")]
     PostgresTx(&'a postgres::transaction::Tx<'a>),
     #[cfg(feature = "sqlite")]
-    TypedSqlite { conn: &'a mut PooledConnection<'static, SqliteManager> },
+    TypedSqlite {
+        conn: &'a mut PooledConnection<'static, SqliteManager>,
+    },
     #[cfg(feature = "sqlite")]
-    TypedSqliteTx { conn: &'a mut PooledConnection<'static, SqliteManager> },
+    TypedSqliteTx {
+        conn: &'a mut PooledConnection<'static, SqliteManager>,
+    },
     #[cfg(feature = "typed-postgres")]
-    TypedPostgres { conn: &'a mut PooledConnection<'static, PgManager> },
+    TypedPostgres {
+        conn: &'a mut PooledConnection<'static, PgManager>,
+    },
     #[cfg(feature = "typed-postgres")]
-    TypedPostgresTx { conn: &'a mut PooledConnection<'static, PgManager> },
+    TypedPostgresTx {
+        conn: &'a mut PooledConnection<'static, PgManager>,
+    },
     #[cfg(feature = "typed-turso")]
-    TypedTurso { conn: &'a mut PooledConnection<'static, TursoManager> },
+    TypedTurso {
+        conn: &'a mut PooledConnection<'static, TursoManager>,
+    },
     #[cfg(feature = "typed-turso")]
-    TypedTursoTx { conn: &'a mut PooledConnection<'static, TursoManager> },
+    TypedTursoTx {
+        conn: &'a mut PooledConnection<'static, TursoManager>,
+    },
     #[cfg(feature = "mssql")]
     MssqlTx(&'a mut mssql::transaction::Tx<'a>),
     #[cfg(feature = "libsql")]

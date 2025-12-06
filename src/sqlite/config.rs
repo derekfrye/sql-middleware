@@ -85,12 +85,9 @@ impl ConfigAndPool {
 
         // Initialize the database with WAL and a simple health check.
         {
-            let mut conn = pool
-                .get_owned()
-                .await
-                .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!(
-                    "Failed to create SQLite pool: {e}"
-                )))?;
+            let mut conn = pool.get_owned().await.map_err(|e| {
+                SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQLite pool: {e}"))
+            })?;
 
             crate::sqlite::apply_wal_pragmas(&mut conn).await?;
         }
@@ -127,11 +124,13 @@ impl ManageConnection for SqliteManager {
     type Connection = SharedSqliteConnection;
     type Error = SqlMiddlewareDbError;
 
-    fn connect(&self) -> impl std::future::Future<Output = Result<Self::Connection, Self::Error>> + Send {
+    fn connect(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let path = self.db_path.clone();
         async move {
-            let conn = rusqlite::Connection::open(path)
-                .map_err(SqlMiddlewareDbError::SqliteError)?;
+            let conn =
+                rusqlite::Connection::open(path).map_err(SqlMiddlewareDbError::SqliteError)?;
             Ok(Arc::new(tokio::sync::Mutex::new(conn)))
         }
     }
@@ -143,17 +142,14 @@ impl ManageConnection for SqliteManager {
         let conn = Arc::clone(conn);
         async move {
             spawn_blocking(move || {
-                let guard = conn
-                    .blocking_lock();
+                let guard = conn.blocking_lock();
                 guard
                     .query_row("SELECT 1", rusqlite::params![], |_row| Ok(()))
                     .map_err(SqlMiddlewareDbError::SqliteError)
             })
             .await
             .map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!(
-                    "sqlite validation join error: {e}"
-                ))
+                SqlMiddlewareDbError::ExecutionError(format!("sqlite validation join error: {e}"))
             })?
         }
     }

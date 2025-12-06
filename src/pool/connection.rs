@@ -88,12 +88,9 @@ impl MiddlewarePool {
             }
             #[cfg(feature = "sqlite")]
             MiddlewarePool::Sqlite(pool) => {
-                let conn = pool
-                    .get_owned()
-                    .await
-                    .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!(
-                        "sqlite checkout error: {e}"
-                    )))?;
+                let conn = pool.get_owned().await.map_err(|e| {
+                    SqlMiddlewareDbError::ConnectionError(format!("sqlite checkout error: {e}"))
+                })?;
                 let worker_conn = SqliteConnection::new(conn);
                 Ok(MiddlewarePoolConnection::Sqlite {
                     conn: Some(worker_conn),

@@ -116,9 +116,7 @@ async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Er
         .await
         .unwrap_err();
     raw.rollback().await?;
-    assert!(
-        format!("{err}").contains("SQLite transaction in progress; operation not permitted")
-    );
+    assert!(format!("{err}").contains("SQLite transaction in progress; operation not permitted"));
 
     // Connection should be usable again after rollback.
     let mut conn = MiddlewarePoolConnection::from_sqlite_parts(raw, translate);

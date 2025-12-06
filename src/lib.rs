@@ -13,11 +13,11 @@ pub mod benchmark;
 pub mod conversion;
 pub mod prelude;
 pub mod translation;
+pub mod typed_api;
 #[cfg(feature = "typed-postgres")]
 pub mod typed_postgres;
 #[cfg(feature = "typed-turso")]
 pub mod typed_turso;
-pub mod typed_api;
 
 // Core modules (public for docs/advanced use)
 pub mod error;

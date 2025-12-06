@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::middleware::{ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
+};
 
 use super::connection::SqliteConnection;
 use super::params::Params;
@@ -41,9 +43,11 @@ impl Tx {
         prepared: &Prepared,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted = <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let converted =
+            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
         let conn = self.conn_mut()?;
-        conn.execute_dml_in_tx(prepared.sql.as_ref(), &converted.0).await
+        conn.execute_dml_in_tx(prepared.sql.as_ref(), &converted.0)
+            .await
     }
 
     /// Execute a prepared statement as a query within this transaction.
@@ -52,10 +56,15 @@ impl Tx {
         prepared: &Prepared,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted = <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let converted =
+            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
         let conn = self.conn_mut()?;
-        conn.execute_select_in_tx(prepared.sql.as_ref(), &converted.0, super::query::build_result_set)
-            .await
+        conn.execute_select_in_tx(
+            prepared.sql.as_ref(),
+            &converted.0,
+            super::query::build_result_set,
+        )
+        .await
     }
 
     /// Execute a batch inside the open transaction.

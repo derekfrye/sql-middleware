@@ -21,8 +21,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap =
-            ConfigAndPool::new_postgres(PostgresOptions::new(real_cfg.clone())).await?;
+        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(real_cfg.clone())).await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")
@@ -87,10 +86,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
                     &[RowValues::Int(2)],
                 )
                 .await?;
-            assert_eq!(
-                rs.results[0].get("name").unwrap().as_text().unwrap(),
-                "bob"
-            );
+            assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "bob");
         }
         Ok::<(), SqlMiddlewareDbError>(())
     })?;

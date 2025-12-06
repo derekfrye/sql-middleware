@@ -23,7 +23,11 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     pub async fn query(&mut self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
         let params_owned = Params::convert(params)?.0;
         self.connection
-            .execute_select(self.query.as_ref(), &params_owned, super::query::build_result_set)
+            .execute_select(
+                self.query.as_ref(),
+                &params_owned,
+                super::query::build_result_set,
+            )
             .await
     }
 
@@ -44,4 +48,3 @@ impl<'conn> SqlitePreparedStatement<'conn> {
         self.query.as_str()
     }
 }
-

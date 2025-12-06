@@ -376,6 +376,17 @@ END;
     };
     conn.execute_batch(test_tbl_query).await?;
 
+    if db_type == DatabaseType::Sqlite {
+        // Make sure earlier setup batches didn't leave us mid-transaction before starting explicit work.
+        conn.with_blocking_sqlite(|raw| {
+            if !raw.is_autocommit() {
+                raw.execute_batch("COMMIT")?;
+            }
+            Ok::<_, SqlMiddlewareDbError>(())
+        })
+        .await?;
+    }
+
     let parameterized_query = match db_type {
         DatabaseType::Postgres => "INSERT INTO test (id, name) VALUES ($1, $2);",
         DatabaseType::Sqlite => "INSERT INTO test (id, name) VALUES (?1, ?2);",
@@ -440,7 +451,9 @@ END;
                     let params = params.clone();
                     move |wrapper| match wrapper {
                         AnyConnWrapper::Sqlite(sql_conn) => {
-                            let tx = sql_conn.transaction()?;
+                            let tx = sql_conn.transaction().map_err(|e| {
+                                SqlMiddlewareDbError::Other(format!("sqlite tx1 start: {e}"))
+                            })?;
                             for param in params {
                                 let converted_params = convert_sql_params::<SqliteParams>(
                                     &param,
@@ -524,7 +537,9 @@ END;
                     move |wrapper| {
                         match wrapper {
                             AnyConnWrapper::Sqlite(sql_conn) => {
-                                let tx = sql_conn.transaction()?;
+                                let tx = sql_conn.transaction().map_err(|e| {
+                                    SqlMiddlewareDbError::Other(format!("sqlite tx2 start: {e}"))
+                                })?;
                                 {
                                     let query = "select count(*) as cnt from test;";
 
@@ -539,13 +554,14 @@ END;
                                     assert_eq!(x, 200);
                                 }
                                 {
+                                    let mut stmt = tx.prepare(&parameterized_query)?;
                                     for param in params {
                                         let converted_params = convert_sql_params::<SqliteParams>(
                                             &param,
                                             ConversionMode::Execute,
                                         )?;
                                         let refs = converted_params.as_refs();
-                                        tx.execute(&parameterized_query, &refs[..])?;
+                                        stmt.execute(&refs[..])?;
                                     }
                                 }
                                 {
@@ -640,7 +656,9 @@ END;
         MiddlewarePoolConnection::Sqlite { .. } => {
             Ok(conn
                 .with_blocking_sqlite(move |xxx| {
-                    let tx = xxx.transaction()?;
+                    let tx = xxx.transaction().map_err(|e| {
+                        SqlMiddlewareDbError::Other(format!("sqlite tx3 start: {e}"))
+                    })?;
                     {
                         let converted_params = convert_sql_params::<SqliteParams>(
                             &query_and_params.params,

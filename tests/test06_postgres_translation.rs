@@ -28,7 +28,9 @@ async fn typed_url_literal_vs_placeholder(
 }
 
 #[cfg(feature = "typed-postgres")]
-async fn typed_translation_force_on(cfg: &tokio_postgres::Config) -> Result<(), SqlMiddlewareDbError> {
+async fn typed_translation_force_on(
+    cfg: &tokio_postgres::Config,
+) -> Result<(), SqlMiddlewareDbError> {
     let pool = PgManager::new(cfg.clone()).build_pool().await?;
     let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
 
@@ -52,7 +54,9 @@ async fn typed_translation_force_on(cfg: &tokio_postgres::Config) -> Result<(), 
 }
 
 #[cfg(feature = "typed-postgres")]
-async fn typed_translation_force_off(cfg: &tokio_postgres::Config) -> Result<(), SqlMiddlewareDbError> {
+async fn typed_translation_force_off(
+    cfg: &tokio_postgres::Config,
+) -> Result<(), SqlMiddlewareDbError> {
     let pool = PgManager::new(cfg.clone()).build_pool().await?;
     let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
     let res = typed_conn
@@ -61,7 +65,10 @@ async fn typed_translation_force_off(cfg: &tokio_postgres::Config) -> Result<(),
         .params(&[RowValues::Int(1)])
         .select()
         .await;
-    assert!(res.is_err(), "expected typed-postgres SQL to fail without translation");
+    assert!(
+        res.is_err(),
+        "expected typed-postgres SQL to fail without translation"
+    );
     Ok(())
 }
 

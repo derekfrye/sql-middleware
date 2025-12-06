@@ -7,12 +7,12 @@ use std::{future::Future, marker::PhantomData};
 use bb8::{ManageConnection, Pool, PooledConnection};
 use tokio_postgres::{Client, NoTls};
 
+use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::postgres::params::Params as PgParams;
 use crate::postgres::query::postgres_extract_value;
-use crate::results::ResultSet;
 use crate::query_builder::QueryBuilder;
-use crate::executor::QueryTarget;
+use crate::results::ResultSet;
 use crate::types::ParamConverter;
 
 /// Marker types for typestate
@@ -80,9 +80,7 @@ impl PgManager {
 
 impl PgConnection<Idle> {
     /// Checkout a connection from the pool.
-    pub async fn from_pool(
-        pool: &Pool<PgManager>,
-    ) -> Result<Self, SqlMiddlewareDbError> {
+    pub async fn from_pool(pool: &Pool<PgManager>) -> Result<Self, SqlMiddlewareDbError> {
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("postgres checkout error: {e}"))
         })?;
@@ -94,10 +92,9 @@ impl PgConnection<Idle> {
 
     /// Begin an explicit transaction.
     pub async fn begin(self) -> Result<PgConnection<InTx>, SqlMiddlewareDbError> {
-        self.conn
-            .simple_query("BEGIN")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres begin error: {e}")))?;
+        self.conn.simple_query("BEGIN").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres begin error: {e}"))
+        })?;
         Ok(PgConnection {
             conn: self.conn,
             _state: PhantomData,
@@ -119,12 +116,15 @@ impl PgConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted = PgParams::convert_sql_params(params, crate::types::ConversionMode::Execute)?;
+        let converted =
+            PgParams::convert_sql_params(params, crate::types::ConversionMode::Execute)?;
         let rows = self
             .conn
             .execute(query, converted.as_refs())
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres execute error: {e}")))?;
+            .map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("postgres execute error: {e}"))
+            })?;
         usize::try_from(rows).map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!(
                 "postgres affected rows conversion error: {e}"
@@ -143,7 +143,9 @@ impl PgConnection<Idle> {
             .conn
             .query(query, converted.as_refs())
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres query error: {e}")))?;
+            .map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("postgres query error: {e}"))
+            })?;
         build_result_set_from_rows(&rows)
     }
 
@@ -156,10 +158,9 @@ impl PgConnection<Idle> {
 impl PgConnection<InTx> {
     /// Commit and return to idle.
     pub async fn commit(self) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
-        self.conn
-            .simple_query("COMMIT")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres commit error: {e}")))?;
+        self.conn.simple_query("COMMIT").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres commit error: {e}"))
+        })?;
         Ok(PgConnection {
             conn: self.conn,
             _state: PhantomData,
@@ -168,10 +169,9 @@ impl PgConnection<InTx> {
 
     /// Rollback and return to idle.
     pub async fn rollback(self) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
-        self.conn
-            .simple_query("ROLLBACK")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres rollback error: {e}")))?;
+        self.conn.simple_query("ROLLBACK").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres rollback error: {e}"))
+        })?;
         Ok(PgConnection {
             conn: self.conn,
             _state: PhantomData,
@@ -180,10 +180,9 @@ impl PgConnection<InTx> {
 
     /// Execute batch inside the open transaction.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        self.conn
-            .batch_execute(sql)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres tx batch error: {e}")))
+        self.conn.batch_execute(sql).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres tx batch error: {e}"))
+        })
     }
 
     /// Execute DML inside the open transaction.
@@ -192,12 +191,15 @@ impl PgConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted = PgParams::convert_sql_params(params, crate::types::ConversionMode::Execute)?;
+        let converted =
+            PgParams::convert_sql_params(params, crate::types::ConversionMode::Execute)?;
         let rows = self
             .conn
             .execute(query, converted.as_refs())
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres tx execute error: {e}")))?;
+            .map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("postgres tx execute error: {e}"))
+            })?;
         usize::try_from(rows).map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!(
                 "postgres affected rows conversion error: {e}"
@@ -216,7 +218,9 @@ impl PgConnection<InTx> {
             .conn
             .query(query, converted.as_refs())
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres tx query error: {e}")))?;
+            .map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("postgres tx query error: {e}"))
+            })?;
         build_result_set_from_rows(&rows)
     }
 
@@ -258,7 +262,9 @@ pub async fn dml(
     })
 }
 
-fn build_result_set_from_rows(rows: &[tokio_postgres::Row]) -> Result<ResultSet, SqlMiddlewareDbError> {
+fn build_result_set_from_rows(
+    rows: &[tokio_postgres::Row],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let mut result_set = ResultSet::with_capacity(rows.len());
     if let Some(row) = rows.first() {
         let cols: Vec<String> = row.columns().iter().map(|c| c.name().to_string()).collect();

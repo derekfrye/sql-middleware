@@ -1,4 +1,9 @@
-#![cfg(any(feature = "sqlite", feature = "postgres", feature = "libsql", feature = "turso"))]
+#![cfg(any(
+    feature = "sqlite",
+    feature = "postgres",
+    feature = "libsql",
+    feature = "turso"
+))]
 
 use std::env;
 
@@ -8,25 +13,25 @@ use sql_middleware::middleware::{
 };
 use tokio::runtime::Runtime;
 
-#[cfg(feature = "turso")]
-use sql_middleware::turso::{
-    begin_transaction as begin_turso_tx, Prepared as TursoPrepared, Tx as TursoTx,
+#[cfg(feature = "libsql")]
+use sql_middleware::libsql::{
+    Prepared as LibsqlPrepared, Tx as LibsqlTx, begin_transaction as begin_libsql_tx,
 };
 #[cfg(feature = "postgres")]
 use sql_middleware::postgres::{
-    begin_transaction as begin_postgres_tx, Prepared as PostgresPrepared, Tx as PostgresTx,
-    PostgresOptions,
+    PostgresOptions, Prepared as PostgresPrepared, Tx as PostgresTx,
+    begin_transaction as begin_postgres_tx,
+};
+#[cfg(feature = "sqlite")]
+use sql_middleware::sqlite::{
+    Prepared as SqlitePrepared, Tx as SqliteTx, begin_transaction as begin_sqlite_tx,
+};
+#[cfg(feature = "turso")]
+use sql_middleware::turso::{
+    Prepared as TursoPrepared, Tx as TursoTx, begin_transaction as begin_turso_tx,
 };
 #[cfg(feature = "typed-postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
-#[cfg(feature = "sqlite")]
-use sql_middleware::sqlite::{
-    begin_transaction as begin_sqlite_tx, Prepared as SqlitePrepared, Tx as SqliteTx,
-};
-#[cfg(feature = "libsql")]
-use sql_middleware::libsql::{
-    begin_transaction as begin_libsql_tx, Prepared as LibsqlPrepared, Tx as LibsqlTx,
-};
 
 #[cfg(feature = "postgres")]
 fn postgres_config() -> deadpool_postgres::Config {
@@ -70,9 +75,10 @@ impl<'conn> BackendTx<'conn> {
             #[cfg(feature = "postgres")]
             BackendTx::Postgres(tx) => tx.commit().await.map(|_| None),
             #[cfg(feature = "sqlite")]
-            BackendTx::Sqlite(tx, translate) => tx.commit().await.map(|conn| {
-                Some(MiddlewarePoolConnection::from_sqlite_parts(conn, translate))
-            }),
+            BackendTx::Sqlite(tx, translate) => tx
+                .commit()
+                .await
+                .map(|conn| Some(MiddlewarePoolConnection::from_sqlite_parts(conn, translate))),
             #[cfg(feature = "libsql")]
             BackendTx::Libsql(tx) => tx.commit().await.map(|_| None),
         }
@@ -85,9 +91,10 @@ impl<'conn> BackendTx<'conn> {
             #[cfg(feature = "postgres")]
             BackendTx::Postgres(tx) => tx.rollback().await.map(|_| None),
             #[cfg(feature = "sqlite")]
-            BackendTx::Sqlite(tx, translate) => tx.rollback().await.map(|conn| {
-                Some(MiddlewarePoolConnection::from_sqlite_parts(conn, translate))
-            }),
+            BackendTx::Sqlite(tx, translate) => tx
+                .rollback()
+                .await
+                .map(|conn| Some(MiddlewarePoolConnection::from_sqlite_parts(conn, translate))),
             #[cfg(feature = "libsql")]
             BackendTx::Libsql(tx) => tx.rollback().await.map(|_| None),
         }
@@ -175,13 +182,11 @@ async fn prepare_backend_tx_and_stmt<'conn>(
             conn,
             translate_placeholders: translate_default,
         } => {
-            let sqlite_conn = conn
-                .take()
-                .ok_or_else(|| {
-                    SqlMiddlewareDbError::ExecutionError(
-                        "SQLite connection already taken from wrapper".into(),
-                    )
-                })?;
+            let sqlite_conn = conn.take().ok_or_else(|| {
+                SqlMiddlewareDbError::ExecutionError(
+                    "SQLite connection already taken from wrapper".into(),
+                )
+            })?;
             let tx = begin_sqlite_tx(sqlite_conn).await?;
             let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
             let stmt = tx.prepare(q.as_ref())?;
@@ -196,9 +201,7 @@ async fn prepare_backend_tx_and_stmt<'conn>(
     }
 }
 
-async fn run_roundtrip(
-    conn: &mut MiddlewarePoolConnection,
-) -> Result<(), SqlMiddlewareDbError> {
+async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMiddlewareDbError> {
     // Shared query authored once; translated for SQLite-family backends.
     let insert_query = "INSERT INTO custom_logic_txn (id, note) VALUES ($1, $2)";
 
@@ -246,7 +249,9 @@ async fn run_roundtrip(
 }
 
 #[cfg(all(feature = "typed-postgres", feature = "postgres"))]
-async fn run_typed_pg_roundtrip(mut conn: PgConnection<PgIdle>) -> Result<(), SqlMiddlewareDbError> {
+async fn run_typed_pg_roundtrip(
+    mut conn: PgConnection<PgIdle>,
+) -> Result<(), SqlMiddlewareDbError> {
     conn.execute_batch(
         "DROP TABLE IF EXISTS custom_logic_txn;
          CREATE TABLE custom_logic_txn (id BIGINT PRIMARY KEY, note TEXT);",

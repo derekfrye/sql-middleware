@@ -10,7 +10,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
-use rusqlite::{Connection, Row, Result as RusqliteResult};
+use rusqlite::{Connection, Result as RusqliteResult, Row};
 use sql_middleware::{ConfigAndPool, RowValues, SqlMiddlewareDbError};
 use std::fs;
 use std::hint::black_box;
@@ -49,9 +49,7 @@ struct BenchRow {
 }
 
 impl BenchRow {
-    fn from_rusqlite(
-        row: &Row<'_>,
-    ) -> RusqliteResult<Self> {
+    fn from_rusqlite(row: &Row<'_>) -> RusqliteResult<Self> {
         Ok(Self {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -77,8 +75,7 @@ impl BlockingRusqlitePool {
         let size = size.max(1);
         let mut connections = Vec::with_capacity(size);
         for _ in 0..size {
-            let conn =
-                Connection::open(path).expect("open rusqlite connection for benchmark");
+            let conn = Connection::open(path).expect("open rusqlite connection for benchmark");
             connections.push(conn);
         }
         Self {

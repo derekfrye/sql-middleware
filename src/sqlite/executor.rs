@@ -9,7 +9,10 @@ use super::query::build_result_set;
 /// # Errors
 ///
 /// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails.
-pub async fn execute_batch(sqlite_client: &mut SqliteConnection, query: &str) -> Result<(), SqlMiddlewareDbError> {
+pub async fn execute_batch(
+    sqlite_client: &mut SqliteConnection,
+    query: &str,
+) -> Result<(), SqlMiddlewareDbError> {
     sqlite_client.execute_batch(query).await
 }
 
@@ -24,7 +27,9 @@ pub async fn execute_select(
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let params_owned = Params::convert(params)?.0;
-    sqlite_client.execute_select(query, &params_owned, build_result_set).await
+    sqlite_client
+        .execute_select(query, &params_owned, build_result_set)
+        .await
 }
 
 /// Execute a DML query (INSERT, UPDATE, DELETE) in `SQLite`.
@@ -40,4 +45,3 @@ pub async fn execute_dml(
     let params_owned = Params::convert(params)?.0;
     sqlite_client.execute_dml(query, &params_owned).await
 }
-

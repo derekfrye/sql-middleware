@@ -6,11 +6,11 @@ use std::{future::Future, marker::PhantomData};
 
 use bb8::{ManageConnection, Pool, PooledConnection};
 
+use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
 use crate::turso::params::Params as TursoParams;
 use crate::types::{ConversionMode, ParamConverter};
-use crate::executor::QueryTarget;
 
 /// Marker types for typestate
 pub enum Idle {}
@@ -50,9 +50,7 @@ impl ManageConnection for TursoManager {
                     let _ = rows.next().await;
                     Ok(())
                 }
-                Err(e) => {
-                    Err(e)
-                }
+                Err(e) => Err(e),
             }
         }
     }
@@ -118,11 +116,9 @@ impl TursoConnection<Idle> {
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
         let converted = TursoParams::convert_sql_params(params, ConversionMode::Execute)?;
-        let rows = self
-            .conn
-            .execute(query, converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso execute error: {e}")))?;
+        let rows = self.conn.execute(query, converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("turso execute error: {e}"))
+        })?;
         usize::try_from(rows).map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!(
                 "turso affected rows conversion error: {e}"
@@ -149,10 +145,9 @@ impl TursoConnection<Idle> {
 impl TursoConnection<InTx> {
     /// Commit and return to idle.
     pub async fn commit(self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
-        self.conn
-            .execute_batch("COMMIT")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso commit error: {e}")))?;
+        self.conn.execute_batch("COMMIT").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("turso commit error: {e}"))
+        })?;
         Ok(TursoConnection {
             conn: self.conn,
             _state: PhantomData,
@@ -161,10 +156,9 @@ impl TursoConnection<InTx> {
 
     /// Rollback and return to idle.
     pub async fn rollback(self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
-        self.conn
-            .execute_batch("ROLLBACK")
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso rollback error: {e}")))?;
+        self.conn.execute_batch("ROLLBACK").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("turso rollback error: {e}"))
+        })?;
         Ok(TursoConnection {
             conn: self.conn,
             _state: PhantomData,
@@ -186,11 +180,9 @@ impl TursoConnection<InTx> {
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
         let converted = TursoParams::convert_sql_params(params, ConversionMode::Execute)?;
-        let rows = self
-            .conn
-            .execute(query, converted.0)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso tx execute error: {e}")))?;
+        let rows = self.conn.execute(query, converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("turso tx execute error: {e}"))
+        })?;
         usize::try_from(rows).map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!(
                 "turso affected rows conversion error: {e}"
@@ -234,8 +226,6 @@ pub async fn dml(
         .await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso dml error: {e}")))?;
     usize::try_from(rows).map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!(
-            "turso affected rows conversion error: {e}"
-        ))
+        SqlMiddlewareDbError::ExecutionError(format!("turso affected rows conversion error: {e}"))
     })
 }

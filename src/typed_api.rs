@@ -3,8 +3,8 @@
 //! For now only Postgres implements these; other backends can hook in by
 //! implementing the traits and adding enum variants.
 
-use crate::query_builder::QueryBuilder;
 use crate::SqlMiddlewareDbError;
+use crate::query_builder::QueryBuilder;
 
 #[cfg(feature = "typed-postgres")]
 use crate::typed_postgres::{Idle as PgIdle, InTx as PgInTx, PgConnection};
@@ -31,7 +31,9 @@ pub trait TxConn {
     #[allow(clippy::manual_async_fn)]
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>>;
     #[allow(clippy::manual_async_fn)]
-    fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>>;
+    fn rollback(
+        self,
+    ) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>>;
 }
 
 /// Backend-neutral idle wrapper.
@@ -112,7 +114,9 @@ impl TxConn for AnyTx {
     }
 
     #[allow(clippy::manual_async_fn)]
-    fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+    fn rollback(
+        self,
+    ) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move {
             match self {
                 #[cfg(feature = "typed-postgres")]
@@ -161,7 +165,9 @@ impl TxConn for PgConnection<PgInTx> {
     }
 
     #[allow(clippy::manual_async_fn)]
-    fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+    fn rollback(
+        self,
+    ) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.rollback().await }
     }
 }
@@ -201,7 +207,9 @@ impl TxConn for TursoConnection<TuInTx> {
     }
 
     #[allow(clippy::manual_async_fn)]
-    fn rollback(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+    fn rollback(
+        self,
+    ) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
         async move { self.rollback().await }
     }
 }
