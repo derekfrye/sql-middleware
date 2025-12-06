@@ -25,7 +25,7 @@
 - Option 2: Break by trait: `any/queryable.rs` for `Queryable` impls, `any/ops.rs` for `TypedConnOps` and tx helpers, leaving `any/mod.rs` or `any/types.rs` for the enums and conversions.
 
 ## src/executor.rs
-- Option 1: Separate targets from execution: `executor/targets.rs` for `BatchTarget`/`QueryTarget` and conversions, `executor/dispatch.rs` for `execute_*_dispatch` and per-backend arms, leaving `executor/mod.rs` as a thin facade.
+- Option 1: Separate targets from execution: `executor/targets.rs` for `BatchTarget`/`QueryTarget` and conversions, `executor/dispatch.rs` for `execute_*_dispatch` and per-backend arms, leaving `executor/mod.rs` as a thin facade. **Implemented (done).**
 - Option 2: Backend shims: keep core traits/structs in `executor/mod.rs` and move backend-specific dispatch code into `executor/{postgres,sqlite,mssql,libsql,turso}.rs`, each exposing `execute_select`/`execute_dml` helpers to reduce the central match complexity.
 
 ## src/query_builder.rs
