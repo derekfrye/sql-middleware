@@ -33,14 +33,14 @@ async fn test_issue_2_anyidle_flow() -> Result<(), SqlMiddlewareDbError> {
 }
 
 fn enabled_backends() -> Vec<Backend> {
-    let mut backends = Vec::new();
-    #[cfg(feature = "postgres")]
-    backends.push(Backend::Postgres);
-    #[cfg(feature = "turso")]
-    backends.push(Backend::Turso);
-    #[cfg(feature = "sqlite")]
-    backends.push(Backend::Sqlite);
-    backends
+    vec![
+        #[cfg(feature = "postgres")]
+        Backend::Postgres,
+        #[cfg(feature = "turso")]
+        Backend::Turso,
+        #[cfg(feature = "sqlite")]
+        Backend::Sqlite,
+    ]
 }
 
 async fn run_backend_flow(backend: Backend) -> Result<(), SqlMiddlewareDbError> {
@@ -61,23 +61,13 @@ async fn run_backend_flow(backend: Backend) -> Result<(), SqlMiddlewareDbError> 
         .await?;
 
     // Verify initial value.
-    assert_eq!(
-        fetch_name(&mut conn).await?,
-        "Alice",
-        "backend {:?}",
-        backend
-    );
+    assert_eq!(fetch_name(&mut conn).await?, "Alice");
 
     // Run shared auto-commit + transaction flow.
     let mut restored = more_work(conn).await?;
 
     // Verify final value after updates.
-    assert_eq!(
-        fetch_name(&mut restored).await?,
-        "Bob",
-        "backend {:?}",
-        backend
-    );
+    assert_eq!(fetch_name(&mut restored).await?, "Bob");
     Ok(())
 }
 
@@ -151,7 +141,7 @@ async fn fetch_name(conn: &mut impl TypedConnOps) -> Result<String, SqlMiddlewar
         .await?;
     let val = rs
         .results
-        .get(0)
+        .first()
         .and_then(|row| row.get("name"))
         .and_then(|v| v.as_text())
         .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("missing name".into()))?;

@@ -52,7 +52,10 @@ pub async fn build_result_set(
     Ok(result_set)
 }
 
-/// Extracts a `RowValues` from a `tokio_postgres` Row at the given index
+/// Extracts a `RowValues` from a `tokio_postgres` Row at the given index.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the column cannot be retrieved.
 pub fn postgres_extract_value(
     row: &tokio_postgres::Row,
     idx: usize,

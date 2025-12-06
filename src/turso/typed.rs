@@ -75,6 +75,9 @@ pub struct TursoConnection<State> {
 
 impl TursoManager {
     /// Build a pool from this manager.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if creating the pool fails.
     pub async fn build_pool(self) -> Result<Pool<TursoManager>, SqlMiddlewareDbError> {
         Pool::builder()
             .build(self)
@@ -85,6 +88,9 @@ impl TursoManager {
 
 impl TursoConnection<Idle> {
     /// Checkout a connection from the pool.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if acquiring a connection fails.
     pub async fn from_pool(pool: &Pool<TursoManager>) -> Result<Self, SqlMiddlewareDbError> {
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("turso checkout error: {e}"))
@@ -97,11 +103,17 @@ impl TursoConnection<Idle> {
     }
 
     /// Begin an explicit transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if transitioning into a transaction fails.
     pub async fn begin(mut self) -> Result<TursoConnection<InTx>, SqlMiddlewareDbError> {
         Self::begin_from_conn(self.take_conn()?).await
     }
 
     /// Auto-commit batch (BEGIN/COMMIT around it).
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the batch fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         tx.execute_batch(sql).await?;
@@ -111,6 +123,9 @@ impl TursoConnection<Idle> {
     }
 
     /// Auto-commit DML.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the DML fails.
     pub async fn dml(
         &mut self,
         query: &str,
@@ -124,6 +139,9 @@ impl TursoConnection<Idle> {
     }
 
     /// Auto-commit SELECT.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the select fails.
     pub async fn select(
         &mut self,
         query: &str,
@@ -146,10 +164,13 @@ use crate::results::ResultSet;
 
 impl TursoConnection<InTx> {
     /// Commit and return to idle.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if committing fails.
     pub async fn commit(mut self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn_owned()?;
         match conn.execute_batch("COMMIT").await {
-            Ok(_) => Ok(TursoConnection {
+            Ok(()) => Ok(TursoConnection {
                 conn: Some(conn),
                 needs_rollback: false,
                 _state: PhantomData,
@@ -166,10 +187,13 @@ impl TursoConnection<InTx> {
     }
 
     /// Rollback and return to idle.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if rolling back fails.
     pub async fn rollback(mut self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn_owned()?;
         match conn.execute_batch("ROLLBACK").await {
-            Ok(_) => Ok(TursoConnection {
+            Ok(()) => Ok(TursoConnection {
                 conn: Some(conn),
                 needs_rollback: false,
                 _state: PhantomData,
@@ -184,6 +208,9 @@ impl TursoConnection<InTx> {
     }
 
     /// Execute batch inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the batch execution fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         self.conn_mut()
             .execute_batch(sql)
@@ -192,6 +219,9 @@ impl TursoConnection<InTx> {
     }
 
     /// Execute DML inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the DML fails.
     pub async fn dml(
         &mut self,
         query: &str,
@@ -213,6 +243,9 @@ impl TursoConnection<InTx> {
     }
 
     /// Execute SELECT inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the select fails.
     pub async fn select(
         &mut self,
         query: &str,
@@ -228,6 +261,9 @@ impl TursoConnection<InTx> {
 }
 
 /// Adapter for query builder select (typed-turso target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the query execution fails.
 pub async fn select(
     conn: &mut PooledConnection<'_, TursoManager>,
     query: &str,
@@ -237,6 +273,9 @@ pub async fn select(
 }
 
 /// Adapter for query builder dml (typed-turso target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if executing the DML fails.
 pub async fn dml(
     conn: &mut PooledConnection<'_, TursoManager>,
     query: &str,
@@ -342,14 +381,14 @@ pub fn set_skip_drop_rollback_for_tests(skip: bool) {
 
 impl<State> Drop for TursoConnection<State> {
     fn drop(&mut self) {
-        if self.needs_rollback && !skip_drop_rollback() {
-            if let Some(conn) = self.conn.take() {
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    handle.spawn(async move {
-                        let _ = conn.execute_batch("ROLLBACK").await;
-                    });
-                }
-            }
+        if self.needs_rollback
+            && !skip_drop_rollback()
+            && let Some(conn) = self.conn.take()
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            handle.spawn(async move {
+                let _ = conn.execute_batch("ROLLBACK").await;
+            });
         }
     }
 }

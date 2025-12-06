@@ -1,6 +1,6 @@
-//! Experimental bb8-backed SQLite typestate API.
+//! Experimental bb8-backed `SQLite` typestate API.
 //! Provides `SqliteTypedConnection<Idle>` / `SqliteTypedConnection<InTx>` using an owned
-//! pooled SQLite connection with explicit BEGIN/COMMIT/ROLLBACK.
+//! pooled `SQLite` connection with explicit BEGIN/COMMIT/ROLLBACK.
 
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use super::params::Params;
 pub enum Idle {}
 pub enum InTx {}
 
-/// Typestate wrapper around a pooled SQLite connection.
+/// Typestate wrapper around a pooled `SQLite` connection.
 pub struct SqliteTypedConnection<State> {
     conn: Option<PooledConnection<'static, SqliteManager>>,
     /// True if in a transaction that needs rollback on drop.
@@ -32,6 +32,9 @@ pub struct SqliteTypedConnection<State> {
 
 impl SqliteTypedConnection<Idle> {
     /// Checkout a connection from the pool.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if acquiring a pooled connection fails.
     pub async fn from_pool(pool: &Pool<SqliteManager>) -> Result<Self, SqlMiddlewareDbError> {
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("sqlite checkout error: {e}"))
@@ -44,11 +47,17 @@ impl SqliteTypedConnection<Idle> {
     }
 
     /// Begin an explicit transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if transitioning into a transaction fails.
     pub async fn begin(mut self) -> Result<SqliteTypedConnection<InTx>, SqlMiddlewareDbError> {
         Self::begin_from_conn(self.take_conn()?).await
     }
 
     /// Auto-commit batch (BEGIN/COMMIT around it).
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the batch fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         tx.execute_batch(sql).await?;
@@ -58,6 +67,9 @@ impl SqliteTypedConnection<Idle> {
     }
 
     /// Auto-commit DML.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the DML fails.
     pub async fn dml(
         &mut self,
         query: &str,
@@ -71,6 +83,9 @@ impl SqliteTypedConnection<Idle> {
     }
 
     /// Auto-commit SELECT.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the select fails.
     pub async fn select(
         &mut self,
         query: &str,
@@ -123,6 +138,9 @@ impl SqliteTypedConnection<Idle> {
 
 impl SqliteTypedConnection<InTx> {
     /// Commit and return to idle.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if committing the transaction fails.
     pub async fn commit(mut self) -> Result<SqliteTypedConnection<Idle>, SqlMiddlewareDbError> {
         let conn_handle = self.conn_handle()?;
         let commit_result = run_blocking(Arc::clone(&conn_handle), |guard| {
@@ -155,6 +173,9 @@ impl SqliteTypedConnection<InTx> {
     }
 
     /// Rollback and return to idle.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if rolling back the transaction fails.
     pub async fn rollback(mut self) -> Result<SqliteTypedConnection<Idle>, SqlMiddlewareDbError> {
         let conn_handle = self.conn_handle()?;
         let rollback_result = run_blocking(Arc::clone(&conn_handle), |guard| {
@@ -181,6 +202,9 @@ impl SqliteTypedConnection<InTx> {
     }
 
     /// Execute batch inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the batch fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         let sql_owned = sql.to_owned();
         run_blocking(self.conn_handle()?, move |guard| {
@@ -192,6 +216,9 @@ impl SqliteTypedConnection<InTx> {
     }
 
     /// Execute DML inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the DML fails.
     pub async fn dml(
         &mut self,
         query: &str,
@@ -214,6 +241,9 @@ impl SqliteTypedConnection<InTx> {
     }
 
     /// Execute SELECT inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the select fails.
     pub async fn select(
         &mut self,
         query: &str,
@@ -256,21 +286,22 @@ impl SqliteTypedConnection<InTx> {
 
 impl<State> Drop for SqliteTypedConnection<State> {
     fn drop(&mut self) {
-        if self.needs_rollback && !skip_drop_rollback() {
-            if let Some(conn) = self.conn.take() {
-                let conn_handle = Arc::clone(&*conn);
-                // Rollback synchronously so the connection is clean before it
-                // goes back into the pool. Avoid async fire-and-forget, which
-                // could race with the next checkout.
-                if Handle::try_current().is_ok() {
-                    block_in_place(|| {
-                        let guard = conn_handle.blocking_lock();
-                        let _ = guard.execute_batch("ROLLBACK");
-                    });
-                } else {
+        if self.needs_rollback
+            && !skip_drop_rollback()
+            && let Some(conn) = self.conn.take()
+        {
+            let conn_handle = Arc::clone(&*conn);
+            // Rollback synchronously so the connection is clean before it
+            // goes back into the pool. Avoid async fire-and-forget, which
+            // could race with the next checkout.
+            if Handle::try_current().is_ok() {
+                block_in_place(|| {
                     let guard = conn_handle.blocking_lock();
                     let _ = guard.execute_batch("ROLLBACK");
-                }
+                });
+            } else {
+                let guard = conn_handle.blocking_lock();
+                let _ = guard.execute_batch("ROLLBACK");
             }
         }
     }
@@ -290,6 +321,9 @@ pub fn set_skip_drop_rollback_for_tests(skip: bool) {
 }
 
 /// Adapter for query builder select (typed-sqlite target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if converting parameters or executing the query fails.
 pub async fn select(
     conn: &mut PooledConnection<'_, SqliteManager>,
     query: &str,
@@ -308,6 +342,9 @@ pub async fn select(
 }
 
 /// Adapter for query builder dml (typed-sqlite target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if converting parameters or executing the statement fails.
 pub async fn dml(
     conn: &mut PooledConnection<'_, SqliteManager>,
     query: &str,

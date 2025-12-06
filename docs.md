@@ -82,9 +82,9 @@ pub async fn set_scores_in_db(
 }
 ```
 
-### SQLite worker helpers
+### `SQLite` worker helpers
 
-SQLite pooling runs through a worker thread so blocking `rusqlite` calls never stall the async runtime. Two helpers expose that surface:
+`SQLite` pooling runs through a worker thread so blocking `rusqlite` calls never stall the async runtime. Two helpers expose that surface:
 
 ```rust,no_run
 use sql_middleware::prelude::*;

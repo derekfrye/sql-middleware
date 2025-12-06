@@ -9,7 +9,7 @@ use crate::tx_outcome::TxOutcome;
 use super::connection::SqliteConnection;
 use super::params::Params;
 
-/// Transaction handle that owns the SQLite connection until completion.
+/// Transaction handle that owns the `SQLite` connection until completion.
 pub struct Tx {
     conn: Option<SqliteConnection>,
     translate_placeholders: bool,
@@ -20,10 +20,13 @@ pub struct Prepared {
     sql: Arc<String>,
 }
 
-/// Begin a transaction, consuming the SQLite connection until commit/rollback.
+/// Begin a transaction, consuming the `SQLite` connection until commit/rollback.
 ///
 /// `translate_placeholders` keeps the pool's translation default attached so the
 /// connection can be rewrapped after commit/rollback.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the transaction cannot be started.
 pub async fn begin_transaction(
     mut conn: SqliteConnection,
     translate_placeholders: bool,
@@ -43,13 +46,24 @@ impl Tx {
     }
 
     /// Prepare a statement within this transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the transaction has already completed.
     pub fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
+        if self.conn.is_none() {
+            return Err(SqlMiddlewareDbError::ExecutionError(
+                "SQLite transaction already completed".into(),
+            ));
+        }
         Ok(Prepared {
             sql: Arc::new(sql.to_owned()),
         })
     }
 
     /// Execute a prepared statement as DML within this transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
     pub async fn execute_prepared(
         &mut self,
         prepared: &Prepared,
@@ -63,6 +77,9 @@ impl Tx {
     }
 
     /// Execute a prepared statement as a query within this transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
     pub async fn query_prepared(
         &mut self,
         prepared: &Prepared,
@@ -80,12 +97,18 @@ impl Tx {
     }
 
     /// Execute a batch inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the batch fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         let conn = self.conn_mut()?;
         conn.execute_batch_in_tx(sql).await
     }
 
     /// Commit the transaction and surface the restored connection.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if committing the transaction fails.
     pub async fn commit(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
@@ -97,6 +120,9 @@ impl Tx {
     }
 
     /// Roll back the transaction and surface the restored connection.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if rolling back fails.
     pub async fn rollback(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())

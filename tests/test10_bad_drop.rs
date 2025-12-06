@@ -14,7 +14,6 @@ use sql_middleware::typed_turso::{
     Idle as TuIdle, TursoConnection, TursoManager,
     set_skip_drop_rollback_for_tests as turso_skip_drop,
 };
-use std::time::Instant;
 use tokio::task::yield_now;
 
 async fn count_rows(conn: &mut impl TypedConnOps) -> Result<i64, SqlMiddlewareDbError> {
@@ -39,6 +38,13 @@ async fn setup_table(conn: &mut impl TypedConnOps) -> Result<(), SqlMiddlewareDb
 
 async fn run_postgres_bad_drop() -> Result<(), SqlMiddlewareDbError> {
     let debug = std::env::var_os("SQL_MIDDLEWARE_PG_DEBUG").is_some();
+    let pool = build_pg_pool(debug).await?;
+    run_pg_legacy_drop(&pool, debug).await?;
+    run_pg_fixed_drop(&pool, debug).await?;
+    Ok(())
+}
+
+async fn build_pg_pool(debug: bool) -> Result<Pool<PgManager>, SqlMiddlewareDbError> {
     let mut pg_cfg = tokio_postgres::Config::new();
     pg_cfg.dbname("testing");
     pg_cfg.host("10.3.0.201");
@@ -58,92 +64,73 @@ async fn run_postgres_bad_drop() -> Result<(), SqlMiddlewareDbError> {
     if debug {
         eprintln!("[pg-bad-drop] pool built");
     }
+    Ok(pool)
+}
 
+async fn run_pg_legacy_drop(
+    pool: &Pool<PgManager>,
+    debug: bool,
+) -> Result<(), SqlMiddlewareDbError> {
+    if debug {
+        eprintln!("[pg-bad-drop] checking out conn for setup");
+    }
     {
-        let step = Instant::now();
-        if debug {
-            eprintln!("[pg-bad-drop] checking out conn for setup");
-        }
-        let mut conn = PgConnection::<PgIdle>::from_pool(&pool).await?;
-        if debug {
-            eprintln!("[pg-bad-drop] setup conn acquired in {:?}", step.elapsed());
-        }
+        let mut conn = PgConnection::<PgIdle>::from_pool(pool).await?;
         setup_table(&mut conn).await?;
     }
 
     pg_skip_drop(true);
     {
-        let step = Instant::now();
         if debug {
             eprintln!("[pg-bad-drop] checking out tx1");
         }
-        let mut tx = PgConnection::<PgIdle>::from_pool(&pool)
+        let mut tx = PgConnection::<PgIdle>::from_pool(pool)
             .await?
             .begin()
             .await?;
         if debug {
-            eprintln!("[pg-bad-drop] tx1 acquired in {:?}", step.elapsed());
+            eprintln!("[pg-bad-drop] tx1 acquired");
         }
         tx.execute_batch("INSERT INTO bad_drop (id) VALUES (1);")
             .await?;
-        // drop without commit/rollback (simulate legacy leak)
     }
     pg_skip_drop(false);
 
-    let conn_step = Instant::now();
-    if debug {
-        eprintln!("[pg-bad-drop] checking out conn after legacy drop");
-    }
-    let mut conn = PgConnection::<PgIdle>::from_pool(&pool).await?;
-    if debug {
-        eprintln!(
-            "[pg-bad-drop] post-legacy conn acquired in {:?}",
-            conn_step.elapsed()
-        );
-    }
+    let mut conn = PgConnection::<PgIdle>::from_pool(pool).await?;
     assert_eq!(
         count_rows(&mut conn).await?,
         1,
         "postgres: legacy drop should leave row present"
     );
     conn.execute_batch("ROLLBACK").await?;
-    if debug {
-        eprintln!("[pg-bad-drop] rolled back leaked tx");
-    }
     drop(conn);
     if debug {
         eprintln!("[pg-bad-drop] released post-legacy conn");
     }
+    Ok(())
+}
 
+async fn run_pg_fixed_drop(
+    pool: &Pool<PgManager>,
+    debug: bool,
+) -> Result<(), SqlMiddlewareDbError> {
     {
-        let step = Instant::now();
         if debug {
             eprintln!("[pg-bad-drop] checking out tx2");
         }
-        let mut tx = PgConnection::<PgIdle>::from_pool(&pool)
+        let mut tx = PgConnection::<PgIdle>::from_pool(pool)
             .await?
             .begin()
             .await?;
         if debug {
-            eprintln!("[pg-bad-drop] tx2 acquired in {:?}", step.elapsed());
+            eprintln!("[pg-bad-drop] tx2 acquired");
         }
         tx.execute_batch("INSERT INTO bad_drop (id) VALUES (2);")
             .await?;
-        // drop without commit/rollback; fixed path should rollback
     }
     yield_now().await;
 
-    let final_step = Instant::now();
-    if debug {
-        eprintln!("[pg-bad-drop] checking out final conn");
-    }
-    let mut conn = PgConnection::<PgIdle>::from_pool(&pool).await?;
-    if debug {
-        eprintln!(
-            "[pg-bad-drop] final conn acquired in {:?}",
-            final_step.elapsed()
-        );
-    }
+    let mut conn = PgConnection::<PgIdle>::from_pool(pool).await?;
     assert_eq!(
         count_rows(&mut conn).await?,
         0,

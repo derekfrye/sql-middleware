@@ -12,7 +12,7 @@ use crate::types::RowValues;
 use super::config::{SharedSqliteConnection, SqliteManager, SqlitePooledConnection};
 use super::params::Params;
 
-/// Connection wrapper backed by a bb8 pooled SQLite connection.
+/// Connection wrapper backed by a bb8 pooled `SQLite` connection.
 pub struct SqliteConnection {
     pub(crate) conn: SqlitePooledConnection,
     in_transaction: bool,
@@ -27,6 +27,9 @@ impl SqliteConnection {
     }
 
     /// Execute a batch of statements; wraps in a transaction when not already inside one.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if acquiring the `SQLite` guard or executing the batch fails.
     pub async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
         self.ensure_not_in_tx("execute batch")?;
         let sql_owned = query.to_owned();
@@ -48,6 +51,9 @@ impl SqliteConnection {
     }
 
     /// Execute a SELECT and materialize into a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if preparing or executing the query fails.
     pub async fn execute_select<F>(
         &mut self,
         query: &str,
@@ -74,6 +80,9 @@ impl SqliteConnection {
     }
 
     /// Execute a DML statement and return rows affected.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if preparing or executing the statement fails.
     pub async fn execute_dml(
         &mut self,
         query: &str,
@@ -104,6 +113,9 @@ impl SqliteConnection {
     }
 
     /// Begin a transaction, transitioning this connection into transactional mode.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the transaction cannot be started or is already active.
     pub async fn begin(&mut self) -> Result<(), SqlMiddlewareDbError> {
         if self.in_transaction {
             return Err(SqlMiddlewareDbError::ExecutionError(
@@ -121,6 +133,9 @@ impl SqliteConnection {
     }
 
     /// Commit an open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if committing fails or no transaction is active.
     pub async fn commit(&mut self) -> Result<(), SqlMiddlewareDbError> {
         if !self.in_transaction {
             return Err(SqlMiddlewareDbError::ExecutionError(
@@ -138,6 +153,9 @@ impl SqliteConnection {
     }
 
     /// Roll back an open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if rolling back fails or no transaction is active.
     pub async fn rollback(&mut self) -> Result<(), SqlMiddlewareDbError> {
         if !self.in_transaction {
             return Err(SqlMiddlewareDbError::ExecutionError(
@@ -155,6 +173,9 @@ impl SqliteConnection {
     }
 
     /// Execute a DML statement inside an open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the guard fails or the transaction is not active.
     pub async fn execute_dml_in_tx(
         &mut self,
         query: &str,
@@ -184,6 +205,9 @@ impl SqliteConnection {
     }
 
     /// Execute a batch inside an open transaction without implicit commit.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the guard fails or the transaction is not active.
     pub async fn execute_batch_in_tx(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         if !self.in_transaction {
             return Err(SqlMiddlewareDbError::ExecutionError(
@@ -200,6 +224,9 @@ impl SqliteConnection {
     }
 
     /// Execute a query inside an open transaction and build a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if preparing/executing the query fails or the transaction is not active.
     pub async fn execute_select_in_tx<F>(
         &mut self,
         query: &str,
@@ -231,6 +258,9 @@ impl SqliteConnection {
     }
 
     /// Run synchronous `rusqlite` logic against the underlying pooled connection.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the helper cannot run because a transaction is open or the guard reports an error.
     pub async fn with_connection<F, R>(&self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
@@ -245,6 +275,9 @@ impl SqliteConnection {
     }
 
     /// Prepare a statement for repeated execution (auto-commit mode only).
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if preparing the statement fails or a transaction is active.
     pub async fn prepare_statement(
         &mut self,
         query: &str,
@@ -288,12 +321,16 @@ impl SqliteConnection {
 impl fmt::Debug for SqliteConnection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SqliteConnection")
+            .field("conn", &self.conn)
             .field("in_transaction", &self.in_transaction)
             .finish()
     }
 }
 
 /// Adapter for query builder select (typed-sqlite target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if converting parameters or executing the query fails.
 pub async fn select(
     conn: &mut PooledConnection<'static, SqliteManager>,
     query: &str,
@@ -313,6 +350,9 @@ pub async fn select(
 }
 
 /// Adapter for query builder dml (typed-sqlite target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if converting parameters or executing the statement fails.
 pub async fn dml(
     conn: &mut PooledConnection<'static, SqliteManager>,
     query: &str,
@@ -357,6 +397,9 @@ where
 }
 
 /// Apply WAL pragmas to a pooled connection.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the PRAGMA statements cannot be executed.
 pub async fn apply_wal_pragmas(
     conn: &mut SqlitePooledConnection,
 ) -> Result<(), SqlMiddlewareDbError> {

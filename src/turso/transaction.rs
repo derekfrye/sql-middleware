@@ -165,7 +165,7 @@ impl Tx<'_> {
             .execute_batch("COMMIT")
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso commit error: {e}")))
-            .map(|_| TxOutcome::without_restored_connection())
+            .map(|()| TxOutcome::without_restored_connection())
     }
 
     /// Roll back the transaction.
@@ -178,7 +178,7 @@ impl Tx<'_> {
             .execute_batch("ROLLBACK")
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso rollback error: {e}")))
-            .map(|_| TxOutcome::without_restored_connection())
+            .map(|()| TxOutcome::without_restored_connection())
     }
 }
 

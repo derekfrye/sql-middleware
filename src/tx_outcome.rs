@@ -5,7 +5,7 @@ use crate::sqlite::SqliteConnection;
 
 /// Outcome returned by committing or rolling back a backend transaction.
 ///
-/// Most backends do not need to surface anything after commit/rollback, but SQLite
+/// Most backends do not need to surface anything after commit/rollback, but `SQLite`
 /// consumes the pooled connection for the transaction and needs to hand it back
 /// (with its translation flag) so callers can keep using the pooled wrapper.
 #[derive(Debug, Default)]
@@ -14,7 +14,7 @@ pub struct TxOutcome {
 }
 
 impl TxOutcome {
-    /// Outcome with no connection to restore (common for Postgres, LibSQL, Turso, MSSQL).
+    /// Outcome with no connection to restore (common for Postgres, `LibSQL`, Turso, MSSQL).
     #[must_use]
     pub fn without_restored_connection() -> Self {
         Self {
@@ -41,7 +41,7 @@ impl TxOutcome {
         self.restored_connection
     }
 
-    /// Consume the outcome and unwrap the SQLite connection + translation flag.
+    /// Consume the outcome and unwrap the `SQLite` connection + translation flag.
     #[cfg(feature = "sqlite")]
     pub fn into_sqlite_parts(self) -> Option<(SqliteConnection, bool)> {
         match self.restored_connection {

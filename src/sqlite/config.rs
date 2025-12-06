@@ -5,10 +5,10 @@ use tokio::task::spawn_blocking;
 
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
-/// Type alias for the pooled SQLite connection wrapper.
+/// Type alias for the pooled `SQLite` connection wrapper.
 pub type SqlitePooledConnection = PooledConnection<'static, SqliteManager>;
 
-/// Shared, mutex-guarded SQLite connection handle.
+/// Shared, mutex-guarded `SQLite` connection handle.
 pub type SharedSqliteConnection = Arc<tokio::sync::Mutex<rusqlite::Connection>>;
 
 /// Options for configuring a `SQLite` pool.
@@ -100,7 +100,7 @@ impl ConfigAndPool {
     }
 }
 
-/// bb8 manager for SQLite connections.
+/// bb8 manager for `SQLite` connections.
 pub struct SqliteManager {
     db_path: String,
 }
@@ -112,6 +112,9 @@ impl SqliteManager {
     }
 
     /// Build a pool from this manager.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build_pool(self) -> Result<Pool<SqliteManager>, SqlMiddlewareDbError> {
         Pool::builder()
             .build(self)

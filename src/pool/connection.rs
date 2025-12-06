@@ -274,7 +274,9 @@ impl MiddlewarePoolConnection {
         }
     }
 
-    /// Extract the SQLite connection, returning the translation flag alongside it.
+    /// Extract the `SQLite` connection, returning the translation flag alongside it.
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the connection is already taken or the enum is not `SQLite`.
     #[cfg(feature = "sqlite")]
     pub fn into_sqlite(self) -> Result<(SqliteConnection, bool), SqlMiddlewareDbError> {
         match self {
@@ -295,8 +297,9 @@ impl MiddlewarePoolConnection {
         }
     }
 
-    /// Rewrap a SQLite connection back into the enum with the original translation flag.
+    /// Rewrap a `SQLite` connection back into the enum with the original translation flag.
     #[cfg(feature = "sqlite")]
+    #[must_use]
     pub fn from_sqlite_parts(
         conn: SqliteConnection,
         translate_placeholders: bool,

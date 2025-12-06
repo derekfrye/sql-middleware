@@ -1,4 +1,4 @@
-//! Trait implementations for SQLite typed connections.
+//! Trait implementations for `SQLite` typed connections.
 
 use super::traits::{BeginTx, Queryable, TxConn, TypedConnOps};
 use crate::SqlMiddlewareDbError;

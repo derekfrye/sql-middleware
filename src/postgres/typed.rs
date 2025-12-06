@@ -86,6 +86,9 @@ pub struct PgConnection<State> {
 
 impl PgManager {
     /// Build a pool from this manager.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build_pool(self) -> Result<Pool<PgManager>, SqlMiddlewareDbError> {
         Pool::builder()
             .build(self)
@@ -96,6 +99,9 @@ impl PgManager {
 
 impl PgConnection<Idle> {
     /// Checkout a connection from the pool.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if acquiring the connection fails.
     pub async fn from_pool(pool: &Pool<PgManager>) -> Result<Self, SqlMiddlewareDbError> {
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("postgres checkout error: {e}"))
@@ -104,6 +110,9 @@ impl PgConnection<Idle> {
     }
 
     /// Begin an explicit transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if starting the transaction fails.
     pub async fn begin(mut self) -> Result<PgConnection<InTx>, SqlMiddlewareDbError> {
         let conn = self.take_conn()?;
         conn.simple_query("BEGIN").await.map_err(|e| {
@@ -113,11 +122,17 @@ impl PgConnection<Idle> {
     }
 
     /// Auto-commit batch (BEGIN/COMMIT around it).
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the batch execution fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         crate::postgres::executor::execute_batch(self.conn_mut(), sql).await
     }
 
     /// Auto-commit DML.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the DML fails.
     pub async fn dml(
         &mut self,
         query: &str,
@@ -127,6 +142,9 @@ impl PgConnection<Idle> {
     }
 
     /// Auto-commit SELECT.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the select fails.
     pub async fn select(
         &mut self,
         query: &str,
@@ -146,16 +164,25 @@ impl PgConnection<Idle> {
 
 impl PgConnection<InTx> {
     /// Commit and return to idle.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the commit fails.
     pub async fn commit(self) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
         self.finish_tx("COMMIT", "commit").await
     }
 
     /// Rollback and return to idle.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the rollback fails.
     pub async fn rollback(self) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
         self.finish_tx("ROLLBACK", "rollback").await
     }
 
     /// Execute batch inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the batch fails.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
         self.conn_mut().batch_execute(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("postgres tx batch error: {e}"))
@@ -163,6 +190,9 @@ impl PgConnection<InTx> {
     }
 
     /// Execute DML inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the DML fails.
     pub async fn dml(
         &mut self,
         query: &str,
@@ -172,6 +202,9 @@ impl PgConnection<InTx> {
     }
 
     /// Execute SELECT inside the open transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if executing the select fails.
     pub async fn select(
         &mut self,
         query: &str,
@@ -187,6 +220,9 @@ impl PgConnection<InTx> {
 }
 
 /// Adapter for query builder select (typed-postgres target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the query execution fails.
 pub async fn select(
     conn: &mut PooledConnection<'_, PgManager>,
     query: &str,
@@ -196,6 +232,9 @@ pub async fn select(
 }
 
 /// Adapter for query builder dml (typed-postgres target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if executing the DML fails.
 pub async fn dml(
     conn: &mut PooledConnection<'_, PgManager>,
     query: &str,
@@ -247,14 +286,14 @@ pub fn set_skip_drop_rollback_for_tests(skip: bool) {
 
 impl<State> Drop for PgConnection<State> {
     fn drop(&mut self) {
-        if self.needs_rollback && !skip_drop_rollback() {
-            if let Some(conn) = self.conn.take() {
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    handle.spawn(async move {
-                        let _ = conn.simple_query("ROLLBACK").await;
-                    });
-                }
-            }
+        if self.needs_rollback
+            && !skip_drop_rollback()
+            && let Some(conn) = self.conn.take()
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            handle.spawn(async move {
+                let _ = conn.simple_query("ROLLBACK").await;
+            });
         }
     }
 }

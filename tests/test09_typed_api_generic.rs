@@ -8,6 +8,7 @@ use sql_middleware::typed_api::{AnyIdle, BeginTx, TxConn, TypedConnOps};
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 use sql_middleware::typed_sqlite::{Idle as SqIdle, SqliteTypedConnection};
 use sql_middleware::typed_turso::{Idle as TuIdle, TursoConnection, TursoManager};
+use std::fmt::Write;
 
 // Backend-agnostic helpers.
 async fn insert_rows(
@@ -61,9 +62,11 @@ async fn run_backend(mut conn: AnyIdle) -> Result<(), SqlMiddlewareDbError> {
     let mut batch_sql = String::new();
     for idx in 0..10 {
         let id = 200 + idx;
-        batch_sql.push_str(&format!(
+        write!(
+            batch_sql,
             "INSERT INTO typed_api_users (id, name) VALUES ({id}, 'tx2_{id}');"
-        ));
+        )
+        .unwrap();
     }
     tx.execute_batch(&batch_sql).await?;
     conn = tx.rollback().await?;

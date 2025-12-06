@@ -67,7 +67,7 @@ enum PreparedStmt {
     Libsql(LibsqlPrepared),
 }
 
-impl<'conn> BackendTx<'conn> {
+impl BackendTx<'_> {
     async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         match self {
             #[cfg(feature = "turso")]
@@ -123,8 +123,8 @@ impl PreparedStmt {
     }
 }
 
-async fn run_execute_with_finalize<'conn>(
-    mut tx: BackendTx<'conn>,
+async fn run_execute_with_finalize(
+    mut tx: BackendTx<'_>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
     conn_slot: &mut Option<MiddlewarePoolConnection>,
@@ -139,10 +139,10 @@ async fn run_execute_with_finalize<'conn>(
             Ok(rows)
         }
         Err(e) => {
-            if let Ok(outcome) = tx.rollback().await {
-                if let Some(restored) = outcome.into_restored_connection() {
-                    *conn_slot = Some(restored);
-                }
+            if let Ok(outcome) = tx.rollback().await
+                && let Some(restored) = outcome.into_restored_connection()
+            {
+                *conn_slot = Some(restored);
             }
             Err(e)
         }
