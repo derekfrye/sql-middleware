@@ -10,7 +10,7 @@
 
 ## src/sqlite/connection.rs
 - Option 1: Break into `sqlite/connection/core.rs` (connection type, common helpers), `sqlite/connection/prepared.rs` (prepared statement lifecycle and worker handles), and `sqlite/connection/exec.rs` (select/dml/execute_batch entry points).
-- Option 2: Divide by async boundary: `sqlite/connection/worker.rs` for blocking worker interactions (rusqlite calls, with_blocking helpers), `sqlite/connection/async_api.rs` for async-facing wrappers, and `sqlite/connection/types.rs` for enums/structs used by both.
+- Option 2: Divide by async boundary: `sqlite/connection/worker.rs` for blocking worker interactions (rusqlite calls, with_blocking helpers), `sqlite/connection/async_api.rs` for async-facing wrappers, and `sqlite/connection/types.rs` for enums/structs used by both. **Done.**
 
 ## src/sqlite/typed.rs
 - Option 1: Mirror postgres split: `typed/state_idle.rs`, `typed/state_tx.rs`, and `typed/core.rs` for shared types/aliases. Each state file owns its impl blocks.
