@@ -1,22 +1,21 @@
 #![cfg(all(feature = "postgres", feature = "turso", feature = "sqlite"))]
 
 use bb8::Pool;
-use std::time::Instant;
-use tokio::task::yield_now;
+use sql_middleware::SqlMiddlewareDbError;
 use sql_middleware::translation::TranslationMode;
 use sql_middleware::typed_api::TypedConnOps;
 use sql_middleware::typed_postgres::{
-    set_skip_drop_rollback_for_tests as pg_skip_drop,
-    Idle as PgIdle, PgConnection, PgManager,
+    Idle as PgIdle, PgConnection, PgManager, set_skip_drop_rollback_for_tests as pg_skip_drop,
 };
 use sql_middleware::typed_sqlite::{
-    set_skip_drop_rollback_for_tests as sqlite_skip_drop, Idle as SqIdle, SqliteTypedConnection,
+    Idle as SqIdle, SqliteTypedConnection, set_skip_drop_rollback_for_tests as sqlite_skip_drop,
 };
 use sql_middleware::typed_turso::{
-    set_skip_drop_rollback_for_tests as turso_skip_drop,
     Idle as TuIdle, TursoConnection, TursoManager,
+    set_skip_drop_rollback_for_tests as turso_skip_drop,
 };
-use sql_middleware::SqlMiddlewareDbError;
+use std::time::Instant;
+use tokio::task::yield_now;
 
 async fn count_rows(conn: &mut impl TypedConnOps) -> Result<i64, SqlMiddlewareDbError> {
     let rs = conn
@@ -85,7 +84,8 @@ async fn run_postgres_bad_drop() -> Result<(), SqlMiddlewareDbError> {
         if debug {
             eprintln!("[pg-bad-drop] tx1 acquired in {:?}", step.elapsed());
         }
-        tx.execute_batch("INSERT INTO bad_drop (id) VALUES (1);").await?;
+        tx.execute_batch("INSERT INTO bad_drop (id) VALUES (1);")
+            .await?;
         // drop without commit/rollback (simulate legacy leak)
     }
     pg_skip_drop(false);
@@ -127,7 +127,8 @@ async fn run_postgres_bad_drop() -> Result<(), SqlMiddlewareDbError> {
         if debug {
             eprintln!("[pg-bad-drop] tx2 acquired in {:?}", step.elapsed());
         }
-        tx.execute_batch("INSERT INTO bad_drop (id) VALUES (2);").await?;
+        tx.execute_batch("INSERT INTO bad_drop (id) VALUES (2);")
+            .await?;
         // drop without commit/rollback; fixed path should rollback
     }
     yield_now().await;
@@ -190,13 +191,9 @@ async fn run_turso_bad_drop() -> Result<(), SqlMiddlewareDbError> {
         let raw = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("turso cleanup checkout error: {e}"))
         })?;
-        raw.execute_batch("ROLLBACK")
-            .await
-            .map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!(
-                    "turso cleanup rollback error: {e}"
-                ))
-            })?;
+        raw.execute_batch("ROLLBACK").await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("turso cleanup rollback error: {e}"))
+        })?;
     }
 
     {

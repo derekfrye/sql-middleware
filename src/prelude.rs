@@ -6,7 +6,7 @@
 pub use crate::middleware::{
     AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
     MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, QueryBuilder, QueryTarget, ResultSet,
-    RowValues, SqlMiddlewareDbError, execute_batch, query,
+    RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch, query,
 };
 
 pub use crate::conversion::convert_sql_params;

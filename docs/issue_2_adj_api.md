@@ -46,7 +46,7 @@ Context: an issue asked for a single `execute_batch` that works with either a po
 
 - **Queries without parameters**: Same as builder examples; enum uses `query((&mut conn).into(), "SELECT * FROM users").select().await?`, trait uses `query(&mut conn, "...")...`. Transaction variants are interchangeable.
 
-- **Custom logic in between transactions**: Instead of per-backend enums and manual dispatch, wrap the opened transaction in the unified target. Enum design: `let mut tx = begin_sqlite_tx(...)?; let rows = query((&mut tx).into(), base_query).translation(...).params(&dynamic_params).select().await?;` Caller still commits/rolls back. Trait design: same flow but pass `&mut tx` directly. Preparing statements can stay backend-specific, but the execute/dispatch surface can be unified via the target.
+- **Custom logic in between transactions**: Instead of per-backend enums and manual dispatch, wrap the opened transaction in the unified target. Enum design: `let mut tx = begin_sqlite_tx(..., translate_default)?; let rows = query((&mut tx).into(), base_query).translation(...).params(&dynamic_params).select().await?;` Caller still commits/rolls back. Trait design: same flow but pass `&mut tx` directly. Preparing statements can stay backend-specific, but the execute/dispatch surface can be unified via the target.
 
 - **Using the query builder in helpers**: Helper signature can accept any target (`impl Into<QueryTarget<'_>>` or `impl QueryCapable`). Enum design call site: `insert_user((&mut conn).into(), ...).await?` and within helper `query(target, "...").translation(...).dml().await?`. Trait design: `insert_user(&mut conn, ...)` and `insert_user(&mut tx, ...)` both work if helper is generic over `QueryCapable`.
 

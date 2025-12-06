@@ -4,6 +4,7 @@ use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
 };
 use crate::turso::params::Params as TursoParams;
+use crate::tx_outcome::TxOutcome;
 
 /// Lightweight transaction wrapper for Turso.
 ///
@@ -159,11 +160,12 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` when issuing the COMMIT statement fails.
-    pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn commit(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.conn
             .execute_batch("COMMIT")
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso commit error: {e}")))
+            .map(|_| TxOutcome::without_restored_connection())
     }
 
     /// Roll back the transaction.
@@ -171,11 +173,12 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` when issuing the ROLLBACK statement fails.
-    pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn rollback(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.conn
             .execute_batch("ROLLBACK")
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso rollback error: {e}")))
+            .map(|_| TxOutcome::without_restored_connection())
     }
 }
 

@@ -1,8 +1,8 @@
 //! Trait implementations for SQLite typed connections.
 
 use super::traits::{BeginTx, Queryable, TxConn, TypedConnOps};
-use crate::sqlite::typed::{Idle as SqIdle, InTx as SqInTx, SqliteTypedConnection};
 use crate::SqlMiddlewareDbError;
+use crate::sqlite::typed::{Idle as SqIdle, InTx as SqInTx, SqliteTypedConnection};
 use crate::{middleware::RowValues, query_builder::QueryBuilder, results::ResultSet};
 
 impl Queryable for SqliteTypedConnection<SqIdle> {

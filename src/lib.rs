@@ -15,6 +15,7 @@ pub mod benchmark;
 pub mod conversion;
 pub mod prelude;
 pub mod translation;
+pub mod tx_outcome;
 pub mod typed;
 /// Back-compat re-export: `typed_api` is now `typed`.
 pub use typed as typed_api;
@@ -53,7 +54,7 @@ pub mod turso;
 pub use middleware::{
     AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
     MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder,
-    QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, execute_batch,
+    QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch,
 };
 #[cfg(feature = "libsql")]
 pub use middleware::{

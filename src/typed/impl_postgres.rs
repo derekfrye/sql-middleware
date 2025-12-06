@@ -1,8 +1,8 @@
 //! Trait implementations for Postgres typed connections.
 
 use super::traits::{BeginTx, Queryable, TxConn, TypedConnOps};
-use crate::postgres::typed::{Idle as PgIdle, InTx as PgInTx, PgConnection};
 use crate::SqlMiddlewareDbError;
+use crate::postgres::typed::{Idle as PgIdle, InTx as PgInTx, PgConnection};
 use crate::{middleware::RowValues, query_builder::QueryBuilder, results::ResultSet};
 
 impl Queryable for PgConnection<PgIdle> {

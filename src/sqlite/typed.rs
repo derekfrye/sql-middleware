@@ -203,8 +203,10 @@ impl SqliteTypedConnection<InTx> {
             let mut stmt = guard
                 .prepare(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
-            let refs: Vec<&dyn rusqlite::ToSql> =
-                converted.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            let refs: Vec<&dyn rusqlite::ToSql> = converted
+                .iter()
+                .map(|v| v as &dyn rusqlite::ToSql)
+                .collect();
             stmt.execute(&refs[..])
                 .map_err(SqlMiddlewareDbError::SqliteError)
         })
@@ -246,12 +248,9 @@ impl SqliteTypedConnection<InTx> {
     }
 
     fn conn_handle(&self) -> Result<SharedSqliteConnection, SqlMiddlewareDbError> {
-        self.conn
-            .as_ref()
-            .map(|c| Arc::clone(&**c))
-            .ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError("sqlite connection already taken".into())
-            })
+        self.conn.as_ref().map(|c| Arc::clone(&**c)).ok_or_else(|| {
+            SqlMiddlewareDbError::ExecutionError("sqlite connection already taken".into())
+        })
     }
 }
 
@@ -321,8 +320,10 @@ pub async fn dml(
         let mut stmt = guard
             .prepare(&sql_owned)
             .map_err(SqlMiddlewareDbError::SqliteError)?;
-        let refs: Vec<&dyn rusqlite::ToSql> =
-            converted.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let refs: Vec<&dyn rusqlite::ToSql> = converted
+            .iter()
+            .map(|v| v as &dyn rusqlite::ToSql)
+            .collect();
         stmt.execute(&refs[..])
             .map_err(SqlMiddlewareDbError::SqliteError)
     })

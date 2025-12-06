@@ -5,6 +5,7 @@ use tokio_postgres::{Client, Statement, Transaction as PgTransaction};
 use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
 };
+use crate::tx_outcome::TxOutcome;
 
 use super::{Params, build_result_set};
 
@@ -86,17 +87,17 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if commit fails.
-    pub async fn commit(self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.tx.commit().await?;
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 
     /// Roll back the transaction.
     ///
     /// # Errors
     /// Returns an error if rollback fails.
-    pub async fn rollback(self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn rollback(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.tx.rollback().await?;
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 }

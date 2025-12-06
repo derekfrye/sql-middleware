@@ -6,7 +6,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `conversion::convert_sql_params` (module + root/prelude export)
   - **Coverage:** Used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test05c_sqlite.rs`.
   - **Purpose:** Convert `RowValues` into backend-specific parameter types through `ParamConverter`; exposed both at `conversion::` and the crate root/prelude for convenience.
-- `middleware` re-exports (`AnyConnWrapper`, `BatchTarget`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `QueryTarget`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `execute_batch`, `query`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
+- `middleware` re-exports (`AnyConnWrapper`, `BatchTarget`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `QueryTarget`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `TxOutcome`, `execute_batch`, `query`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
   - **Coverage:** See per-item below.
   - **Purpose:** Single import path via `prelude`.
 - `middleware::SqlMiddlewareDbError`
@@ -27,6 +27,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `translation::TranslationMode`
   - **Coverage:** Used via `QueryBuilder::translation` in `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Per-call toggle relative to pool default; public to let callers force on/off.
+- `TxOutcome`
+  - **Coverage:** `tests/test08_custom_logic_between_txn.rs` (SQLite restoration paths).
+  - **Purpose:** Unified commit/rollback outcome type; carries restored pooled connection for SQLite while letting other backends return an empty outcome.
 - `translation::translate_placeholders`
   - **Coverage:** Only unit tests in `src/translation.rs`.
   - **Purpose:** Rewrite `$n`/`?n` placeholders; public so callers can opt into manual translation.

@@ -1,6 +1,7 @@
 use tiberius::Query;
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::tx_outcome::TxOutcome;
 
 use super::{config::MssqlClient, query::build_result_set};
 
@@ -96,7 +97,7 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` if commit fails.
-    pub async fn commit(mut self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn commit(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         if self.open {
             Query::new("COMMIT TRANSACTION")
                 .execute(self.client)
@@ -106,7 +107,7 @@ impl Tx<'_> {
                 })?;
             self.open = false;
         }
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 
     /// Roll back the transaction.
@@ -114,7 +115,7 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` if rollback fails.
-    pub async fn rollback(mut self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn rollback(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         if self.open {
             Query::new("ROLLBACK TRANSACTION")
                 .execute(self.client)
@@ -124,6 +125,6 @@ impl Tx<'_> {
                 })?;
             self.open = false;
         }
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 }

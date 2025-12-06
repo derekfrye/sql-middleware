@@ -9,7 +9,7 @@ use std::env;
 
 use sql_middleware::middleware::{
     ConfigAndPool, MiddlewarePoolConnection, PgConfig, PlaceholderStyle, RowValues,
-    SqlMiddlewareDbError, translate_placeholders,
+    SqlMiddlewareDbError, TxOutcome, translate_placeholders,
 };
 use tokio::runtime::Runtime;
 
@@ -51,7 +51,7 @@ enum BackendTx<'conn> {
     #[cfg(feature = "postgres")]
     Postgres(PostgresTx<'conn>),
     #[cfg(feature = "sqlite")]
-    Sqlite(SqliteTx, bool),
+    Sqlite(SqliteTx),
     #[cfg(feature = "libsql")]
     Libsql(LibsqlTx<'conn>),
 }
@@ -68,35 +68,29 @@ enum PreparedStmt {
 }
 
 impl<'conn> BackendTx<'conn> {
-    async fn commit(self) -> Result<Option<MiddlewarePoolConnection>, SqlMiddlewareDbError> {
+    async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         match self {
             #[cfg(feature = "turso")]
-            BackendTx::Turso(tx) => tx.commit().await.map(|_| None),
+            BackendTx::Turso(tx) => tx.commit().await,
             #[cfg(feature = "postgres")]
-            BackendTx::Postgres(tx) => tx.commit().await.map(|_| None),
+            BackendTx::Postgres(tx) => tx.commit().await,
             #[cfg(feature = "sqlite")]
-            BackendTx::Sqlite(tx, translate) => tx
-                .commit()
-                .await
-                .map(|conn| Some(MiddlewarePoolConnection::from_sqlite_parts(conn, translate))),
+            BackendTx::Sqlite(tx) => tx.commit().await,
             #[cfg(feature = "libsql")]
-            BackendTx::Libsql(tx) => tx.commit().await.map(|_| None),
+            BackendTx::Libsql(tx) => tx.commit().await,
         }
     }
 
-    async fn rollback(self) -> Result<Option<MiddlewarePoolConnection>, SqlMiddlewareDbError> {
+    async fn rollback(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         match self {
             #[cfg(feature = "turso")]
-            BackendTx::Turso(tx) => tx.rollback().await.map(|_| None),
+            BackendTx::Turso(tx) => tx.rollback().await,
             #[cfg(feature = "postgres")]
-            BackendTx::Postgres(tx) => tx.rollback().await.map(|_| None),
+            BackendTx::Postgres(tx) => tx.rollback().await,
             #[cfg(feature = "sqlite")]
-            BackendTx::Sqlite(tx, translate) => tx
-                .rollback()
-                .await
-                .map(|conn| Some(MiddlewarePoolConnection::from_sqlite_parts(conn, translate))),
+            BackendTx::Sqlite(tx) => tx.rollback().await,
             #[cfg(feature = "libsql")]
-            BackendTx::Libsql(tx) => tx.rollback().await.map(|_| None),
+            BackendTx::Libsql(tx) => tx.rollback().await,
         }
     }
 }
@@ -117,7 +111,7 @@ impl PreparedStmt {
                 tx.execute_prepared(stmt, params).await
             }
             #[cfg(feature = "sqlite")]
-            (BackendTx::Sqlite(tx, _), PreparedStmt::Sqlite(stmt)) => {
+            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
                 tx.execute_prepared(stmt, params).await
             }
             #[cfg(feature = "libsql")]
@@ -138,14 +132,17 @@ async fn run_execute_with_finalize<'conn>(
     let result = stmt.execute_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
-            if let Some(restored) = tx.commit().await? {
+            let outcome = tx.commit().await?;
+            if let Some(restored) = outcome.into_restored_connection() {
                 *conn_slot = Some(restored);
             }
             Ok(rows)
         }
         Err(e) => {
-            if let Some(restored) = tx.rollback().await.unwrap_or(None) {
-                *conn_slot = Some(restored);
+            if let Ok(outcome) = tx.rollback().await {
+                if let Some(restored) = outcome.into_restored_connection() {
+                    *conn_slot = Some(restored);
+                }
             }
             Err(e)
         }
@@ -187,13 +184,10 @@ async fn prepare_backend_tx_and_stmt<'conn>(
                     "SQLite connection already taken from wrapper".into(),
                 )
             })?;
-            let tx = begin_sqlite_tx(sqlite_conn).await?;
+            let tx = begin_sqlite_tx(sqlite_conn, *translate_default).await?;
             let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
             let stmt = tx.prepare(q.as_ref())?;
-            Ok((
-                BackendTx::Sqlite(tx, *translate_default),
-                PreparedStmt::Sqlite(stmt),
-            ))
+            Ok((BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)))
         }
         _ => Err(SqlMiddlewareDbError::Unimplemented(
             "expected Turso, Postgres, SQLite, or LibSQL connection".to_string(),

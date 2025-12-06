@@ -137,7 +137,10 @@ impl PgConnection<Idle> {
 
     /// Start a query builder (auto-commit per operation).
     pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
-        QueryBuilder::new_target(QueryTarget::from_typed_postgres(self.conn_mut(), false), sql)
+        QueryBuilder::new_target(
+            QueryTarget::from_typed_postgres(self.conn_mut(), false),
+            sql,
+        )
     }
 }
 
@@ -208,11 +211,9 @@ impl PgConnection<InTx> {
         action: &str,
     ) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn()?;
-        match conn
-            .simple_query(sql)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres {action} error: {e}")))
-        {
+        match conn.simple_query(sql).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres {action} error: {e}"))
+        }) {
             Ok(_) => {
                 self.needs_rollback = false;
                 Ok(PgConnection::new(conn, false))
@@ -268,7 +269,9 @@ impl<State> PgConnection<State> {
     }
 
     fn conn_mut(&mut self) -> &mut PooledConnection<'static, PgManager> {
-        self.conn.as_mut().expect("postgres connection already taken")
+        self.conn
+            .as_mut()
+            .expect("postgres connection already taken")
     }
 
     fn take_conn(&mut self) -> Result<PooledConnection<'static, PgManager>, SqlMiddlewareDbError> {

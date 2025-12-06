@@ -3,7 +3,7 @@
 *Keywords: postgres, sqlite, libsql, turso, deadpool, bb8, async, pool, query builder*
 
 This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
-similar, async-compatible API consistent across databases.
+similar, async-compatible API consistent across databases. Full examples on [github](https://github.com/derekfrye/sql-middleware/).
 
 ## Features
 

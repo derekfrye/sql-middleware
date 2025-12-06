@@ -3,6 +3,8 @@ use std::sync::Arc;
 use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
 };
+use crate::pool::MiddlewarePoolConnection;
+use crate::tx_outcome::TxOutcome;
 
 use super::connection::SqliteConnection;
 use super::params::Params;
@@ -10,6 +12,7 @@ use super::params::Params;
 /// Transaction handle that owns the SQLite connection until completion.
 pub struct Tx {
     conn: Option<SqliteConnection>,
+    translate_placeholders: bool,
 }
 
 /// Prepared statement tied to a `SQLite` transaction.
@@ -18,9 +21,18 @@ pub struct Prepared {
 }
 
 /// Begin a transaction, consuming the SQLite connection until commit/rollback.
-pub async fn begin_transaction(mut conn: SqliteConnection) -> Result<Tx, SqlMiddlewareDbError> {
+///
+/// `translate_placeholders` keeps the pool's translation default attached so the
+/// connection can be rewrapped after commit/rollback.
+pub async fn begin_transaction(
+    mut conn: SqliteConnection,
+    translate_placeholders: bool,
+) -> Result<Tx, SqlMiddlewareDbError> {
     conn.begin().await?;
-    Ok(Tx { conn: Some(conn) })
+    Ok(Tx {
+        conn: Some(conn),
+        translate_placeholders,
+    })
 }
 
 impl Tx {
@@ -73,22 +85,26 @@ impl Tx {
         conn.execute_batch_in_tx(sql).await
     }
 
-    /// Commit the transaction and return the idle connection.
-    pub async fn commit(mut self) -> Result<SqliteConnection, SqlMiddlewareDbError> {
+    /// Commit the transaction and surface the restored connection.
+    pub async fn commit(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
         })?;
         conn.commit().await?;
-        Ok(conn)
+        let restored =
+            MiddlewarePoolConnection::from_sqlite_parts(conn, self.translate_placeholders);
+        Ok(TxOutcome::with_restored_connection(restored))
     }
 
-    /// Roll back the transaction and return the idle connection.
-    pub async fn rollback(mut self) -> Result<SqliteConnection, SqlMiddlewareDbError> {
+    /// Roll back the transaction and surface the restored connection.
+    pub async fn rollback(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
         })?;
         conn.rollback().await?;
-        Ok(conn)
+        let restored =
+            MiddlewarePoolConnection::from_sqlite_parts(conn, self.translate_placeholders);
+        Ok(TxOutcome::with_restored_connection(restored))
     }
 }
 

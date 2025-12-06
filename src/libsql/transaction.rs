@@ -1,5 +1,6 @@
 use crate::libsql::{Params as LibsqlParams, build_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::tx_outcome::TxOutcome;
 use deadpool_libsql::Object;
 
 /// Lightweight transaction wrapper for libsql using explicit BEGIN/COMMIT.
@@ -51,22 +52,22 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if the `COMMIT` statement fails.
-    pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn commit(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let _ = self.conn.execute_batch("COMMIT").await.map_err(|error| {
             SqlMiddlewareDbError::ExecutionError(format!("libsql commit error: {error}"))
         })?;
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 
     /// Roll back the active transaction.
     ///
     /// # Errors
     /// Returns an error if the `ROLLBACK` statement fails.
-    pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn rollback(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let _ = self.conn.execute_batch("ROLLBACK").await.map_err(|error| {
             SqlMiddlewareDbError::ExecutionError(format!("libsql rollback error: {error}"))
         })?;
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 
     /// Execute a pre-bound statement, returning the affected row count.

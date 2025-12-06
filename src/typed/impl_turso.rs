@@ -1,8 +1,8 @@
 //! Trait implementations for Turso typed connections.
 
 use super::traits::{BeginTx, Queryable, TxConn, TypedConnOps};
-use crate::turso::typed::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
 use crate::SqlMiddlewareDbError;
+use crate::turso::typed::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
 use crate::{middleware::RowValues, query_builder::QueryBuilder, results::ResultSet};
 
 impl Queryable for TursoConnection<TuIdle> {
