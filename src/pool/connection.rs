@@ -1,4 +1,4 @@
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mssql"))]
 use bb8::PooledConnection;
 
 #[cfg(feature = "sqlite")]
@@ -17,6 +17,8 @@ use super::types::MiddlewarePool;
 use crate::error::SqlMiddlewareDbError;
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::PgManager;
+#[cfg(feature = "mssql")]
+use bb8_tiberius::ConnectionManager;
 
 pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
@@ -31,7 +33,7 @@ pub enum MiddlewarePoolConnection {
     },
     #[cfg(feature = "mssql")]
     Mssql {
-        conn: deadpool::managed::Object<deadpool_tiberius::Manager>,
+        conn: PooledConnection<'static, ConnectionManager>,
         translate_placeholders: bool,
     },
     #[cfg(feature = "libsql")]
@@ -46,7 +48,7 @@ pub enum MiddlewarePoolConnection {
     },
 }
 
-// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+// Manual Debug implementation because some pool variants do not expose `Debug`
 impl std::fmt::Debug for MiddlewarePoolConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -102,7 +104,7 @@ impl MiddlewarePool {
             #[cfg(feature = "mssql")]
             MiddlewarePool::Mssql(pool) => {
                 let conn = pool
-                    .get()
+                    .get_owned()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorMssql)?;
                 Ok(MiddlewarePoolConnection::Mssql {

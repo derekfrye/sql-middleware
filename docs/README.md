@@ -38,6 +38,8 @@ Available features:
 - `default`: Enables common backends (sqlite, postgres). Enable others as needed.
 - `test-utils`: Enables test utilities for internal testing
 
+> **Deprecated backend:** `libsql` is now deprecated in favor of the Turso backend. The `libsql` feature is still available today for legacy needs, but support will eventually be removed. Prefer the `turso` feature for new work and plan to migrate existing consumers before the next major release.
+
 ### Parameterized queries for reading or changing data
 
 `QueryAndParams` gives you a single API for both reads and writes through the query builder. The query builder optionally supports same SQL regardless of backend, even with different parameter placeholders ([`$1` or `?1`, with some limitations](#placeholder-translation)). Here is an example that supports PostgreSQL, SQLite, LibSQL, or Turso without duplicating logic.

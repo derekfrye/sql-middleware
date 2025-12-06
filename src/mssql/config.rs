@@ -1,15 +1,11 @@
-use deadpool_tiberius::Manager as TiberiusManager;
-use tiberius::Client;
-use tokio::net::TcpStream;
-use tokio_util::compat::Compat;
+use bb8::Pool;
+use bb8_tiberius::{ConnectionManager, rt};
+use tiberius::{AuthMethod, Config as TiberiusConfig};
 
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 /// Type alias for SQL Server client
-pub type MssqlClient = Client<Compat<TcpStream>>;
-
-/// Type alias for SQL Server Manager from deadpool-tiberius
-pub type MssqlManager = TiberiusManager;
+pub type MssqlClient = rt::Client;
 
 /// Options for configuring an MSSQL pool.
 #[derive(Debug, Clone)]
@@ -136,26 +132,26 @@ impl ConfigAndPool {
     /// Asynchronous initializer for `ConfigAndPool` with SQL Server (MSSQL).
     ///
     /// # Errors
-    /// Returns `SqlMiddlewareDbError::ConnectionError` if MSSQL client creation or pool creation fails.
+    /// Returns `SqlMiddlewareDbError::ConnectionError` if MSSQL manager/pool creation fails.
     #[allow(clippy::unused_async)]
     pub async fn new_mssql(opts: MssqlOptions) -> Result<Self, SqlMiddlewareDbError> {
-        // Create deadpool-tiberius manager and configure it
-        let mut manager = deadpool_tiberius::Manager::new()
-            .host(&opts.server)
-            .port(opts.port.unwrap_or(1433))
-            .database(&opts.database)
-            .basic_authentication(&opts.user, &opts.password)
-            .trust_cert();
+        let config = build_tiberius_config(&opts);
 
-        // Add instance name if provided
-        if let Some(instance) = &opts.instance_name {
-            manager = manager.instance_name(instance);
-        }
-
-        // Create pool
-        let pool = manager.max_size(20).create_pool().map_err(|e| {
-            SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQL Server pool: {e}"))
+        let manager = ConnectionManager::build(config).map_err(|e| {
+            SqlMiddlewareDbError::ConnectionError(format!(
+                "Failed to configure SQL Server manager: {e}"
+            ))
         })?;
+
+        let pool = Pool::builder()
+            .max_size(20)
+            .build(manager)
+            .await
+            .map_err(|e| {
+                SqlMiddlewareDbError::ConnectionError(format!(
+                    "Failed to create SQL Server pool: {e}"
+                ))
+            })?;
 
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Mssql(pool),
@@ -163,4 +159,17 @@ impl ConfigAndPool {
             translate_placeholders: opts.translate_placeholders,
         })
     }
+}
+
+fn build_tiberius_config(opts: &MssqlOptions) -> TiberiusConfig {
+    let mut config = TiberiusConfig::new();
+    config.host(&opts.server);
+    config.database(&opts.database);
+    config.port(opts.port.unwrap_or(1433));
+    config.authentication(AuthMethod::sql_server(&opts.user, &opts.password));
+    if let Some(instance) = &opts.instance_name {
+        config.instance_name(instance);
+    }
+    config.trust_cert();
+    config
 }

@@ -19,7 +19,7 @@ default = ["postgres", "sqlite"]
 sqlite = ["dep:rusqlite", "dep:bb8", "dep:bb8-rusqlite"]
 postgres = ["dep:tokio-postgres", "dep:bb8"]
 typed-postgres = ["postgres"] # compatibility alias; typed API is always on when postgres is enabled
-mssql = ["dep:tiberius", "dep:deadpool-tiberius", "dep:futures-util"]
+mssql = ["dep:tiberius", "dep:futures-util", "dep:bb8-tiberius"]
 libsql = ["dep:deadpool-libsql"]
 turso = ["dep:turso", "dep:bb8"]
 typed-turso = ["turso"] # compatibility alias; typed API is always on when turso is enabled
@@ -43,7 +43,7 @@ async-trait = "0"
 # SQL Server dependencies
 tiberius = { version = "0", features = ["chrono", "sql-browser-tokio"], optional = true }
 deadpool = "0"
-deadpool-tiberius = { version = "0", optional = true }
+bb8-tiberius = { version = "0", optional = true }
 futures-util = { version = "0", optional = true }
 lazy_static = "1"
 postgresql_embedded = { version = "0", features = ["bundled"], optional = true }

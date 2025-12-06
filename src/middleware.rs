@@ -12,6 +12,9 @@ pub use crate::tx_outcome::TxOutcome;
 pub use crate::types::{ConversionMode, DatabaseType, ParamConverter, RowValues};
 
 #[cfg(feature = "libsql")]
+#[deprecated(
+    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
+)]
 pub use crate::libsql::{
     LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
 };

@@ -40,6 +40,9 @@ pub(crate) mod types;
 
 // Private database-specific modules
 #[cfg(feature = "libsql")]
+#[deprecated(
+    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
+)]
 pub mod libsql;
 #[cfg(feature = "mssql")]
 pub mod mssql;
@@ -57,6 +60,9 @@ pub use middleware::{
     QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch,
 };
 #[cfg(feature = "libsql")]
+#[deprecated(
+    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
+)]
 pub use middleware::{
     LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
 };

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bb8::{Pool, PooledConnection};
 use tokio::runtime::Handle;
-use tokio::task::spawn_blocking;
+use tokio::task::{block_in_place, spawn_blocking};
 
 use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
@@ -259,13 +259,13 @@ impl<State> Drop for SqliteTypedConnection<State> {
         if self.needs_rollback && !skip_drop_rollback() {
             if let Some(conn) = self.conn.take() {
                 let conn_handle = Arc::clone(&*conn);
-                if let Ok(handle) = Handle::try_current() {
-                    handle.spawn(async move {
-                        let _ = spawn_blocking(move || {
-                            let guard = conn_handle.blocking_lock();
-                            let _ = guard.execute_batch("ROLLBACK");
-                        })
-                        .await;
+                // Rollback synchronously so the connection is clean before it
+                // goes back into the pool. Avoid async fire-and-forget, which
+                // could race with the next checkout.
+                if Handle::try_current().is_ok() {
+                    block_in_place(|| {
+                        let guard = conn_handle.blocking_lock();
+                        let _ = guard.execute_batch("ROLLBACK");
                     });
                 } else {
                     let guard = conn_handle.blocking_lock();
