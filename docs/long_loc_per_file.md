@@ -1,7 +1,7 @@
 # Long LOC Refactor Ideas
 
 ## src/pool/connection.rs
-- Option 1: Split per-backend connection handling into `pool/connection/{postgres,sqlite,mssql,libsql,turso}.rs`, keeping the enum and helper traits thin in `connection.rs`. Each backend file owns its `get_connection` branch and connection-specific helpers (e.g., SQLite worker helpers).
+- Option 1: Split per-backend connection handling into `pool/connection/{postgres,sqlite,mssql,libsql,turso}.rs`, keeping the enum and helper traits thin in `connection.rs`. Each backend file owns its `get_connection` branch and connection-specific helpers (e.g., SQLite worker helpers). **Implemented (done).**
 - Option 2: Separate concerns by layer: a `pool/connection/types.rs` for the enum and Debug impl, `pool/connection/factory.rs` for checkout/connect logic, and `pool/connection/sqlite.rs` for SQLite worker-only helpers (`with_blocking_sqlite`, prepared-statement helpers).
 
 ## src/postgres/typed.rs

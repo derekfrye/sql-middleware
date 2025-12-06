@@ -8,7 +8,7 @@ description = "Lightweight async wrappers for tokio-postgres, rusqlite, libsql, 
 repository = "https://github.com/derekfrye/sql-middleware"
 readme = "docs/README.md"
 homepage = "https://github.com/derekfrye/sql-middleware"
-keywords = ["sql", "sqlite", "postgresql", "libsql", "turso"]
+keywords = ["sql", "sqlite", "postgresql", "turso", "mssql"]
 documentation = "https://docs.rs/sql-middleware"
 
 [lints.rust]
@@ -72,7 +72,7 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", default-features = false, features = ["benchmarks", "mssql", "turso", "test-utils"] }
+sql-middleware = { path = ".", default-features = false, features = ["benchmarks", "mssql", "turso", "test-utils", "sqlite"] }
 tempfile = "3"
 
 [[bench]]
