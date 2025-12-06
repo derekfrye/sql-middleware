@@ -8,6 +8,9 @@ use crate::sqlite::SqliteConnection;
 /// Most backends do not need to surface anything after commit/rollback, but `SQLite`
 /// consumes the pooled connection for the transaction and needs to hand it back
 /// (with its translation flag) so callers can keep using the pooled wrapper.
+///
+/// If you started a raw `SQLite` transaction, continue using the connection from the returned
+/// outcome instead of the pre-transaction wrapper to preserve the translation flag and pool state.
 #[derive(Debug, Default)]
 pub struct TxOutcome {
     restored_connection: Option<MiddlewarePoolConnection>,

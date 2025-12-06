@@ -3,7 +3,11 @@ use crate::error::SqlMiddlewareDbError;
 use crate::pool::AnyConnWrapper;
 
 impl MiddlewarePoolConnection {
-    /// Interact with the connection asynchronously
+    /// Interact with the connection asynchronously.
+    ///
+    /// This hands the raw driver client into your closure on the async runtime.
+    /// Keep the closure non-blocking—doing heavy work here will stall the runtime.
+    /// For `SQLite`, use `with_blocking_sqlite` / `interact_sync` instead.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::Unimplemented` for unsupported database types.

@@ -4,6 +4,10 @@ use crate::tx_outcome::TxOutcome;
 use deadpool_libsql::Object;
 
 /// Lightweight transaction wrapper for libsql using explicit BEGIN/COMMIT.
+///
+/// This type does **not** auto-rollback on drop. Always call [`commit`](Tx::commit) or
+/// [`rollback`](Tx::rollback) before letting it go out of scope to avoid leaving the connection
+/// in an open transaction.
 pub struct Tx<'a> {
     conn: &'a Object,
 }

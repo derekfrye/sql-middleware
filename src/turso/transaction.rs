@@ -12,6 +12,10 @@ use crate::tx_outcome::TxOutcome;
 /// provided `turso::Connection` and exposes helpers to run queries within that
 /// transaction. It does not depend on a dedicated `turso::Transaction` type, keeping
 /// the API stable and avoiding additional type leakage.
+///
+/// There is no drop guard here—call [`commit`](Tx::commit) or [`rollback`](Tx::rollback)
+/// before letting the handle go out of scope to avoid leaving the connection in an open
+/// transaction.
 pub struct Tx<'a> {
     pub(crate) conn: &'a turso::Connection,
 }

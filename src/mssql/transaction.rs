@@ -6,6 +6,9 @@ use crate::tx_outcome::TxOutcome;
 use super::{config::MssqlClient, query::build_result_set};
 
 /// Lightweight transaction wrapper for SQL Server.
+///
+/// Dropping a `Tx` without calling [`commit`](Tx::commit) or [`rollback`](Tx::rollback)
+/// leaves the connection mid-transaction. Always finish the transaction explicitly.
 pub struct Tx<'a> {
     client: &'a mut MssqlClient,
     open: bool,

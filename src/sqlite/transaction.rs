@@ -109,6 +109,9 @@ impl Tx {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if committing the transaction fails.
+    ///
+    /// Use the returned connection (via [`TxOutcome::into_restored_connection`](TxOutcome::into_restored_connection))
+    /// for further work so the pool wrapper and placeholder-translation flag stay in sync.
     pub async fn commit(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
@@ -123,6 +126,9 @@ impl Tx {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if rolling back fails.
+    ///
+    /// Use the returned connection (via [`TxOutcome::into_restored_connection`](TxOutcome::into_restored_connection))
+    /// for further work so the pool wrapper and placeholder-translation flag stay in sync.
     pub async fn rollback(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())

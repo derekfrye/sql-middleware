@@ -66,6 +66,11 @@ impl ManageConnection for TursoManager {
 }
 
 /// Typestate wrapper around a pooled Turso connection.
+///
+/// In `InTx`, dropping without calling [`commit`](TursoConnection::<InTx>::commit) or
+/// [`rollback`](TursoConnection::<InTx>::rollback) will spawn a best-effort rollback on the
+/// runtime. Finish transactions explicitly to avoid silent background rollbacks and to surface
+/// errors promptly.
 pub struct TursoConnection<State> {
     conn: Option<PooledConnection<'static, TursoManager>>,
     /// True when a transaction is in-flight and needs rollback if dropped.

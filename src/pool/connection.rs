@@ -147,6 +147,10 @@ impl MiddlewarePoolConnection {
     /// re-preparing statements in hot loops. It keeps blocking work off the async runtime while
     /// letting you drive the raw `rusqlite::Connection`.
     ///
+    /// The closure runs on a worker thread and must **not** capture non-`Send` state across an
+    /// `await`. Do all work inside the closure and return promptly instead of holding onto the
+    /// connection handle.
+    ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the connection is not `SQLite`.
     ///
@@ -179,6 +183,9 @@ impl MiddlewarePoolConnection {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError::Unimplemented`] when the underlying connection is not
     /// `SQLite`, or propagates any preparation error reported by the worker thread.
+    ///
+    /// The returned handle borrows the worker-owned connection. Use it within the async scope that
+    /// created it; do not move it across tasks or hold it across long `await` chains.
     ///
     /// # Examples
     /// ```rust,no_run

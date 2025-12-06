@@ -23,6 +23,11 @@ pub enum Idle {}
 pub enum InTx {}
 
 /// Typestate wrapper around a pooled `SQLite` connection.
+///
+/// When in `InTx` state, dropping without calling [`commit`](SqliteTypedConnection::<InTx>::commit)
+/// or [`rollback`](SqliteTypedConnection::<InTx>::rollback) will trigger a best-effort synchronous
+/// rollback in `Drop` to keep the pool clean. Prefer finishing transactions explicitly to avoid
+/// surprise blocking work during drop.
 pub struct SqliteTypedConnection<State> {
     conn: Option<PooledConnection<'static, SqliteManager>>,
     /// True if in a transaction that needs rollback on drop.
