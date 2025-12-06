@@ -6,7 +6,7 @@
 
 ## src/postgres/typed.rs
 - Option 1: Carve by connection state: `typed/state_idle.rs`, `typed/state_tx.rs`, and a small `typed/mod.rs` that re-exports and holds shared helpers. Move type aliases and manager wiring into a `typed/context.rs`.
-- Option 2: Split by capability: `typed/query.rs` (select/dml paths), `typed/batch.rs` (execute_batch/prepared re-use), and `typed/tx.rs` (transaction open/commit/rollback), leaving struct/trait definitions in `typed/core.rs`.
+- Option 2: Split by capability: `typed/query.rs` (select/dml paths), `typed/batch.rs` (execute_batch/prepared re-use), and `typed/tx.rs` (transaction open/commit/rollback), leaving struct/trait definitions in `typed/core.rs`. **Implemented (done via core/select/dml/tx/prepared split).**
 
 ## src/sqlite/connection.rs
 - Option 1: Break into `sqlite/connection/core.rs` (connection type, common helpers), `sqlite/connection/prepared.rs` (prepared statement lifecycle and worker handles), and `sqlite/connection/exec.rs` (select/dml/execute_batch entry points).
@@ -14,11 +14,11 @@
 
 ## src/sqlite/typed.rs
 - Option 1: Mirror postgres split: `typed/state_idle.rs`, `typed/state_tx.rs`, and `typed/core.rs` for shared types/aliases. Each state file owns its impl blocks.
-- Option 2: Feature-focused: `typed/query.rs` (select/dml), `typed/prepared.rs` (statement prep/bind helpers), and `typed/tx.rs` (begin/commit/rollback, savepoints if any), keeping the connection struct and manager glue in `typed/mod.rs`.
+- Option 2: Feature-focused: `typed/query.rs` (select/dml), `typed/prepared.rs` (statement prep/bind helpers), and `typed/tx.rs` (begin/commit/rollback, savepoints if any), keeping the connection struct and manager glue in `typed/mod.rs`. **Implemented (done via core/select/dml/tx/prepared split).**
 
 ## src/turso/typed.rs
 - Option 1: State-centric split (`typed/state_idle.rs`, `typed/state_tx.rs`) with `typed/core.rs` holding connection structs, manager setup, and shared utilities.
-- Option 2: Capability split similar to SQLite/Postgres: `typed/query.rs`, `typed/batch.rs` (bulk/execute_batch), `typed/tx.rs`, with a slim `typed/mod.rs` re-exporting the pieces.
+- Option 2: Capability split similar to SQLite/Postgres: `typed/query.rs`, `typed/batch.rs` (bulk/execute_batch), `typed/tx.rs`, with a slim `typed/mod.rs` re-exporting the pieces. **Implemented (done via core/select/dml/tx/prepared split).**
 
 ## src/typed/any.rs
 - Option 1: Split routing from type definitions: keep enums in `any/types.rs` and move the match-based dispatch impls (`Queryable`, `TypedConnOps`, `BeginTx`) into `any/dispatch.rs`.
