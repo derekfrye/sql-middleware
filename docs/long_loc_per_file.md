@@ -30,7 +30,7 @@
 
 ## src/query_builder.rs
 - Option 1: Extract translation concerns: keep the builder struct in `query_builder/core.rs`, move `translate_query_for_target` and placeholder handling into `query_builder/translation.rs`, and backend dispatch wiring into `query_builder/dispatch.rs`.
-- Option 2: Split by operation: `query_builder/select.rs` and `query_builder/dml.rs` implementing the operation-specific methods, with `query_builder/mod.rs` holding the struct definition, parameter handling, and shared helpers.
+- Option 2: Split by operation: `query_builder/select.rs` and `query_builder/dml.rs` implementing the operation-specific methods, with `query_builder/mod.rs` holding the struct definition, parameter handling, and shared helpers. **Implemented (done).**
 
 ## src/translation.rs
 - Option 1: Split types from algorithm: `translation/types.rs` for `PlaceholderStyle`, `TranslationMode`, `QueryOptions`, and `translation/engine.rs` for `translate_placeholders` and its state machine utilities.
