@@ -1,20 +1,15 @@
-#![cfg(all(
-    feature = "typed-postgres",
-    feature = "postgres",
-    feature = "typed-turso",
-    feature = "turso"
-))]
+#![cfg(all(feature = "postgres", feature = "turso"))]
 
 use sql_middleware::SqlMiddlewareDbError;
 use sql_middleware::middleware::RowValues;
 use sql_middleware::translation::TranslationMode;
-use sql_middleware::typed_api::{AnyIdle, AnyTx, BeginTx, Queryable, TxConn};
+use sql_middleware::typed_api::{AnyIdle, AnyTx, BeginTx, TxConn, TypedConnOps};
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 use sql_middleware::typed_turso::{Idle as TuIdle, TursoConnection, TursoManager};
 
 // Backend-agnostic helpers.
 async fn insert_rows(
-    conn: &mut impl Queryable,
+    conn: &mut impl TypedConnOps,
     start_id: i64,
     count: i64,
     label: &str,
@@ -30,7 +25,7 @@ async fn insert_rows(
     Ok(())
 }
 
-async fn count_rows(conn: &mut impl Queryable) -> Result<i64, SqlMiddlewareDbError> {
+async fn count_rows(conn: &mut impl TypedConnOps) -> Result<i64, SqlMiddlewareDbError> {
     let rs = conn
         .query("SELECT COUNT(*) AS cnt FROM typed_api_users")
         .translation(TranslationMode::ForceOn)
@@ -43,24 +38,9 @@ async fn count_rows(conn: &mut impl Queryable) -> Result<i64, SqlMiddlewareDbErr
     Ok(*val)
 }
 
-async fn exec_batch_idle(conn: &mut AnyIdle, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-    match conn {
-        AnyIdle::Postgres(pg) => pg.execute_batch(sql).await,
-        AnyIdle::Turso(tu) => tu.execute_batch(sql).await,
-    }
-}
-
-async fn exec_batch_tx(tx: &mut AnyTx, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-    match tx {
-        AnyTx::Postgres(pg) => pg.execute_batch(sql).await,
-        AnyTx::Turso(tu) => tu.execute_batch(sql).await,
-    }
-}
-
 async fn run_backend(mut conn: AnyIdle) -> Result<(), SqlMiddlewareDbError> {
     // Create table with a batch (autocommit).
-    exec_batch_idle(
-        &mut conn,
+    conn.execute_batch(
         "DROP TABLE IF EXISTS typed_api_users; CREATE TABLE typed_api_users (id BIGINT PRIMARY KEY, name TEXT);",
     )
     .await?;
@@ -83,7 +63,7 @@ async fn run_backend(mut conn: AnyIdle) -> Result<(), SqlMiddlewareDbError> {
             "INSERT INTO typed_api_users (id, name) VALUES ({id}, 'tx2_{id}');"
         ));
     }
-    exec_batch_tx(&mut tx, &batch_sql).await?;
+    tx.execute_batch(&batch_sql).await?;
     conn = tx.rollback().await?;
 
     // Verify still 10 rows after rollbacks.
@@ -135,7 +115,7 @@ fn typed_api_generic_helper_multiple_backends() -> Result<(), Box<dyn std::error
             TursoConnection::<TuIdle>::from_pool(&tu_pool).await?,
         ));
 
-        for  backend in backends {
+        for backend in backends {
             run_backend(backend).await?;
         }
 

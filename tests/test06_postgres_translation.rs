@@ -3,9 +3,9 @@
 use sql_middleware::prelude::*;
 use std::env;
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 async fn typed_url_literal_vs_placeholder(
     cfg: &tokio_postgres::Config,
     expected_url: &str,
@@ -27,7 +27,7 @@ async fn typed_url_literal_vs_placeholder(
     Ok(())
 }
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 async fn typed_translation_force_on(
     cfg: &tokio_postgres::Config,
 ) -> Result<(), SqlMiddlewareDbError> {
@@ -53,7 +53,7 @@ async fn typed_translation_force_on(
     Ok(())
 }
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 async fn typed_translation_force_off(
     cfg: &tokio_postgres::Config,
 ) -> Result<(), SqlMiddlewareDbError> {
@@ -72,7 +72,7 @@ async fn typed_translation_force_off(
     Ok(())
 }
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 async fn typed_translation_skip_comments_and_literals(
     cfg: &tokio_postgres::Config,
 ) -> Result<(), SqlMiddlewareDbError> {
@@ -118,7 +118,7 @@ async fn typed_translation_skip_comments_and_literals(
     Ok(())
 }
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 fn build_typed_pg_config(cfg: &deadpool_postgres::Config) -> tokio_postgres::Config {
     let mut pg_cfg = tokio_postgres::Config::new();
     if let Some(user) = cfg.user.as_deref() {
@@ -151,7 +151,7 @@ fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error
         // Deadpool requires a password field; default to empty for trust auth, allow env override.
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         let typed_pg_cfg = build_typed_pg_config(&cfg);
         let expected_url =
             "https://example.com/?1=param1Value&2=param2&token=$123abc".to_string();
@@ -183,7 +183,7 @@ fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error
             expected_url.as_str()
         );
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         typed_url_literal_vs_placeholder(&typed_pg_cfg, expected_url.as_str()).await?;
 
         conn.execute_batch("DROP TABLE IF EXISTS tbl;").await?;
@@ -203,7 +203,7 @@ fn postgres_translation_force_on_override_default_off() -> Result<(), Box<dyn st
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         let typed_pg_cfg = build_typed_pg_config(&cfg);
 
         // Pool default is off; per-call override forces translation of ?1 -> $1.
@@ -226,7 +226,7 @@ fn postgres_translation_force_on_override_default_off() -> Result<(), Box<dyn st
         assert_eq!(rs.results.len(), 1);
         assert_eq!(*rs.results[0].get("id").unwrap().as_int().unwrap(), 7);
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         typed_translation_force_on(&typed_pg_cfg).await?;
 
         conn.execute_batch("DROP TABLE IF EXISTS tbl_translate_force_on;")
@@ -247,7 +247,7 @@ fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn s
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         let typed_pg_cfg = build_typed_pg_config(&cfg);
 
         // Pool default is on; per-call override should skip translation, leaving ?1 invalid.
@@ -264,7 +264,7 @@ fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn s
 
         assert!(res.is_err(), "expected SQL to fail without translation");
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         typed_translation_force_off(&typed_pg_cfg).await?;
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
@@ -282,7 +282,7 @@ fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std:
         cfg.user = Some("testuser".to_string());
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         let typed_pg_cfg = build_typed_pg_config(&cfg);
 
         let cap = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
@@ -327,7 +327,7 @@ fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std:
             "O'ReillyX"
         );
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         typed_translation_skip_comments_and_literals(&typed_pg_cfg).await?;
 
         Ok::<(), SqlMiddlewareDbError>(())

@@ -1,15 +1,16 @@
 use super::transaction::{Tx, begin_transaction};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
-use deadpool_postgres::Object;
+use std::ops::DerefMut;
+use tokio_postgres::Client;
 
 /// Execute a batch of SQL statements for Postgres
 ///
 /// # Errors
 /// Returns errors from transaction operations or batch execution.
-pub async fn execute_batch(
-    pg_client: &mut Object,
-    query: &str,
-) -> Result<(), SqlMiddlewareDbError> {
+pub async fn execute_batch<C>(pg_client: &mut C, query: &str) -> Result<(), SqlMiddlewareDbError>
+where
+    C: DerefMut<Target = Client>,
+{
     let tx: Tx<'_> = begin_transaction(pg_client).await?;
     tx.execute_batch(query).await?;
     tx.commit().await?;
@@ -21,11 +22,14 @@ pub async fn execute_batch(
 ///
 /// # Errors
 /// Returns errors from parameter conversion, transaction operations, query preparation, or result set building.
-pub async fn execute_select(
-    pg_client: &mut Object,
+pub async fn execute_select<C>(
+    pg_client: &mut C,
     query: &str,
     params: &[RowValues],
-) -> Result<ResultSet, SqlMiddlewareDbError> {
+) -> Result<ResultSet, SqlMiddlewareDbError>
+where
+    C: DerefMut<Target = Client>,
+{
     let tx: Tx<'_> = begin_transaction(pg_client).await?;
     let prepared = tx.prepare(query).await?;
     let result_set = tx.query_prepared(&prepared, params).await?;
@@ -37,11 +41,14 @@ pub async fn execute_select(
 ///
 /// # Errors
 /// Returns errors from parameter conversion, transaction operations, or query execution.
-pub async fn execute_dml(
-    pg_client: &mut Object,
+pub async fn execute_dml<C>(
+    pg_client: &mut C,
     query: &str,
     params: &[RowValues],
-) -> Result<usize, SqlMiddlewareDbError> {
+) -> Result<usize, SqlMiddlewareDbError>
+where
+    C: DerefMut<Target = Client>,
+{
     let tx: Tx<'_> = begin_transaction(pg_client).await?;
     let prepared = tx.prepare(query).await?;
     let rows = tx.execute_prepared(&prepared, params).await?;

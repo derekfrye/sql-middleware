@@ -17,15 +17,11 @@ use crate::sqlite;
 use crate::sqlite::config::SqliteManager;
 #[cfg(feature = "turso")]
 use crate::turso;
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 use crate::typed_postgres::PgManager;
-#[cfg(feature = "typed-turso")]
+#[cfg(feature = "turso")]
 use crate::typed_turso::TursoManager;
-#[cfg(any(
-    feature = "typed-postgres",
-    feature = "typed-turso",
-    feature = "sqlite"
-))]
+#[cfg(any(feature = "postgres", feature = "turso", feature = "sqlite"))]
 use bb8::PooledConnection;
 
 /// Target for batch execution (connection or transaction).
@@ -39,11 +35,11 @@ pub enum BatchTarget<'a> {
     LibsqlTx(&'a libsql::transaction::Tx<'a>),
     #[cfg(feature = "turso")]
     TursoTx(&'a turso::transaction::Tx<'a>),
-    #[cfg(feature = "typed-turso")]
+    #[cfg(feature = "turso")]
     TypedTurso {
         conn: &'a mut PooledConnection<'static, TursoManager>,
     },
-    #[cfg(feature = "typed-turso")]
+    #[cfg(feature = "turso")]
     TypedTursoTx {
         conn: &'a mut PooledConnection<'static, TursoManager>,
     },
@@ -67,19 +63,19 @@ pub(crate) enum QueryTargetKind<'a> {
     TypedSqliteTx {
         conn: &'a mut PooledConnection<'static, SqliteManager>,
     },
-    #[cfg(feature = "typed-postgres")]
+    #[cfg(feature = "postgres")]
     TypedPostgres {
         conn: &'a mut PooledConnection<'static, PgManager>,
     },
-    #[cfg(feature = "typed-postgres")]
+    #[cfg(feature = "postgres")]
     TypedPostgresTx {
         conn: &'a mut PooledConnection<'static, PgManager>,
     },
-    #[cfg(feature = "typed-turso")]
+    #[cfg(feature = "turso")]
     TypedTurso {
         conn: &'a mut PooledConnection<'static, TursoManager>,
     },
-    #[cfg(feature = "typed-turso")]
+    #[cfg(feature = "turso")]
     TypedTursoTx {
         conn: &'a mut PooledConnection<'static, TursoManager>,
     },
@@ -152,7 +148,7 @@ impl<'a> QueryTarget<'a> {
     }
 }
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 impl<'a> QueryTarget<'a> {
     pub(crate) fn from_typed_postgres(
         conn: &'a mut PooledConnection<'static, PgManager>,
@@ -210,7 +206,7 @@ impl<'a> From<&'a turso::transaction::Tx<'a>> for QueryTarget<'a> {
     }
 }
 
-#[cfg(feature = "typed-turso")]
+#[cfg(feature = "turso")]
 impl<'a> QueryTarget<'a> {
     pub(crate) fn from_typed_turso(
         conn: &'a mut PooledConnection<'static, TursoManager>,
@@ -244,17 +240,17 @@ impl QueryTarget<'_> {
             QueryTargetKind::TypedSqlite { .. } => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "sqlite")]
             QueryTargetKind::TypedSqliteTx { .. } => Some(PlaceholderStyle::Sqlite),
-            #[cfg(feature = "typed-postgres")]
+            #[cfg(feature = "postgres")]
             QueryTargetKind::TypedPostgres { .. } => Some(PlaceholderStyle::Postgres),
-            #[cfg(feature = "typed-postgres")]
+            #[cfg(feature = "postgres")]
             QueryTargetKind::TypedPostgresTx { .. } => Some(PlaceholderStyle::Postgres),
             #[cfg(feature = "libsql")]
             QueryTargetKind::LibsqlTx(_) => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "turso")]
             QueryTargetKind::TursoTx(_) => Some(PlaceholderStyle::Sqlite),
-            #[cfg(feature = "typed-turso")]
+            #[cfg(feature = "turso")]
             QueryTargetKind::TypedTurso { .. } => Some(PlaceholderStyle::Sqlite),
-            #[cfg(feature = "typed-turso")]
+            #[cfg(feature = "turso")]
             QueryTargetKind::TypedTursoTx { .. } => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "mssql")]
             QueryTargetKind::MssqlTx(_) => None,
@@ -282,12 +278,12 @@ pub async fn execute_batch(
         BatchTarget::LibsqlTx(tx) => tx.execute_batch(query).await,
         #[cfg(feature = "turso")]
         BatchTarget::TursoTx(tx) => tx.execute_batch(query).await,
-        #[cfg(feature = "typed-turso")]
+        #[cfg(feature = "turso")]
         BatchTarget::TypedTurso { conn } => {
             crate::typed_turso::dml(conn, query, &[]).await?;
             Ok(())
         }
-        #[cfg(feature = "typed-turso")]
+        #[cfg(feature = "turso")]
         BatchTarget::TypedTursoTx { conn } => {
             crate::typed_turso::dml(conn, query, &[]).await?;
             Ok(())

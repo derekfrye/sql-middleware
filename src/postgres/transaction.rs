@@ -1,5 +1,6 @@
-use deadpool_postgres::{Object, Transaction as PgTransaction};
-use tokio_postgres::Statement;
+use std::ops::DerefMut;
+
+use tokio_postgres::{Client, Statement, Transaction as PgTransaction};
 
 use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
@@ -21,8 +22,11 @@ pub struct Prepared {
 ///
 /// # Errors
 /// Returns an error if creating the transaction fails.
-pub async fn begin_transaction(conn: &mut Object) -> Result<Tx<'_>, SqlMiddlewareDbError> {
-    let tx = conn.transaction().await?;
+pub async fn begin_transaction<C>(conn: &mut C) -> Result<Tx<'_>, SqlMiddlewareDbError>
+where
+    C: DerefMut<Target = Client>,
+{
+    let tx = conn.deref_mut().transaction().await?;
     Ok(Tx { tx })
 }
 

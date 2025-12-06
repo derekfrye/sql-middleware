@@ -103,11 +103,7 @@ impl PgConnection<Idle> {
 
     /// Auto-commit batch (BEGIN/COMMIT around it).
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        let script = format!("BEGIN; {sql}; COMMIT;");
-        self.conn
-            .batch_execute(&script)
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres batch error: {e}")))
+        crate::postgres::executor::execute_batch(&mut self.conn, sql).await
     }
 
     /// Auto-commit DML.
@@ -116,20 +112,7 @@ impl PgConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted =
-            PgParams::convert_sql_params(params, crate::types::ConversionMode::Execute)?;
-        let rows = self
-            .conn
-            .execute(query, converted.as_refs())
-            .await
-            .map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!("postgres execute error: {e}"))
-            })?;
-        usize::try_from(rows).map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!(
-                "postgres affected rows conversion error: {e}"
-            ))
-        })
+        crate::postgres::executor::execute_dml(&mut self.conn, query, params).await
     }
 
     /// Auto-commit SELECT.
@@ -138,15 +121,7 @@ impl PgConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted = PgParams::convert_sql_params(params, crate::types::ConversionMode::Query)?;
-        let rows = self
-            .conn
-            .query(query, converted.as_refs())
-            .await
-            .map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!("postgres query error: {e}"))
-            })?;
-        build_result_set_from_rows(&rows)
+        crate::postgres::executor::execute_select(&mut self.conn, query, params).await
     }
 
     /// Start a query builder (auto-commit per operation).

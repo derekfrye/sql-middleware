@@ -30,7 +30,7 @@ use sql_middleware::sqlite::{
 use sql_middleware::turso::{
     Prepared as TursoPrepared, Tx as TursoTx, begin_transaction as begin_turso_tx,
 };
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 
 #[cfg(feature = "postgres")]
@@ -248,7 +248,7 @@ async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMid
     Ok(())
 }
 
-#[cfg(all(feature = "typed-postgres", feature = "postgres"))]
+#[cfg(all(feature = "postgres", feature = "postgres"))]
 async fn run_typed_pg_roundtrip(
     mut conn: PgConnection<PgIdle>,
 ) -> Result<(), SqlMiddlewareDbError> {
@@ -333,7 +333,7 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
         }
 
         // Typed Postgres mirror of the same flow.
-        #[cfg(all(feature = "typed-postgres", feature = "postgres"))]
+        #[cfg(all(feature = "postgres", feature = "postgres"))]
         {
             let cfg = postgres_config();
             let mut pg_cfg = tokio_postgres::Config::new();

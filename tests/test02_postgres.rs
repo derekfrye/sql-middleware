@@ -15,14 +15,14 @@ use sql_middleware::postgres::{
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 use sql_middleware::{SqlMiddlewareDbError, convert_sql_params};
 
 use std::vec;
 use tokio::runtime::Runtime;
 
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 fn build_typed_pg_config(cfg: &deadpool_postgres::Config) -> tokio_postgres::Config {
     let mut pg_cfg = tokio_postgres::Config::new();
     if let Some(user) = cfg.user.as_deref() {
@@ -81,7 +81,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );";
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         let typed_pg_cfg = build_typed_pg_config(&cfg);
         let config_and_pool = ConfigAndPool::new_postgres(PostgresOptions::new(cfg)).await?;
         let conn = config_and_pool.get_connection().await?;
@@ -195,7 +195,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             assert_eq!(left, right);
         }
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         {
             let pool = PgManager::new(typed_pg_cfg).build_pool().await?;
             let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;

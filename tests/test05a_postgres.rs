@@ -6,7 +6,7 @@ use sql_middleware::prelude::*;
 use sql_middleware::test_utils::testing_postgres::{
     setup_postgres_container, stop_postgres_container,
 };
-#[cfg(feature = "typed-postgres")]
+#[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 
 #[test]
@@ -53,7 +53,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             "alice"
         );
 
-        #[cfg(feature = "typed-postgres")]
+        #[cfg(feature = "postgres")]
         {
             // Exercise the typestate API against the same backend using a separate table.
             let mut pg_cfg = tokio_postgres::Config::new();
