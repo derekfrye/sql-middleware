@@ -26,14 +26,23 @@ impl SqliteConnection {
         }
     }
 
-    /// Execute a batch with implicit BEGIN/COMMIT.
+    /// Execute a batch of statements; wraps in a transaction when not already inside one.
     pub async fn execute_batch(&mut self, query: &str) -> Result<(), SqlMiddlewareDbError> {
         self.ensure_not_in_tx("execute batch")?;
-        let sql_owned = format!("BEGIN; {query}; COMMIT;");
+        let sql_owned = query.to_owned();
         run_blocking(self.conn_handle(), move |guard| {
-            guard
-                .execute_batch(&sql_owned)
-                .map_err(SqlMiddlewareDbError::SqliteError)
+            if guard.is_autocommit() {
+                let tx = guard
+                    .transaction()
+                    .map_err(SqlMiddlewareDbError::SqliteError)?;
+                tx.execute_batch(&sql_owned)
+                    .map_err(SqlMiddlewareDbError::SqliteError)?;
+                tx.commit().map_err(SqlMiddlewareDbError::SqliteError)
+            } else {
+                guard
+                    .execute_batch(&sql_owned)
+                    .map_err(SqlMiddlewareDbError::SqliteError)
+            }
         })
         .await
     }
@@ -46,7 +55,10 @@ impl SqliteConnection {
         builder: F,
     ) -> Result<ResultSet, SqlMiddlewareDbError>
     where
-        F: FnOnce(&mut rusqlite::Statement<'_>, &[rusqlite::types::Value]) -> Result<ResultSet, SqlMiddlewareDbError>
+        F: FnOnce(
+                &mut rusqlite::Statement<'_>,
+                &[rusqlite::types::Value],
+            ) -> Result<ResultSet, SqlMiddlewareDbError>
             + Send
             + 'static,
     {
@@ -74,7 +86,10 @@ impl SqliteConnection {
             let mut stmt = guard
                 .prepare(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
-            let refs: Vec<&dyn rusqlite::ToSql> = params_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            let refs: Vec<&dyn rusqlite::ToSql> = params_owned
+                .iter()
+                .map(|v| v as &dyn rusqlite::ToSql)
+                .collect();
             let affected = stmt
                 .execute(&refs[..])
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
@@ -156,7 +171,10 @@ impl SqliteConnection {
             let mut stmt = guard
                 .prepare(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
-            let refs: Vec<&dyn rusqlite::ToSql> = params_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            let refs: Vec<&dyn rusqlite::ToSql> = params_owned
+                .iter()
+                .map(|v| v as &dyn rusqlite::ToSql)
+                .collect();
             let affected = stmt
                 .execute(&refs[..])
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
@@ -189,7 +207,10 @@ impl SqliteConnection {
         builder: F,
     ) -> Result<ResultSet, SqlMiddlewareDbError>
     where
-        F: FnOnce(&mut rusqlite::Statement<'_>, &[rusqlite::types::Value]) -> Result<ResultSet, SqlMiddlewareDbError>
+        F: FnOnce(
+                &mut rusqlite::Statement<'_>,
+                &[rusqlite::types::Value],
+            ) -> Result<ResultSet, SqlMiddlewareDbError>
             + Send
             + 'static,
     {
@@ -230,7 +251,8 @@ impl SqliteConnection {
     ) -> Result<crate::sqlite::prepared::SqlitePreparedStatement<'_>, SqlMiddlewareDbError> {
         if self.in_transaction {
             return Err(SqlMiddlewareDbError::ExecutionError(
-                "SQLite transaction in progress; operation not permitted (prepare statement)".into(),
+                "SQLite transaction in progress; operation not permitted (prepare statement)"
+                    .into(),
             ));
         }
         let query_arc = Arc::new(query.to_owned());
@@ -243,7 +265,9 @@ impl SqliteConnection {
             Ok(())
         })
         .await?;
-        Ok(crate::sqlite::prepared::SqlitePreparedStatement::new(self, query_arc))
+        Ok(crate::sqlite::prepared::SqlitePreparedStatement::new(
+            self, query_arc,
+        ))
     }
 
     fn conn_handle(&self) -> SharedSqliteConnection {
@@ -302,7 +326,10 @@ pub async fn dml(
         let mut stmt = guard
             .prepare(&sql_owned)
             .map_err(SqlMiddlewareDbError::SqliteError)?;
-        let refs: Vec<&dyn rusqlite::ToSql> = params_owned.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let refs: Vec<&dyn rusqlite::ToSql> = params_owned
+            .iter()
+            .map(|v| v as &dyn rusqlite::ToSql)
+            .collect();
         let affected = stmt
             .execute(&refs[..])
             .map_err(SqlMiddlewareDbError::SqliteError)?;
@@ -324,13 +351,15 @@ where
         func(&mut guard)
     })
     .await
-    .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!(
-        "sqlite spawn_blocking join error: {e}"
-    )))?
+    .map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("sqlite spawn_blocking join error: {e}"))
+    })?
 }
 
 /// Apply WAL pragmas to a pooled connection.
-pub async fn apply_wal_pragmas(conn: &mut SqlitePooledConnection) -> Result<(), SqlMiddlewareDbError> {
+pub async fn apply_wal_pragmas(
+    conn: &mut SqlitePooledConnection,
+) -> Result<(), SqlMiddlewareDbError> {
     let handle = Arc::clone(&*conn);
     run_blocking(handle, |guard| {
         guard
