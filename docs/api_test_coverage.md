@@ -33,6 +33,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `translation::{translate_placeholders, PlaceholderStyle, QueryOptions, TranslationMode}` (re-export)
   - **Coverage:** As above.
   - **Purpose:** Convenience from root/prelude.
+- `typed` module and alias `typed_api` (re-exported from root)
+  - **Coverage:** Used in `tests/test09_typed_api_generic.rs` and `tests/test10_bad_drop.rs` for trait/enum imports.
+  - **Purpose:** Entry point to the typestate/typed connection API; hosts backend-neutral traits/enums for compile-time transaction state tracking.
 
 ## Config and pool
 - `ConfigAndPool::get_connection`
@@ -47,6 +50,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `LibsqlOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
   - **Purpose:** Local LibSQL config (path + translation default) for pool creation.
+- `LibsqlOptionsBuilder`
+  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::libsql_builder`.
+  - **Purpose:** Fluent builder for `LibsqlOptions`; public for ergonomic construction and parity with other backends.
 - `ConfigAndPool::new_libsql_remote`
   - **Coverage:** **Not covered**.
   - **Purpose:** Remote LibSQL/Turso URL constructor taking `LibsqlRemoteOptions`; public for remote deployments.
@@ -56,6 +62,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `LibsqlRemoteOptions`
   - **Coverage:** **Not covered**.
   - **Purpose:** Remote LibSQL config (URL/auth + translation default) for pool creation.
+- `LibsqlRemoteOptionsBuilder`
+  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::libsql_remote_builder`.
+  - **Purpose:** Fluent builder for `LibsqlRemoteOptions`; public for ergonomic remote configuration.
 - `ConfigAndPool::new_mssql`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL constructor taking `MssqlOptions`; public for SQL Server consumers.
@@ -65,15 +74,24 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `MssqlOptions`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL config container for pool creation.
+- `MssqlOptionsBuilder`
+  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::mssql_builder`.
+  - **Purpose:** Fluent builder for `MssqlOptions`; public for ergonomic configuration and parity with other backends.
 - `ConfigAndPool::new_postgres`
   - **Coverage:** `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test06_postgres_translation.rs`.
   - **Purpose:** Primary Postgres constructor taking `PostgresOptions`; public for consumer setup.
 - `ConfigAndPool::postgres_builder`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Fluent builder for `PostgresOptions` to toggle translation defaults without more constructors.
+- `PgConfig`
+  - **Coverage:** Used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test06_postgres_translation.rs`, `tests/test08_custom_logic_between_txn.rs`.
+  - **Purpose:** Stable Postgres configuration wrapper that avoids exposing backend pool/client types; public so callers can build configs without depending on `tokio_postgres::Config` shape.
 - `PostgresOptions`
   - **Coverage:** `tests/test02_postgres.rs`, `tests/test05a_postgres.rs`, `tests/test06_postgres_translation.rs`.
-  - **Purpose:** Postgres config wrapper (deadpool config + translation default) for pool creation.
+  - **Purpose:** Postgres config wrapper (`PgConfig` + translation default) for pool creation.
+- `PostgresOptionsBuilder`
+  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::postgres_builder`.
+  - **Purpose:** Fluent builder for `PostgresOptions`; public for ergonomic config assembly.
 - `ConfigAndPool::new_sqlite`
   - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Primary SQLite constructor taking `SqliteOptions`; public for consumer setup.
@@ -83,6 +101,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `SqliteOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
   - **Purpose:** SQLite config (path + translation default) for pool creation.
+- `SqliteOptionsBuilder`
+  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::sqlite_builder`.
+  - **Purpose:** Fluent builder for `SqliteOptions`; public for ergonomic construction and parity with other backends.
 - `ConfigAndPool::new_turso`
   - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05d_turso.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Local Turso constructor taking `TursoOptions`; public for Turso setup.
@@ -92,6 +113,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `TursoOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
   - **Purpose:** Turso config (path + translation default) for pool creation.
+- `TursoOptionsBuilder`
+  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::turso_builder`.
+  - **Purpose:** Fluent builder for `TursoOptions`; public for ergonomic construction.
 - `MiddlewarePool`
   - **Coverage:** Type used indirectly; method `get` **Not covered** directly.
   - **Purpose:** Erased pool enum across backends; public for advanced pooling control.
@@ -130,6 +154,23 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `MiddlewarePoolConnection::with_blocking_sqlite`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`.
   - **Purpose:** Run blocking `rusqlite` work on worker thread; public for advanced SQLite hooks.
+
+## Typed connection API
+- Backend-neutral traits and enums (`typed_api` / `typed`): `AnyIdle`, `AnyTx`, `BeginTx`, `TxConn`, `TypedConnOps`, `Queryable`
+  - **Coverage:** Used in `tests/test09_typed_api_generic.rs` and `tests/test10_bad_drop.rs`.
+  - **Purpose:** Compile-time transaction state tracking and shared typed operations usable across supported backends.
+- `typed_postgres` module (`PgConnection<Idle|InTx>`, `PgManager`)
+  - **Coverage:** `tests/test02_postgres.rs`, `tests/test05a_postgres.rs`, `tests/test06_postgres_translation.rs`, `tests/test08_custom_logic_between_txn.rs`, `tests/test09_typed_api_generic.rs`.
+  - **Purpose:** Typed Postgres connections with BEGIN/COMMIT/ROLLBACK tracking plus bb8 manager; public additive API.
+- `typed_sqlite` module (`SqliteTypedConnection<Idle|InTx>`)
+  - **Coverage:** `tests/test09_typed_api_generic.rs`, `tests/test10_bad_drop.rs`.
+  - **Purpose:** Typed SQLite connections using pooled rusqlite with typestate for transactions; public additive API.
+- `typed_turso` module (`TursoConnection<Idle|InTx>`, `TursoManager`)
+  - **Coverage:** `tests/test09_typed_api_generic.rs`, `tests/test10_bad_drop.rs`.
+  - **Purpose:** Typed Turso connections/managers mirroring Postgres/SQLite typed flow; public additive API.
+- `set_skip_drop_rollback_for_tests` (typed_{postgres,sqlite,turso})
+  - **Coverage:** `tests/test10_bad_drop.rs`.
+  - **Purpose:** Test-only toggles to skip drop-time rollbacks; public today for test harnesses/backward compatibility (considered internal).
 
 ## Query builder and execution
 - `query` (crate root/prelude) + `QueryBuilder::dml`
@@ -250,6 +291,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `build_result_set`
   - **Coverage:** Used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Build `ResultSet` from raw rows; public for manual execution paths.
+- `build_result_set_from_rows`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Helper to convert a `Vec<tokio_postgres::Row>` into a `ResultSet`; public for callers executing their own Postgres queries.
+- `postgres_extract_value`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Extract a `RowValues` from a single Postgres row/column; public helper for custom result processing.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** **Not covered** directly (tests use client-level transactions instead).
   - **Purpose:** Prepared/transaction helpers; public for explicit transaction control.
@@ -267,6 +314,18 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `build_result_set`
   - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Build results from rusqlite rows; public for manual execution.
+- `SqliteConnection` (re-export)
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Type-erased pooled SQLite connection handle used by backend helpers; public for callers needing direct access.
+- `SqlitePooledConnection` / `SharedSqliteConnection` (type aliases)
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Public aliases to bb8-managed SQLite connections; exposed for consumers writing lower-level SQLite integrations.
+- `apply_wal_pragmas`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Apply WAL-related pragmas to a pooled SQLite connection; public helper for tuning.
+- `SqliteConnection::execute_dml_in_tx`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Execute DML inside an existing SQLite transaction; public for advanced transactional control.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Transaction helpers on worker; public for explicit transaction control.

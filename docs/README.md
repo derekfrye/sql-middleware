@@ -53,7 +53,7 @@ pub struct ScoreChange {
 }
 
 pub async fn set_scores_in_db(
-    config_and_pool: &sql_middleware::pool::ConfigAndPool,
+    config_and_pool: &ConfigAndPool,
     updates: &[ScoreChange],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let mut conn = config_and_pool.get_connection().await?;
@@ -97,50 +97,30 @@ An example using multiple different backends (sqlite, postgres, turso). Notice t
 use sql_middleware::prelude::*;
 
 pub async fn get_scores_from_db(
-    config_and_pool: &sql_middleware::pool::ConfigAndPool,
+    config_and_pool: &ConfigAndPool,
     event_id: i32,
-) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let mut conn = config_and_pool.get_connection().await?;
     let query = match &conn {
         MiddlewarePoolConnection::Postgres { .. } => {
             "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names($1) ORDER BY grp, eup_id"
         }
         MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
-            include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+            "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names(?1) ORDER BY grp, eup_id"
         }
     };
     let params = vec![RowValues::Int(i64::from(event_id))];
     let res = conn.query(query).params(&params).select().await?;
-
-    let z: Result<Vec<Scores>, SqlMiddlewareDbError> = res
-        .results
-        .iter()
-        .map(|row| {
-            Ok(Scores {
-                golfer_name: row
-                    .get("golfername")
-                    .and_then(|v| v.as_text())
-                    .unwrap_or_default()
-                    .to_string(),
-                detailed_statistics: Statistic {
-                    ...<more retrieved fields here>
-                },
-            })
-        })
-        .collect::<Result<Vec<Scores>, SqlMiddlewareDbError>>();
-
-    Ok(ScoresAndLastRefresh {
-        score_struct: z?,
-    })
+    Ok(res)
 }
 ```
 
 ### Batch query w/o params
 
-Same API regardless of db backend. Full setup, including imports and pool creation:
+Same API regardless of db backend. Full setup, including imports and pool creation. See test8 for compile-ready example.
 
 ```rust
-use sql_middleware::middleware::{ConfigAndPool, RowValues};
+use sql_middleware::middleware::ConfigAndPool;
 use sql_middleware::prelude::execute_batch;
 
 #[tokio::main]
@@ -162,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut conn = cap.get_connection().await?;
 
     // simple api for batch queries
-    let ddl_query = include_str!("/path/to/test1.sql");
+    let ddl_query = "CREATE TABLE demo (id INTEGER PRIMARY KEY, name TEXT);";
     // on a pooled connection (auto BEGIN/COMMIT per backend helper)
     conn.execute_batch(&ddl_query).await?;
 
@@ -174,60 +154,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 You can also pass a backend transaction to keep manual control of commit/rollback:
 ```rust
-use sql_middleware::prelude::{execute_batch, query, TranslationMode};
+use sql_middleware::middleware::{ConfigAndPool, MiddlewarePoolConnection, SqlMiddlewareDbError};
+use sql_middleware::prelude::execute_batch;
 
-let mut conn = config_and_pool.get_connection().await?;
-let mut tx = sql_middleware::postgres::begin_transaction(&mut pg_client).await?;
+async fn create_temp_table(cap: &ConfigAndPool) -> Result<(), SqlMiddlewareDbError> {
+    let mut conn = cap.get_connection().await?;
+    let mut tx = match &mut conn {
+        MiddlewarePoolConnection::Postgres { client, .. } => {
+            sql_middleware::postgres::begin_transaction(client).await?
+        }
+        _ => {
+            return Err(SqlMiddlewareDbError::Unimplemented(
+                "expected Postgres connection".to_string(),
+            ))
+        }
+    };
 
-// run a batch inside the caller-managed transaction
-execute_batch((&mut tx).into(), "CREATE TEMP TABLE t (id INT);").await?;
-// caller decides when to commit/rollback
-tx.commit().await?;
+    // run a batch inside the caller-managed transaction
+    execute_batch((&mut tx).into(), "CREATE TEMP TABLE t (id INT);").await?;
+    // caller decides when to commit/rollback
+    tx.commit().await
+}
 ```
 ### Queries without parameters
 
 You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, LibSQL, and Turso:
 
 ```rust
-// Either build a QueryAndParams
-let query = QueryAndParams::new_without_params("SELECT * FROM users");
-let results = conn.query(&query.query).select().await?;
+async fn list_users(pool: &ConfigAndPool) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let mut conn = pool.get_connection().await?;
 
-// Or pass the SQL string directly
-let results2 = conn.query("SELECT * FROM users").select().await?;
+    // Either build a QueryAndParams
+    let query = QueryAndParams::new_without_params("SELECT * FROM users");
+    let _results = conn.query(&query.query).select().await?;
 
-// Using the unified builder entry point (works with pooled connections or transactions)
-use sql_middleware::prelude::query;
-let results3 = query((&mut conn).into(), "SELECT * FROM users").select().await?;
+    // Or pass the SQL string directly
+    let _results2 = conn.query("SELECT * FROM users").select().await?;
+
+    // Using the unified builder entry point (works with pooled connections or transactions)
+    let results3 = sql_middleware::prelude::query((&mut conn).into(), "SELECT * FROM users")
+        .select()
+        .await?;
+
+    Ok(results3)
+}
 ```
 
 ### Custom logic in between transactions
 
-Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block four times.
+Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block across backends.
 
 ```rust
 use sql_middleware::prelude::*;
 use sql_middleware::libsql::{
-    begin_transaction as begin_libsql_tx, Params as LibsqlParams, Prepared as LibsqlPrepared,
-    Tx as LibsqlTx,
+    begin_transaction as begin_libsql_tx, Prepared as LibsqlPrepared, Tx as LibsqlTx,
 };
 use sql_middleware::postgres::{
-    begin_transaction as begin_postgres_tx, Params as PostgresParams, Prepared as PostgresPrepared,
-    Tx as PostgresTx,
+    begin_transaction as begin_postgres_tx, Prepared as PostgresPrepared, Tx as PostgresTx,
 };
 use sql_middleware::sqlite::{
-    begin_transaction as begin_sqlite_tx, Params as SqliteParams, Prepared as SqlitePrepared,
-    Tx as SqliteTx,
+    begin_transaction as begin_sqlite_tx, Prepared as SqlitePrepared, Tx as SqliteTx,
 };
 use sql_middleware::turso::{
-    begin_transaction as begin_turso_tx, Params as TursoParams, Prepared as TursoPrepared,
-    Tx as TursoTx,
+    begin_transaction as begin_turso_tx, Prepared as TursoPrepared, Tx as TursoTx,
 };
 
 enum BackendTx<'conn> {
     Turso(TursoTx<'conn>),
     Postgres(PostgresTx<'conn>),
-    Sqlite(SqliteTx<'conn>),
+    Sqlite {
+        tx: SqliteTx,
+        translate: bool,
+    },
     Libsql(LibsqlTx<'conn>),
 }
 
@@ -239,22 +237,33 @@ enum PreparedStmt {
 }
 
 impl<'conn> BackendTx<'conn> {
-    async fn commit(self) -> Result<(), SqlMiddlewareDbError> {
+    async fn commit(self) -> Result<Option<MiddlewarePoolConnection>, SqlMiddlewareDbError> {
         match self {
-            BackendTx::Turso(tx) => tx.commit().await,
-            BackendTx::Postgres(tx) => tx.commit().await,
-            BackendTx::Sqlite(tx) => tx.commit().await,
-            BackendTx::Libsql(tx) => tx.commit().await,
+            BackendTx::Turso(tx) => tx.commit().await.map(|_| None),
+            BackendTx::Postgres(tx) => tx.commit().await.map(|_| None),
+            BackendTx::Sqlite { tx, translate } => {
+                let conn = tx.commit().await?;
+                // SQLite tx consumes the connection; rewrap so the pooled wrapper remains usable.
+                Ok(Some(MiddlewarePoolConnection::from_sqlite_parts(
+                    conn, translate,
+                )))
+            }
+            BackendTx::Libsql(tx) => tx.commit().await.map(|_| None),
         }
     }
 
-    async fn rollback(self) -> Result<(), SqlMiddlewareDbError> {
+    async fn rollback(self) -> Result<Option<MiddlewarePoolConnection>, SqlMiddlewareDbError> {
         match self {
-            // you could do some custom retry logic here
-            BackendTx::Turso(tx) => tx.rollback().await,
-            BackendTx::Postgres(tx) => tx.rollback().await,
-            BackendTx::Sqlite(tx) => tx.rollback().await,
-            BackendTx::Libsql(tx) => tx.rollback().await,
+            BackendTx::Turso(tx) => tx.rollback().await.map(|_| None),
+            BackendTx::Postgres(tx) => tx.rollback().await.map(|_| None),
+            BackendTx::Sqlite { tx, translate } => {
+                let conn = tx.rollback().await?;
+                // Same as commit: rewrap after rollback to avoid "connection already taken".
+                Ok(Some(MiddlewarePoolConnection::from_sqlite_parts(
+                    conn, translate,
+                )))
+            }
+            BackendTx::Libsql(tx) => tx.rollback().await.map(|_| None),
         }
     }
 }
@@ -262,7 +271,7 @@ impl<'conn> BackendTx<'conn> {
 impl PreparedStmt {
     async fn query_prepared(
         &mut self,
-        tx: &BackendTx<'_>,
+        tx: &mut BackendTx<'_>,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
         match (tx, self) {
@@ -272,7 +281,7 @@ impl PreparedStmt {
             (&BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
                 tx.query_prepared(stmt, params).await
             }
-            (&BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
+            (&mut BackendTx::Sqlite(ref mut tx), PreparedStmt::Sqlite(stmt)) => {
                 tx.query_prepared(stmt, params).await
             }
             (&BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
@@ -286,15 +295,21 @@ async fn run_prepared_with_finalize<'conn>(
     mut tx: BackendTx<'conn>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
+    restored: &mut Option<MiddlewarePoolConnection>,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let result = stmt.query_prepared(&tx, &params).await;
+    let result = stmt.query_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
-            tx.commit().await?;
+            if let Some(conn) = tx.commit().await? {
+                // Hand connection back to caller so the pooled wrapper remains usable.
+                *restored = Some(conn);
+            }
             Ok(rows)
         }
         Err(e) => {
-            let _ = tx.rollback().await;
+            if let Some(conn) = tx.rollback().await.unwrap_or(None) {
+                *restored = Some(conn);
+            }
             Err(e)
         }
     }
@@ -303,7 +318,7 @@ async fn run_prepared_with_finalize<'conn>(
 pub async fn get_scores_from_db(
     config_and_pool: &ConfigAndPool,
     event_id: i64,
-) -> Result<ScoresAndLastRefresh, SqlMiddlewareDbError> {
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let mut conn = config_and_pool.get_connection().await?;
 
     // Author once; translate for SQLite-family backends when preparing.
@@ -323,17 +338,30 @@ pub async fn get_scores_from_db(
             let stmt = tx.prepare(base_query).await?;
             (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
         }
+        MiddlewarePoolConnection::Sqlite {
+            conn,
+            translate_placeholders,
+        } => {
+            // Take ownership of the SQLite connection (tx API consumes it).
+            let sqlite_conn = conn
+                .take()
+                .ok_or_else(|| {
+                    SqlMiddlewareDbError::ExecutionError(
+                        "SQLite connection already taken".to_string(),
+                    )
+            })?;
+            let mut tx = begin_sqlite_tx(sqlite_conn).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref())?;
+            // Preserve the pool's translation default when rewrapping.
+            let translate = *translate_placeholders;
+            (BackendTx::Sqlite { tx, translate }, PreparedStmt::Sqlite(stmt))
+        }
         MiddlewarePoolConnection::Libsql { conn, .. } => {
             let tx = begin_libsql_tx(conn).await?;
             let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
             let stmt = tx.prepare(q.as_ref())?;
             (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
-        }
-        MiddlewarePoolConnection::Sqlite { conn, .. } => {
-            let tx = begin_sqlite_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref())?;
-            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
         }
         _ => {
             return Err(SqlMiddlewareDbError::Unimplemented(
@@ -342,33 +370,15 @@ pub async fn get_scores_from_db(
         }
     };
 
-    // Run some custom Rust code to fetch parameters.
-    // Or do whatever custom code you wanted in here.
-    let dynamic_params: Vec<RowValues> =
-        todo!("fetch parameters for event_id {event_id}");
-
-    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params).await?;
-
-    let parsed_scores = rows
-        .results
-        .iter()
-        .map(|row| {
-            Ok(Scores {
-                golfer_name: row
-                    .get("golfername")
-                    .and_then(|v| v.as_text())
-                    .unwrap_or_default()
-                    .to_string(),
-                detailed_statistics: Statistic {
-                    /* fetch additional fields */
-                },
-            })
-        })
-        .collect::<Result<Vec<Scores>, SqlMiddlewareDbError>>()?;
-
-    Ok(ScoresAndLastRefresh {
-        score_struct: parsed_scores,
-    })
+    // Build params however you like in your business logic.
+    let dynamic_params = vec![RowValues::Int(event_id)];
+    let mut restored = None;
+    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params, &mut restored).await?;
+    if let Some(restored_conn) = restored.take() {
+        // Reinsert SQLite connection so this pooled wrapper stays usable for subsequent work.
+        *conn = restored_conn;
+    }
+    Ok(rows)
 }
 ```
 
@@ -446,5 +456,5 @@ let rows = conn
 
 ## Release Notes
 
-- 0.3.0 (unreleased): Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, switched pool constructors to backend options + builders (instead of per-feature constructor permutations), and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
-- 0.1.9 (unreleased): Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).
+- 0.3.0: Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, switched pool constructors to backend options + builders (instead of per-feature constructor permutations), and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
+- 0.1.9: Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).

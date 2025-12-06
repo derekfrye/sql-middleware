@@ -1,4 +1,4 @@
-    # SQL Middleware - A lightweight wrapper SQL backends
+# SQL Middleware - A lightweight wrapper for SQL backends
 
 *Keywords: postgres, sqlite, libsql, turso, deadpool, bb8, async, pool, query builder*
 
@@ -80,6 +80,7 @@ pub async fn set_scores_in_db(
         .select()
         .await
 }
+```
 
 ### SQLite worker helpers
 
@@ -111,6 +112,4 @@ let rows = prepared.query(&[RowValues::Int(1)]).await?;
 assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
 ```
 
-// For more in-depth examples (batch queries, query builder usage, benchmarks),
-// see the project README: <https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md>
-```
+For more in-depth examples (batch queries, query builder usage, benchmarks), see the project README: <https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md>
