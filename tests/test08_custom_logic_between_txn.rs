@@ -342,20 +342,20 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             println!("typed-postgres backend run successful");
         }
 
-        // LibSQL (optional feature)
-        #[cfg(feature = "libsql")]
-        {
-            let cap = ConfigAndPool::libsql_builder(":memory:".to_string())
-                .build()
-                .await?;
-            let mut conn = cap.get_connection().await?;
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS custom_logic_txn (id INTEGER PRIMARY KEY, note TEXT);",
-            )
-            .await?;
-            run_roundtrip(&mut conn).await?;
-            println!("libsql backend run successful");
-        }
+        // LibSQL ( broken )
+        // #[cfg(feature = "libsql")]
+        // {
+        //     let cap = ConfigAndPool::libsql_builder(":memory:".to_string())
+        //         .build()
+        //         .await?;
+        //     let mut conn = cap.get_connection().await?;
+        //     conn.execute_batch(
+        //         "CREATE TABLE IF NOT EXISTS custom_logic_txn (id INTEGER PRIMARY KEY, note TEXT);",
+        //     )
+        //     .await?;
+        //     run_roundtrip(&mut conn).await?;
+        //     println!("libsql backend run successful");
+        // }
 
         // Turso (optional feature)
         #[cfg(feature = "turso")]

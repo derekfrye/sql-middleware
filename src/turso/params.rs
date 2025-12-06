@@ -27,19 +27,27 @@ fn row_value_to_turso_value(value: &RowValues, _for_execute: bool) -> turso::Val
 }
 
 fn convert_params(params: &[RowValues]) -> turso::params::Params {
-    let values: Vec<turso::Value> = params
-        .iter()
-        .map(|p| row_value_to_turso_value(p, false))
-        .collect();
-    turso::params::Params::Positional(values)
+    if params.is_empty() {
+        turso::params::Params::None
+    } else {
+        let values: Vec<turso::Value> = params
+            .iter()
+            .map(|p| row_value_to_turso_value(p, false))
+            .collect();
+        turso::params::Params::Positional(values)
+    }
 }
 
 fn convert_params_for_execute(params: &[RowValues]) -> turso::params::Params {
-    let values: Vec<turso::Value> = params
-        .iter()
-        .map(|p| row_value_to_turso_value(p, true))
-        .collect();
-    turso::params::Params::Positional(values)
+    if params.is_empty() {
+        turso::params::Params::None
+    } else {
+        let values: Vec<turso::Value> = params
+            .iter()
+            .map(|p| row_value_to_turso_value(p, true))
+            .collect();
+        turso::params::Params::Positional(values)
+    }
 }
 
 impl ParamConverter<'_> for Params {

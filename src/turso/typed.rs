@@ -90,16 +90,12 @@ impl TursoConnection<Idle> {
 
     /// Begin an explicit transaction.
     pub async fn begin(mut self) -> Result<TursoConnection<InTx>, SqlMiddlewareDbError> {
-        let conn = self.take_conn()?;
-        conn.query("BEGIN", ())
-            .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso begin error: {e}")))?;
-        Ok(TursoConnection::in_tx(conn))
+        Self::begin_from_conn(self.take_conn()?).await
     }
 
     /// Auto-commit batch (BEGIN/COMMIT around it).
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        let mut tx = TursoConnection::in_tx(self.take_conn()?);
+        let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         tx.execute_batch(sql).await?;
         let idle = tx.commit().await?;
         self.conn = idle.conn;
@@ -112,7 +108,7 @@ impl TursoConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let mut tx = TursoConnection::in_tx(self.take_conn()?);
+        let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         let rows = tx.dml(query, params).await?;
         let idle = tx.commit().await?;
         self.conn = idle.conn;
@@ -125,7 +121,7 @@ impl TursoConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let mut tx = TursoConnection::in_tx(self.take_conn()?);
+        let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         let rows = tx.select(query, params).await?;
         let idle = tx.commit().await?;
         self.conn = idle.conn;
@@ -144,7 +140,7 @@ impl TursoConnection<InTx> {
     /// Commit and return to idle.
     pub async fn commit(self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn_owned()?;
-        conn.query("COMMIT", ()).await.map_err(|e| {
+        conn.execute_batch("COMMIT").await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("turso commit error: {e}"))
         })?;
         Ok(TursoConnection {
@@ -156,7 +152,7 @@ impl TursoConnection<InTx> {
     /// Rollback and return to idle.
     pub async fn rollback(self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn_owned()?;
-        conn.query("ROLLBACK", ()).await.map_err(|e| {
+        conn.execute_batch("ROLLBACK").await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("turso rollback error: {e}"))
         })?;
         Ok(TursoConnection {
@@ -167,15 +163,10 @@ impl TursoConnection<InTx> {
 
     /// Execute batch inside the open transaction.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        let conn = self.conn_mut();
-        let mut stmt = conn.prepare(sql).await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("turso prepare error: {e}"))
-        })?;
-        let _ = stmt
-            .query(())
+        self.conn_mut()
+            .execute_batch(sql)
             .await
-            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso batch error: {e}")))?;
-        Ok(())
+            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso batch error: {e}")))
     }
 
     /// Execute DML inside the open transaction.
@@ -205,16 +196,7 @@ impl TursoConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted = TursoParams::convert_sql_params(params, ConversionMode::Query)?;
-        let rows = self
-            .conn_mut()
-            .query(query, converted.0)
-            .await
-            .map_err(|e| {
-                SqlMiddlewareDbError::ExecutionError(format!("turso tx query error: {e}"))
-            })?;
-
-        crate::turso::query::build_result_set(rows, None).await
+        select_rows(self.conn_mut(), query, params).await
     }
 
     /// Start a query builder within the open transaction.
@@ -229,12 +211,7 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let converted = TursoParams::convert_sql_params(params, ConversionMode::Query)?;
-    let rows = conn
-        .query(query, converted.0)
-        .await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso select error: {e}")))?;
-    crate::turso::query::build_result_set(rows, None).await
+    select_rows(conn, query, params).await
 }
 
 /// Adapter for query builder dml (typed-turso target).
@@ -256,6 +233,33 @@ pub async fn dml(
     Ok(count)
 }
 
+/// Shared helper to run a SELECT against a pooled Turso client and build a `ResultSet`.
+async fn select_rows(
+    conn: &mut PooledConnection<'_, TursoManager>,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let converted = TursoParams::convert_sql_params(params, ConversionMode::Query)?;
+    let mut stmt = conn
+        .prepare(query)
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso prepare error: {e}")))?;
+
+    let cols = stmt
+        .columns()
+        .into_iter()
+        .map(|c| c.name().to_string())
+        .collect::<Vec<_>>();
+    let cols_arc = std::sync::Arc::new(cols);
+
+    let rows = stmt
+        .query(converted.0)
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso query error: {e}")))?;
+
+    crate::turso::query::build_result_set(rows, Some(cols_arc)).await
+}
+
 impl TursoConnection<Idle> {
     fn take_conn(
         &mut self,
@@ -274,6 +278,15 @@ impl TursoConnection<Idle> {
             conn: Some(conn),
             _state: PhantomData,
         }
+    }
+
+    async fn begin_from_conn(
+        conn: PooledConnection<'static, TursoManager>,
+    ) -> Result<TursoConnection<InTx>, SqlMiddlewareDbError> {
+        conn.execute_batch("BEGIN")
+            .await
+            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso begin error: {e}")))?;
+        Ok(TursoConnection::in_tx(conn))
     }
 }
 
