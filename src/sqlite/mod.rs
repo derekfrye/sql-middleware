@@ -18,6 +18,7 @@ pub mod params;
 pub mod prepared;
 pub mod query;
 pub mod transaction;
+pub mod typed;
 
 // Re-export the public API
 #[allow(unused_imports)]
@@ -33,3 +34,5 @@ pub use prepared::SqlitePreparedStatement;
 pub use query::build_result_set;
 #[allow(unused_imports)]
 pub use transaction::{Prepared, Tx, begin_transaction};
+#[allow(unused_imports)]
+pub use typed::{Idle, InTx, SqliteTypedConnection};

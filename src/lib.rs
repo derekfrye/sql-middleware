@@ -18,6 +18,8 @@ pub mod translation;
 pub mod typed_api;
 #[cfg(feature = "postgres")]
 pub mod typed_postgres;
+#[cfg(feature = "sqlite")]
+pub mod typed_sqlite;
 #[cfg(feature = "turso")]
 pub mod typed_turso;
 

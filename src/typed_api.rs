@@ -8,6 +8,8 @@ use crate::{middleware::RowValues, query_builder::QueryBuilder, results::ResultS
 
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::{Idle as PgIdle, InTx as PgInTx, PgConnection};
+#[cfg(feature = "sqlite")]
+use crate::sqlite::typed::{Idle as SqIdle, InTx as SqInTx, SqliteTypedConnection};
 #[cfg(feature = "turso")]
 use crate::turso::typed::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
 
@@ -63,6 +65,8 @@ pub trait TxConn {
 pub enum AnyIdle {
     #[cfg(feature = "postgres")]
     Postgres(PgConnection<PgIdle>),
+    #[cfg(feature = "sqlite")]
+    Sqlite(SqliteTypedConnection<SqIdle>),
     #[cfg(feature = "turso")]
     Turso(TursoConnection<TuIdle>),
 }
@@ -71,6 +75,8 @@ pub enum AnyIdle {
 pub enum AnyTx {
     #[cfg(feature = "postgres")]
     Postgres(PgConnection<PgInTx>),
+    #[cfg(feature = "sqlite")]
+    Sqlite(SqliteTypedConnection<SqInTx>),
     #[cfg(feature = "turso")]
     Turso(TursoConnection<TuInTx>),
 }
@@ -80,6 +86,8 @@ impl Queryable for AnyIdle {
         match self {
             #[cfg(feature = "postgres")]
             AnyIdle::Postgres(conn) => conn.query(_sql),
+            #[cfg(feature = "sqlite")]
+            AnyIdle::Sqlite(conn) => conn.query(_sql),
             #[cfg(feature = "turso")]
             AnyIdle::Turso(conn) => conn.query(_sql),
             #[allow(unreachable_patterns)]
@@ -93,6 +101,8 @@ impl Queryable for AnyTx {
         match self {
             #[cfg(feature = "postgres")]
             AnyTx::Postgres(conn) => conn.query(_sql),
+            #[cfg(feature = "sqlite")]
+            AnyTx::Sqlite(conn) => conn.query(_sql),
             #[cfg(feature = "turso")]
             AnyTx::Turso(conn) => conn.query(_sql),
             #[allow(unreachable_patterns)]
@@ -111,6 +121,8 @@ impl TypedConnOps for AnyIdle {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyIdle::Postgres(conn) => conn.execute_batch(sql).await,
+                #[cfg(feature = "sqlite")]
+                AnyIdle::Sqlite(conn) => conn.execute_batch(sql).await,
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => conn.execute_batch(sql).await,
                 #[allow(unreachable_patterns)]
@@ -129,6 +141,8 @@ impl TypedConnOps for AnyIdle {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyIdle::Postgres(conn) => conn.dml(query, params).await,
+                #[cfg(feature = "sqlite")]
+                AnyIdle::Sqlite(conn) => conn.dml(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => conn.dml(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -147,6 +161,8 @@ impl TypedConnOps for AnyIdle {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyIdle::Postgres(conn) => conn.select(query, params).await,
+                #[cfg(feature = "sqlite")]
+                AnyIdle::Sqlite(conn) => conn.select(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => conn.select(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -166,6 +182,8 @@ impl TypedConnOps for AnyTx {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyTx::Postgres(conn) => conn.execute_batch(sql).await,
+                #[cfg(feature = "sqlite")]
+                AnyTx::Sqlite(conn) => conn.execute_batch(sql).await,
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(conn) => conn.execute_batch(sql).await,
                 #[allow(unreachable_patterns)]
@@ -184,6 +202,8 @@ impl TypedConnOps for AnyTx {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyTx::Postgres(conn) => conn.dml(query, params).await,
+                #[cfg(feature = "sqlite")]
+                AnyTx::Sqlite(conn) => conn.dml(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(conn) => conn.dml(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -202,6 +222,8 @@ impl TypedConnOps for AnyTx {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyTx::Postgres(conn) => conn.select(query, params).await,
+                #[cfg(feature = "sqlite")]
+                AnyTx::Sqlite(conn) => conn.select(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(conn) => conn.select(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -220,6 +242,8 @@ impl BeginTx for AnyIdle {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyIdle::Postgres(conn) => Ok(AnyTx::Postgres(conn.begin().await?)),
+                #[cfg(feature = "sqlite")]
+                AnyIdle::Sqlite(conn) => Ok(AnyTx::Sqlite(conn.begin().await?)),
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => Ok(AnyTx::Turso(conn.begin().await?)),
                 #[allow(unreachable_patterns)]
@@ -238,6 +262,8 @@ impl TxConn for AnyTx {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.commit().await?)),
+                #[cfg(feature = "sqlite")]
+                AnyTx::Sqlite(tx) => Ok(AnyIdle::Sqlite(tx.commit().await?)),
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.commit().await?)),
                 #[allow(unreachable_patterns)]
@@ -254,6 +280,8 @@ impl TxConn for AnyTx {
             match self {
                 #[cfg(feature = "postgres")]
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.rollback().await?)),
+                #[cfg(feature = "sqlite")]
+                AnyTx::Sqlite(tx) => Ok(AnyIdle::Sqlite(tx.rollback().await?)),
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.rollback().await?)),
                 #[allow(unreachable_patterns)]
@@ -449,6 +477,106 @@ impl BeginTx for TursoConnection<TuIdle> {
 #[cfg(feature = "turso")]
 impl TxConn for TursoConnection<TuInTx> {
     type Idle = TursoConnection<TuIdle>;
+
+    #[allow(clippy::manual_async_fn)]
+    fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+        async move { self.commit().await }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn rollback(
+        self,
+    ) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {
+        async move { self.rollback().await }
+    }
+}
+
+// SQLite impls
+#[cfg(feature = "sqlite")]
+impl Queryable for SqliteTypedConnection<SqIdle> {
+    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
+        self.query(sql)
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl Queryable for SqliteTypedConnection<SqInTx> {
+    fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
+        self.query(sql)
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl TypedConnOps for SqliteTypedConnection<SqIdle> {
+    #[allow(clippy::manual_async_fn)]
+    fn execute_batch(
+        &mut self,
+        sql: &str,
+    ) -> impl std::future::Future<Output = Result<(), SqlMiddlewareDbError>> {
+        async move { self.execute_batch(sql).await }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn dml(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> impl std::future::Future<Output = Result<usize, SqlMiddlewareDbError>> {
+        async move { self.dml(query, params).await }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn select(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> impl std::future::Future<Output = Result<ResultSet, SqlMiddlewareDbError>> {
+        async move { self.select(query, params).await }
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl TypedConnOps for SqliteTypedConnection<SqInTx> {
+    #[allow(clippy::manual_async_fn)]
+    fn execute_batch(
+        &mut self,
+        sql: &str,
+    ) -> impl std::future::Future<Output = Result<(), SqlMiddlewareDbError>> {
+        async move { self.execute_batch(sql).await }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn dml(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> impl std::future::Future<Output = Result<usize, SqlMiddlewareDbError>> {
+        async move { self.dml(query, params).await }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn select(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> impl std::future::Future<Output = Result<ResultSet, SqlMiddlewareDbError>> {
+        async move { self.select(query, params).await }
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl BeginTx for SqliteTypedConnection<SqIdle> {
+    type Tx = SqliteTypedConnection<SqInTx>;
+
+    #[allow(clippy::manual_async_fn)]
+    fn begin(self) -> impl std::future::Future<Output = Result<Self::Tx, SqlMiddlewareDbError>> {
+        async move { self.begin().await }
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl TxConn for SqliteTypedConnection<SqInTx> {
+    type Idle = SqliteTypedConnection<SqIdle>;
 
     #[allow(clippy::manual_async_fn)]
     fn commit(self) -> impl std::future::Future<Output = Result<Self::Idle, SqlMiddlewareDbError>> {

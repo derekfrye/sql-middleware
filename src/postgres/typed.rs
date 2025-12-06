@@ -203,3 +203,8 @@ impl PgConnection<InTx> {
         })
     }
 }
+
+// NOTE: Cannot specialize Drop for PgConnection<InTx> in Rust.
+// Users must explicitly call commit() or rollback() to finalize transactions.
+// If dropped without finalizing, Postgres will auto-rollback when the connection
+// is returned to the pool (standard Postgres behavior for uncommitted transactions).

@@ -1,11 +1,13 @@
-#![cfg(all(feature = "postgres", feature = "turso"))]
+#![cfg(all(feature = "postgres", feature = "turso", feature = "sqlite"))]
 
 use sql_middleware::SqlMiddlewareDbError;
 use sql_middleware::middleware::RowValues;
 use sql_middleware::translation::TranslationMode;
 use sql_middleware::typed_api::{AnyIdle, BeginTx, TxConn, TypedConnOps};
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
+use sql_middleware::typed_sqlite::{Idle as SqIdle, SqliteTypedConnection};
 use sql_middleware::typed_turso::{Idle as TuIdle, TursoConnection, TursoManager};
+use sql_middleware::sqlite::config::SqliteManager;
 
 // Backend-agnostic helpers.
 async fn insert_rows(
@@ -113,6 +115,14 @@ fn typed_api_generic_helper_multiple_backends() -> Result<(), Box<dyn std::error
         let tu_pool = TursoManager::new(db).build_pool().await?;
         backends.push(AnyIdle::Turso(
             TursoConnection::<TuIdle>::from_pool(&tu_pool).await?,
+        ));
+
+        // SQLite branch (in-memory).
+        let sq_pool = SqliteManager::new("file::memory:?cache=shared".to_string())
+            .build_pool()
+            .await?;
+        backends.push(AnyIdle::Sqlite(
+            SqliteTypedConnection::<SqIdle>::from_pool(&sq_pool).await?,
         ));
 
         for backend in backends {
