@@ -2,7 +2,11 @@
 //! Provides `PgConnection<Idle>` / `PgConnection<InTx>` using an owned client
 //! and explicit BEGIN/COMMIT/ROLLBACK.
 
-use std::{future::Future, marker::PhantomData};
+use std::{
+    future::Future,
+    marker::PhantomData,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use bb8::{ManageConnection, Pool, PooledConnection};
 use tokio_postgres::{Client, NoTls};
@@ -37,7 +41,19 @@ impl ManageConnection for PgManager {
     fn connect(&self) -> impl Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let cfg = self.config.clone();
         async move {
+            let debug = std::env::var_os("SQL_MIDDLEWARE_PG_DEBUG").is_some();
+            if debug {
+                eprintln!(
+                    "[sql-mw][pg] connect start hosts={:?} db={:?} user={:?}",
+                    cfg.get_hosts(),
+                    cfg.get_dbname(),
+                    cfg.get_user()
+                );
+            }
             let (client, connection) = cfg.connect(NoTls).await?;
+            if debug {
+                eprintln!("[sql-mw][pg] connect established");
+            }
             tokio::spawn(async move {
                 if let Err(_e) = connection.await {
                     // drop error
@@ -62,7 +78,9 @@ impl ManageConnection for PgManager {
 
 /// Typestate wrapper around a pooled Postgres client.
 pub struct PgConnection<State> {
-    conn: PooledConnection<'static, PgManager>,
+    conn: Option<PooledConnection<'static, PgManager>>,
+    /// True when a transaction is in-flight and needs rollback if dropped.
+    needs_rollback: bool,
     _state: PhantomData<State>,
 }
 
@@ -82,26 +100,21 @@ impl PgConnection<Idle> {
         let conn = pool.get_owned().await.map_err(|e| {
             SqlMiddlewareDbError::ConnectionError(format!("postgres checkout error: {e}"))
         })?;
-        Ok(Self {
-            conn,
-            _state: PhantomData,
-        })
+        Ok(Self::new(conn, false))
     }
 
     /// Begin an explicit transaction.
-    pub async fn begin(self) -> Result<PgConnection<InTx>, SqlMiddlewareDbError> {
-        self.conn.simple_query("BEGIN").await.map_err(|e| {
+    pub async fn begin(mut self) -> Result<PgConnection<InTx>, SqlMiddlewareDbError> {
+        let conn = self.take_conn()?;
+        conn.simple_query("BEGIN").await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("postgres begin error: {e}"))
         })?;
-        Ok(PgConnection {
-            conn: self.conn,
-            _state: PhantomData,
-        })
+        Ok(PgConnection::new(conn, true))
     }
 
     /// Auto-commit batch (BEGIN/COMMIT around it).
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        crate::postgres::executor::execute_batch(&mut self.conn, sql).await
+        crate::postgres::executor::execute_batch(self.conn_mut(), sql).await
     }
 
     /// Auto-commit DML.
@@ -110,7 +123,7 @@ impl PgConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        crate::postgres::executor::execute_dml(&mut self.conn, query, params).await
+        crate::postgres::executor::execute_dml(self.conn_mut(), query, params).await
     }
 
     /// Auto-commit SELECT.
@@ -119,12 +132,12 @@ impl PgConnection<Idle> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        crate::postgres::executor::execute_select(&mut self.conn, query, params).await
+        crate::postgres::executor::execute_select(self.conn_mut(), query, params).await
     }
 
     /// Start a query builder (auto-commit per operation).
     pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
-        QueryBuilder::new_target(QueryTarget::from_typed_postgres(&mut self.conn, false), sql)
+        QueryBuilder::new_target(QueryTarget::from_typed_postgres(self.conn_mut(), false), sql)
     }
 }
 
@@ -141,7 +154,7 @@ impl PgConnection<InTx> {
 
     /// Execute batch inside the open transaction.
     pub async fn execute_batch(&mut self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        self.conn.batch_execute(sql).await.map_err(|e| {
+        self.conn_mut().batch_execute(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("postgres tx batch error: {e}"))
         })
     }
@@ -152,7 +165,7 @@ impl PgConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        execute_dml_on_client(&self.conn, query, params, "postgres tx execute error").await
+        execute_dml_on_client(self.conn_mut(), query, params, "postgres tx execute error").await
     }
 
     /// Execute SELECT inside the open transaction.
@@ -161,12 +174,12 @@ impl PgConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        execute_query_on_client(&self.conn, query, params).await
+        execute_query_on_client(self.conn_mut(), query, params).await
     }
 
     /// Start a query builder within the open transaction.
     pub fn query<'a>(&'a mut self, sql: &'a str) -> QueryBuilder<'a, 'a> {
-        QueryBuilder::new_target(QueryTarget::from_typed_postgres(&mut self.conn, true), sql)
+        QueryBuilder::new_target(QueryTarget::from_typed_postgres(self.conn_mut(), true), sql)
     }
 }
 
@@ -190,17 +203,27 @@ pub async fn dml(
 
 impl PgConnection<InTx> {
     async fn finish_tx(
-        self,
+        mut self,
         sql: &str,
         action: &str,
     ) -> Result<PgConnection<Idle>, SqlMiddlewareDbError> {
-        self.conn.simple_query(sql).await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("postgres {action} error: {e}"))
-        })?;
-        Ok(PgConnection {
-            conn: self.conn,
-            _state: PhantomData,
-        })
+        let conn = self.take_conn()?;
+        match conn
+            .simple_query(sql)
+            .await
+            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres {action} error: {e}")))
+        {
+            Ok(_) => {
+                self.needs_rollback = false;
+                Ok(PgConnection::new(conn, false))
+            }
+            Err(err) => {
+                // Best-effort rollback; keep needs_rollback so Drop can retry.
+                let _ = conn.simple_query("ROLLBACK").await;
+                self.conn = Some(conn);
+                Err(err)
+            }
+        }
     }
 }
 
@@ -208,3 +231,49 @@ impl PgConnection<InTx> {
 // Users must explicitly call commit() or rollback() to finalize transactions.
 // If dropped without finalizing, Postgres will auto-rollback when the connection
 // is returned to the pool (standard Postgres behavior for uncommitted transactions).
+fn skip_drop_rollback() -> bool {
+    SKIP_DROP_ROLLBACK.load(Ordering::Relaxed)
+}
+
+static SKIP_DROP_ROLLBACK: AtomicBool = AtomicBool::new(false);
+
+/// Test-only escape hatch to simulate legacy behavior where dropping an in-flight transaction
+/// leaked the transaction back to the pool. Do not use outside tests.
+#[doc(hidden)]
+pub fn set_skip_drop_rollback_for_tests(skip: bool) {
+    SKIP_DROP_ROLLBACK.store(skip, Ordering::Relaxed);
+}
+
+impl<State> Drop for PgConnection<State> {
+    fn drop(&mut self) {
+        if self.needs_rollback && !skip_drop_rollback() {
+            if let Some(conn) = self.conn.take() {
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        let _ = conn.simple_query("ROLLBACK").await;
+                    });
+                }
+            }
+        }
+    }
+}
+
+impl<State> PgConnection<State> {
+    fn new(conn: PooledConnection<'static, PgManager>, needs_rollback: bool) -> Self {
+        Self {
+            conn: Some(conn),
+            needs_rollback,
+            _state: PhantomData,
+        }
+    }
+
+    fn conn_mut(&mut self) -> &mut PooledConnection<'static, PgManager> {
+        self.conn.as_mut().expect("postgres connection already taken")
+    }
+
+    fn take_conn(&mut self) -> Result<PooledConnection<'static, PgManager>, SqlMiddlewareDbError> {
+        self.conn.take().ok_or_else(|| {
+            SqlMiddlewareDbError::ExecutionError("postgres connection already taken".into())
+        })
+    }
+}

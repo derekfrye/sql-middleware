@@ -2,7 +2,12 @@
 //! Provides `TursoConnection<Idle>` / `TursoConnection<InTx>` using an owned Turso connection
 //! with explicit BEGIN/COMMIT/ROLLBACK.
 
-use std::{future::Future, marker::PhantomData};
+use std::{
+    future::Future,
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use bb8::{ManageConnection, Pool, PooledConnection};
 
@@ -63,6 +68,8 @@ impl ManageConnection for TursoManager {
 /// Typestate wrapper around a pooled Turso connection.
 pub struct TursoConnection<State> {
     conn: Option<PooledConnection<'static, TursoManager>>,
+    /// True when a transaction is in-flight and needs rollback if dropped.
+    needs_rollback: bool,
     _state: PhantomData<State>,
 }
 
@@ -84,6 +91,7 @@ impl TursoConnection<Idle> {
         })?;
         Ok(Self {
             conn: Some(conn),
+            needs_rollback: false,
             _state: PhantomData,
         })
     }
@@ -98,7 +106,7 @@ impl TursoConnection<Idle> {
         let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         tx.execute_batch(sql).await?;
         let idle = tx.commit().await?;
-        self.conn = idle.conn;
+        self.conn = idle.into_conn();
         Ok(())
     }
 
@@ -111,7 +119,7 @@ impl TursoConnection<Idle> {
         let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         let rows = tx.dml(query, params).await?;
         let idle = tx.commit().await?;
-        self.conn = idle.conn;
+        self.conn = idle.into_conn();
         Ok(rows)
     }
 
@@ -124,7 +132,7 @@ impl TursoConnection<Idle> {
         let mut tx = Self::begin_from_conn(self.take_conn()?).await?;
         let rows = tx.select(query, params).await?;
         let idle = tx.commit().await?;
-        self.conn = idle.conn;
+        self.conn = idle.into_conn();
         Ok(rows)
     }
 
@@ -138,27 +146,41 @@ use crate::results::ResultSet;
 
 impl TursoConnection<InTx> {
     /// Commit and return to idle.
-    pub async fn commit(self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
+    pub async fn commit(mut self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn_owned()?;
-        conn.execute_batch("COMMIT").await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("turso commit error: {e}"))
-        })?;
-        Ok(TursoConnection {
-            conn: Some(conn),
-            _state: PhantomData,
-        })
+        match conn.execute_batch("COMMIT").await {
+            Ok(_) => Ok(TursoConnection {
+                conn: Some(conn),
+                needs_rollback: false,
+                _state: PhantomData,
+            }),
+            Err(e) => {
+                // Best-effort rollback; keep needs_rollback so Drop can retry if needed.
+                let _ = conn.execute_batch("ROLLBACK").await;
+                self.conn = Some(conn);
+                Err(SqlMiddlewareDbError::ExecutionError(format!(
+                    "turso commit error: {e}"
+                )))
+            }
+        }
     }
 
     /// Rollback and return to idle.
-    pub async fn rollback(self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
+    pub async fn rollback(mut self) -> Result<TursoConnection<Idle>, SqlMiddlewareDbError> {
         let conn = self.take_conn_owned()?;
-        conn.execute_batch("ROLLBACK").await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("turso rollback error: {e}"))
-        })?;
-        Ok(TursoConnection {
-            conn: Some(conn),
-            _state: PhantomData,
-        })
+        match conn.execute_batch("ROLLBACK").await {
+            Ok(_) => Ok(TursoConnection {
+                conn: Some(conn),
+                needs_rollback: false,
+                _state: PhantomData,
+            }),
+            Err(e) => {
+                self.conn = Some(conn);
+                Err(SqlMiddlewareDbError::ExecutionError(format!(
+                    "turso rollback error: {e}"
+                )))
+            }
+        }
     }
 
     /// Execute batch inside the open transaction.
@@ -276,6 +298,7 @@ impl TursoConnection<Idle> {
     fn in_tx(conn: PooledConnection<'static, TursoManager>) -> TursoConnection<InTx> {
         TursoConnection {
             conn: Some(conn),
+            needs_rollback: true,
             _state: PhantomData,
         }
     }
@@ -292,7 +315,7 @@ impl TursoConnection<Idle> {
 
 impl TursoConnection<InTx> {
     fn take_conn_owned(
-        mut self,
+        &mut self,
     ) -> Result<PooledConnection<'static, TursoManager>, SqlMiddlewareDbError> {
         self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("turso connection already taken".into())
@@ -301,5 +324,45 @@ impl TursoConnection<InTx> {
 
     fn conn_mut(&mut self) -> &mut PooledConnection<'static, TursoManager> {
         self.conn.as_mut().expect("turso connection already taken")
+    }
+}
+
+fn skip_drop_rollback() -> bool {
+    SKIP_DROP_ROLLBACK.load(Ordering::Relaxed)
+}
+
+static SKIP_DROP_ROLLBACK: AtomicBool = AtomicBool::new(false);
+
+/// Test-only escape hatch to simulate legacy behavior where dropping an in-flight transaction
+/// leaked the transaction back to the pool. Do not use outside tests.
+#[doc(hidden)]
+pub fn set_skip_drop_rollback_for_tests(skip: bool) {
+    SKIP_DROP_ROLLBACK.store(skip, Ordering::Relaxed);
+}
+
+impl<State> Drop for TursoConnection<State> {
+    fn drop(&mut self) {
+        if self.needs_rollback && !skip_drop_rollback() {
+            if let Some(conn) = self.conn.take() {
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        let _ = conn.execute_batch("ROLLBACK").await;
+                    });
+                }
+            }
+        }
+    }
+}
+
+impl<State> TursoConnection<State> {
+    fn into_conn(mut self) -> Option<PooledConnection<'static, TursoManager>> {
+        debug_assert!(
+            !self.needs_rollback,
+            "into_conn should only be called when rollback not needed"
+        );
+        let conn = self.conn.take();
+        // Prevent Drop from running (which could try to rollback a finished tx).
+        let _ = ManuallyDrop::new(self);
+        conn
     }
 }

@@ -4,8 +4,10 @@
 
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bb8::{Pool, PooledConnection};
+use tokio::runtime::Handle;
 use tokio::task::spawn_blocking;
 
 use crate::executor::QueryTarget;
@@ -122,36 +124,60 @@ impl SqliteTypedConnection<Idle> {
 impl SqliteTypedConnection<InTx> {
     /// Commit and return to idle.
     pub async fn commit(mut self) -> Result<SqliteTypedConnection<Idle>, SqlMiddlewareDbError> {
-        self.needs_rollback = false; // Transaction finalized, no rollback needed
-        let conn = self.take_conn_owned()?;
-        run_blocking(Arc::clone(&*conn), |guard| {
+        let conn_handle = self.conn_handle()?;
+        let commit_result = run_blocking(Arc::clone(&conn_handle), |guard| {
             guard
                 .execute_batch("COMMIT")
                 .map_err(SqlMiddlewareDbError::SqliteError)
         })
-        .await?;
-        Ok(SqliteTypedConnection {
-            conn: Some(conn),
-            needs_rollback: false,
-            _state: PhantomData,
-        })
+        .await;
+
+        match commit_result {
+            Ok(()) => {
+                let conn = self.take_conn_owned()?;
+                Ok(SqliteTypedConnection {
+                    conn: Some(conn),
+                    needs_rollback: false,
+                    _state: PhantomData,
+                })
+            }
+            Err(err) => {
+                // Best-effort rollback; keep needs_rollback = true so Drop can retry if needed.
+                let _ = run_blocking(conn_handle, |guard| {
+                    guard
+                        .execute_batch("ROLLBACK")
+                        .map_err(SqlMiddlewareDbError::SqliteError)
+                })
+                .await;
+                Err(err)
+            }
+        }
     }
 
     /// Rollback and return to idle.
     pub async fn rollback(mut self) -> Result<SqliteTypedConnection<Idle>, SqlMiddlewareDbError> {
-        self.needs_rollback = false; // Transaction finalized, no rollback needed
-        let conn = self.take_conn_owned()?;
-        run_blocking(Arc::clone(&*conn), |guard| {
+        let conn_handle = self.conn_handle()?;
+        let rollback_result = run_blocking(Arc::clone(&conn_handle), |guard| {
             guard
                 .execute_batch("ROLLBACK")
                 .map_err(SqlMiddlewareDbError::SqliteError)
         })
-        .await?;
-        Ok(SqliteTypedConnection {
-            conn: Some(conn),
-            needs_rollback: false,
-            _state: PhantomData,
-        })
+        .await;
+
+        match rollback_result {
+            Ok(()) => {
+                let conn = self.take_conn_owned()?;
+                Ok(SqliteTypedConnection {
+                    conn: Some(conn),
+                    needs_rollback: false,
+                    _state: PhantomData,
+                })
+            }
+            Err(err) => {
+                // Keep connection + needs_rollback so Drop can attempt cleanup.
+                Err(err)
+            }
+        }
     }
 
     /// Execute batch inside the open transaction.
@@ -231,20 +257,37 @@ impl SqliteTypedConnection<InTx> {
 
 impl<State> Drop for SqliteTypedConnection<State> {
     fn drop(&mut self) {
-        if self.needs_rollback
-            && let Some(conn) = self.conn.take()
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
-        {
-            let conn_handle = Arc::clone(&*conn);
-            handle.spawn(async move {
-                let _ = spawn_blocking(move || {
+        if self.needs_rollback && !skip_drop_rollback() {
+            if let Some(conn) = self.conn.take() {
+                let conn_handle = Arc::clone(&*conn);
+                if let Ok(handle) = Handle::try_current() {
+                    handle.spawn(async move {
+                        let _ = spawn_blocking(move || {
+                            let guard = conn_handle.blocking_lock();
+                            let _ = guard.execute_batch("ROLLBACK");
+                        })
+                        .await;
+                    });
+                } else {
                     let guard = conn_handle.blocking_lock();
                     let _ = guard.execute_batch("ROLLBACK");
-                })
-                .await;
-            });
+                }
+            }
         }
     }
+}
+
+fn skip_drop_rollback() -> bool {
+    SKIP_DROP_ROLLBACK.load(Ordering::Relaxed)
+}
+
+static SKIP_DROP_ROLLBACK: AtomicBool = AtomicBool::new(false);
+
+/// Test-only escape hatch to simulate legacy behavior where dropping an in-flight transaction
+/// leaked the transaction back to the pool. Do not use outside tests.
+#[doc(hidden)]
+pub fn set_skip_drop_rollback_for_tests(skip: bool) {
+    SKIP_DROP_ROLLBACK.store(skip, Ordering::Relaxed);
 }
 
 /// Adapter for query builder select (typed-sqlite target).
