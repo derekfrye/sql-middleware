@@ -1,8 +1,7 @@
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use chrono::NaiveDateTime;
-use deadpool_postgres::Transaction;
 use serde_json::Value;
-use tokio_postgres::{Statement, types::ToSql};
+use tokio_postgres::{Statement, Transaction, types::ToSql};
 
 /// Build a result set from a Postgres query execution
 ///

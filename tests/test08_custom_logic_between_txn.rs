@@ -8,8 +8,8 @@
 use std::env;
 
 use sql_middleware::middleware::{
-    ConfigAndPool, MiddlewarePoolConnection, PlaceholderStyle, RowValues, SqlMiddlewareDbError,
-    translate_placeholders,
+    ConfigAndPool, MiddlewarePoolConnection, PgConfig, PlaceholderStyle, RowValues,
+    SqlMiddlewareDbError, translate_placeholders,
 };
 use tokio::runtime::Runtime;
 
@@ -34,8 +34,8 @@ use sql_middleware::turso::{
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 
 #[cfg(feature = "postgres")]
-fn postgres_config() -> deadpool_postgres::Config {
-    let mut cfg = deadpool_postgres::Config::new();
+fn postgres_config() -> PgConfig {
+    let mut cfg = PgConfig::new();
     cfg.dbname = Some("testing".to_string());
     cfg.host = Some("10.3.0.201".to_string());
     cfg.port = Some(5432);
@@ -336,24 +336,7 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
         #[cfg(all(feature = "postgres", feature = "postgres"))]
         {
             let cfg = postgres_config();
-            let mut pg_cfg = tokio_postgres::Config::new();
-            if let Some(user) = cfg.user.as_deref() {
-                pg_cfg.user(user);
-            }
-            if let Some(password) = cfg.password.as_deref() {
-                pg_cfg.password(password);
-            }
-            if let Some(host) = cfg.host.as_deref() {
-                pg_cfg.host(host);
-            }
-            if let Some(port) = cfg.port {
-                pg_cfg.port(port);
-            }
-            if let Some(dbname) = cfg.dbname.as_deref() {
-                pg_cfg.dbname(dbname);
-            }
-
-            let pool = PgManager::new(pg_cfg).build_pool().await?;
+            let pool = PgManager::new(cfg.to_tokio_config()).build_pool().await?;
             let typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
             run_typed_pg_roundtrip(typed_conn).await?;
             println!("typed-postgres backend run successful");

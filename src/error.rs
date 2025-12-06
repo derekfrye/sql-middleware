@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+#[cfg(feature = "postgres")]
+use bb8;
 #[cfg(feature = "libsql")]
 use deadpool_libsql;
 #[cfg(feature = "sqlite")]
@@ -27,7 +29,7 @@ pub enum SqlMiddlewareDbError {
 
     #[cfg(feature = "postgres")]
     #[error(transparent)]
-    PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
+    PoolErrorPostgres(#[from] bb8::RunError<tokio_postgres::Error>),
 
     #[cfg(feature = "mssql")]
     #[error(transparent)]

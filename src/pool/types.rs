@@ -1,5 +1,7 @@
 #[cfg(feature = "postgres")]
-use deadpool_postgres::Pool as DeadpoolPostgresPool;
+use crate::postgres::typed::PgManager;
+#[cfg(feature = "postgres")]
+use bb8::Pool as PostgresPool;
 
 #[cfg(feature = "sqlite")]
 use crate::sqlite::config::SqliteManager;
@@ -24,7 +26,7 @@ use crate::error::SqlMiddlewareDbError;
 pub enum MiddlewarePool {
     /// `PostgreSQL` connection pool
     #[cfg(feature = "postgres")]
-    Postgres(DeadpoolPostgresPool),
+    Postgres(PostgresPool<PgManager>),
     /// `SQLite` connection pool
     #[cfg(feature = "sqlite")]
     Sqlite(Bb8SqlitePool<SqliteManager>),

@@ -1,5 +1,5 @@
 use super::super::SHARED_RUNTIME;
-use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PostgresOptions};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PgConfig, PostgresOptions};
 
 #[cfg(feature = "test-utils")]
 use postgresql_embedded::PostgreSQL;
@@ -11,7 +11,7 @@ pub struct EmbeddedPostgres {
     pub port: u16,
     pub database_url: String,
     /// The actual working configuration with correct credentials
-    pub config: deadpool_postgres::Config,
+    pub config: PgConfig,
 }
 
 /// Set up an embedded `PostgreSQL` instance for testing or benchmarking.
@@ -24,7 +24,7 @@ pub struct EmbeddedPostgres {
 /// Panics if `cfg.dbname` is `None` because the target database name is required.
 #[cfg(feature = "test-utils")]
 pub fn setup_postgres_embedded(
-    cfg: &deadpool_postgres::Config,
+    cfg: &PgConfig,
 ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
     SHARED_RUNTIME.block_on(async {
         let mut postgresql = PostgreSQL::default();
@@ -138,7 +138,7 @@ pub fn stop_postgres_embedded(postgres: EmbeddedPostgres) {
 /// See [`setup_postgres_embedded`].
 #[cfg(feature = "test-utils")]
 pub fn setup_postgres_container(
-    cfg: &deadpool_postgres::Config,
+    cfg: &PgConfig,
 ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
     setup_postgres_embedded(cfg)
 }

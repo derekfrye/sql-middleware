@@ -1,6 +1,44 @@
+use super::typed::PgManager;
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
-use deadpool_postgres::Config as PgConfig;
-use tokio_postgres::NoTls;
+
+/// Minimal Postgres configuration (keeps the public API backward-compatible
+/// with the old `deadpool_postgres::Config` usage).
+#[derive(Clone, Debug, Default)]
+pub struct PgConfig {
+    pub dbname: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+}
+
+impl PgConfig {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn to_tokio_config(&self) -> tokio_postgres::Config {
+        let mut cfg = tokio_postgres::Config::new();
+        if let Some(dbname) = &self.dbname {
+            cfg.dbname(dbname);
+        }
+        if let Some(host) = &self.host {
+            cfg.host(host);
+        }
+        if let Some(port) = self.port {
+            cfg.port(port);
+        }
+        if let Some(user) = &self.user {
+            cfg.user(user);
+        }
+        if let Some(password) = &self.password {
+            cfg.password(password);
+        }
+        cfg
+    }
+}
 
 /// Options for configuring a Postgres pool.
 #[derive(Clone)]
@@ -104,13 +142,8 @@ impl ConfigAndPool {
         }
 
         // Attempt to create connection pool
-        let pg_pool = pg_config
-            .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
-            .map_err(|e| {
-                SqlMiddlewareDbError::ConnectionError(format!(
-                    "Failed to create Postgres pool: {e}"
-                ))
-            })?;
+        let manager = PgManager::new(pg_config.to_tokio_config());
+        let pg_pool = manager.build_pool().await?;
 
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Postgres(pg_pool),

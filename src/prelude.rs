@@ -17,7 +17,7 @@ pub use crate::libsql::{
 #[cfg(feature = "mssql")]
 pub use crate::mssql::{MssqlOptions, MssqlOptionsBuilder};
 #[cfg(feature = "postgres")]
-pub use crate::postgres::{PostgresOptions, PostgresOptionsBuilder};
+pub use crate::postgres::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
 #[cfg(feature = "sqlite")]
 pub use crate::sqlite::{SqliteOptions, SqliteOptionsBuilder};
 pub use crate::translation::{

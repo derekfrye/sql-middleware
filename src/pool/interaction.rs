@@ -1,6 +1,6 @@
 use super::connection::MiddlewarePoolConnection;
 use crate::error::SqlMiddlewareDbError;
-use crate::query::AnyConnWrapper;
+use crate::pool::AnyConnWrapper;
 
 impl MiddlewarePoolConnection {
     /// Interact with the connection asynchronously
@@ -19,8 +19,8 @@ impl MiddlewarePoolConnection {
         match self {
             #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres { client: pg_obj, .. } => {
-                // Assuming PostgresObject dereferences to tokio_postgres::Client
-                let client: &mut tokio_postgres::Client = pg_obj.as_mut();
+                // `PooledConnection` dereferences to the underlying `tokio_postgres::Client`.
+                let client: &mut tokio_postgres::Client = &mut **pg_obj;
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
             #[cfg(feature = "mssql")]

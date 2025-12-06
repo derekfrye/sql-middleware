@@ -4,6 +4,7 @@
 use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 
+use sql_middleware::middleware::PgConfig;
 use sql_middleware::middleware::{
     ConfigAndPool, ConversionMode, MiddlewarePoolConnection, PostgresOptions, QueryAndParams,
     RowValues,
@@ -23,24 +24,8 @@ use std::vec;
 use tokio::runtime::Runtime;
 
 #[cfg(feature = "postgres")]
-fn build_typed_pg_config(cfg: &deadpool_postgres::Config) -> tokio_postgres::Config {
-    let mut pg_cfg = tokio_postgres::Config::new();
-    if let Some(user) = cfg.user.as_deref() {
-        pg_cfg.user(user);
-    }
-    if let Some(password) = cfg.password.as_deref() {
-        pg_cfg.password(password);
-    }
-    if let Some(host) = cfg.host.as_deref() {
-        pg_cfg.host(host);
-    }
-    if let Some(port) = cfg.port {
-        pg_cfg.port(port);
-    }
-    if let Some(dbname) = cfg.dbname.as_deref() {
-        pg_cfg.dbname(dbname);
-    }
-    pg_cfg
+fn build_typed_pg_config(cfg: &PgConfig) -> tokio_postgres::Config {
+    cfg.to_tokio_config()
 }
 
 #[allow(clippy::too_many_lines)]
@@ -52,7 +37,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
     let db_pass = "test_passwordx(!323341";
     let db_name = "test_db";
 
-    let mut cfg = deadpool_postgres::Config::new();
+    let mut cfg = PgConfig::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.host = Some("localhost".to_string());
     // cfg.port = Some(port);

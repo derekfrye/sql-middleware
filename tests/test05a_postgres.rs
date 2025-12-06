@@ -11,7 +11,7 @@ use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 
 #[test]
 fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cfg = deadpool_postgres::Config::new();
+    let mut cfg = PgConfig::new();
     cfg.dbname = Some("test_db".to_string());
     cfg.host = Some("localhost".to_string());
 
@@ -56,17 +56,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         #[cfg(feature = "postgres")]
         {
             // Exercise the typestate API against the same backend using a separate table.
-            let mut pg_cfg = tokio_postgres::Config::new();
-            pg_cfg
-                .user(real_cfg.user.as_deref().unwrap_or("postgres"))
-                .password(real_cfg.password.as_deref().unwrap_or_default())
-                .host(real_cfg.host.as_deref().unwrap_or("localhost"));
-            if let Some(port) = real_cfg.port {
-                pg_cfg.port(port);
-            }
-            if let Some(dbname) = &real_cfg.dbname {
-                pg_cfg.dbname(dbname);
-            }
+            let pg_cfg = real_cfg.to_tokio_config();
 
             let pool = PgManager::new(pg_cfg).build_pool().await?;
             let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;

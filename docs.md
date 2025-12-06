@@ -1,6 +1,6 @@
     # SQL Middleware - A lightweight wrapper SQL backends
 
-*Keywords: postgres, sqlite, libsql, turso, deadpool, async, pool, query builder*
+*Keywords: postgres, sqlite, libsql, turso, deadpool, bb8, async, pool, query builder*
 
 This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
 similar, async-compatible API consistent across databases.
@@ -9,7 +9,7 @@ similar, async-compatible API consistent across databases.
 
 - Similar API regardless of backend (as much as possible)
 - Asynchronous (where available)
-- `deadpool` connection pooling (where available)
+- Connection pooling via `bb8` (Postgres/SQLite) and `deadpool` (LibSQL/SQL Server)
 - Transaction support
 - Not an ORM
 

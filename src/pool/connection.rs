@@ -1,5 +1,5 @@
 #[cfg(feature = "postgres")]
-use deadpool_postgres::Object as PostgresObject;
+use bb8::PooledConnection;
 
 #[cfg(feature = "sqlite")]
 use crate::sqlite::{SqliteConnection, SqlitePreparedStatement};
@@ -15,11 +15,13 @@ use turso::Connection as TursoConnection;
 
 use super::types::MiddlewarePool;
 use crate::error::SqlMiddlewareDbError;
+#[cfg(feature = "postgres")]
+use crate::postgres::typed::PgManager;
 
 pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
     Postgres {
-        client: PostgresObject,
+        client: PooledConnection<'static, PgManager>,
         translate_placeholders: bool,
     },
     #[cfg(feature = "sqlite")]
@@ -77,8 +79,8 @@ impl MiddlewarePool {
         match pool {
             #[cfg(feature = "postgres")]
             MiddlewarePool::Postgres(pool) => {
-                let conn: PostgresObject = pool
-                    .get()
+                let conn = pool
+                    .get_owned()
                     .await
                     .map_err(SqlMiddlewareDbError::PoolErrorPostgres)?;
                 Ok(MiddlewarePoolConnection::Postgres {

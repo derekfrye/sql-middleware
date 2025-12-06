@@ -1,5 +1,6 @@
 #[cfg(all(test, feature = "test-utils"))]
 mod threading_tests {
+    use crate::middleware::PgConfig;
     use crate::test_utils::SHARED_RUNTIME;
     use crate::test_utils::postgres::embedded::*;
     use std::thread;
@@ -65,7 +66,7 @@ mod threading_tests {
         let db_pass = "password";
         let db_name = "test_db";
 
-        let mut cfg = deadpool_postgres::Config::new();
+        let mut cfg = PgConfig::new();
         cfg.dbname = Some(db_name.to_string());
         cfg.user = Some(db_user.to_string());
         cfg.password = Some(db_pass.to_string());
@@ -100,7 +101,7 @@ mod threading_tests {
                     let db_pass = "password";
                     let db_name = format!("test_db_{i}");
 
-                    let mut cfg = deadpool_postgres::Config::new();
+                    let mut cfg = PgConfig::new();
                     cfg.dbname = Some(db_name);
                     cfg.user = Some(db_user.to_string());
                     cfg.password = Some(db_pass.to_string());

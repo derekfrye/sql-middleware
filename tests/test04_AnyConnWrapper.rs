@@ -11,7 +11,7 @@ use sql_middleware::{
     SqlMiddlewareDbError, convert_sql_params,
     middleware::{
         AnyConnWrapper, ConfigAndPool as ConfigAndPool2, ConversionMode, DatabaseType,
-        MiddlewarePoolConnection, QueryAndParams, RowValues,
+        MiddlewarePoolConnection, PgConfig, QueryAndParams, RowValues,
     },
 };
 use tokio::runtime::Runtime;
@@ -60,7 +60,7 @@ fn assemble_test_cases() -> Result<Vec<TestCase>, Box<dyn std::error::Error>> {
     ];
     #[cfg(feature = "postgres")]
     {
-        let mut cfg = deadpool_postgres::Config::new();
+        let mut cfg = PgConfig::new();
         cfg.dbname = Some("testing".to_string());
         cfg.host = Some("10.3.0.201".to_string());
         cfg.port = Some(5432);
@@ -217,7 +217,7 @@ async fn reset_backend(
 enum TestCase {
     Sqlite(String),
     #[cfg(feature = "postgres")]
-    Postgres(Box<deadpool_postgres::Config>),
+    Postgres(Box<PgConfig>),
     #[cfg(feature = "mssql")]
     Mssql(MssqlOptions),
     #[cfg(feature = "turso")]

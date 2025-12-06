@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 
 // Test utilities module - only compiled with test-utils feature
+#[path = "test_utils/test_helpers.rs"]
+pub mod test_helpers;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
@@ -27,8 +29,6 @@ pub mod pool;
 pub mod query;
 
 // Internal modules (types are re-exported; modules stay private)
-pub(crate) mod exports;
-pub(crate) mod helpers;
 pub(crate) mod query_builder;
 pub(crate) mod results;
 pub(crate) mod types;
@@ -58,7 +58,7 @@ pub use middleware::{
 #[cfg(feature = "mssql")]
 pub use middleware::{MssqlOptions, MssqlOptionsBuilder};
 #[cfg(feature = "postgres")]
-pub use middleware::{PostgresOptions, PostgresOptionsBuilder};
+pub use middleware::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
 #[cfg(feature = "sqlite")]
 pub use middleware::{SqliteOptions, SqliteOptionsBuilder};
 #[cfg(feature = "turso")]
@@ -67,8 +67,3 @@ pub use middleware::{TursoOptions, TursoOptionsBuilder};
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;
 pub use translation::{PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders};
-
-// Compatibility alias for existing code
-pub mod test_helpers {
-    pub use crate::helpers::create_test_row;
-}

@@ -2,7 +2,7 @@
 
 ![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
 
-Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), experimental [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with [deadpool](https://github.com/deadpool-rs/deadpool) connection pooling (except Turso, which doesn't have deadpool backend yet), and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), experimental [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with bb8-backed pools for Postgres/SQLite (and Turso handles) plus [deadpool](https://github.com/deadpool-rs/deadpool) pools for LibSQL/SQL Server, and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
 
 Motivated from trying SQLx and not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192). 
 
@@ -12,7 +12,7 @@ See also: [API test coverage](docs/api_test_coverage.md) for a map of the public
 
 ## Goals
 * Convenience functions for common async SQL query patterns
-* Keep underlying flexibility of `deadpool` connection pooling
+* Keep underlying flexibility of connection pooling (`bb8` for Postgres/SQLite, `deadpool` where available)
 * Minimal overhead (ideally, just syntax sugar/wrapper fns)
 * See [Benchmarks](/docs/Benchmarks.md) for details on performance testing.
 
@@ -34,7 +34,7 @@ Available features:
 - `postgres`: Enables PostgreSQL support
 - `mssql`: Enables SQL Server support
 - `libsql`: Enables LibSQL support (local or remote)
-- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. No deadpool support (yet).
+- `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. Uses direct handles (no pool backend yet).
 - `default`: Enables common backends (sqlite, postgres). Enable others as needed.
 - `test-utils`: Enables test utilities for internal testing
 

@@ -12,6 +12,7 @@ pub mod params;
 pub mod prepared;
 pub mod query;
 pub mod transaction;
+pub mod typed;
 
 // Re-export the public API for convenience
 pub use config::{TursoOptions, TursoOptionsBuilder};
@@ -20,3 +21,4 @@ pub use params::Params;
 pub use prepared::TursoNonTxPreparedStatement;
 pub use query::build_result_set;
 pub use transaction::{Prepared, Tx, begin_transaction};
+pub use typed::{Idle as TypedIdle, InTx as TypedInTx, TursoConnection, TursoManager};

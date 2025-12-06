@@ -11,14 +11,14 @@ use crate::libsql;
 use crate::mssql;
 #[cfg(feature = "postgres")]
 use crate::postgres;
+#[cfg(feature = "postgres")]
+use crate::postgres::typed::PgManager;
 #[cfg(feature = "sqlite")]
 use crate::sqlite;
 #[cfg(feature = "sqlite")]
 use crate::sqlite::config::SqliteManager;
 #[cfg(feature = "turso")]
 use crate::turso;
-#[cfg(feature = "postgres")]
-use crate::typed_postgres::PgManager;
 #[cfg(feature = "turso")]
 use crate::typed_turso::TursoManager;
 #[cfg(any(feature = "postgres", feature = "turso", feature = "sqlite"))]

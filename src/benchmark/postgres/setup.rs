@@ -1,4 +1,4 @@
-use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PostgresOptions};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PgConfig, PostgresOptions};
 use postgresql_embedded::PostgreSQL;
 
 const POSTGRES_BENCH_DDL: &str = "CREATE TABLE IF NOT EXISTS test (
@@ -15,12 +15,8 @@ pub(super) struct InstanceSettings {
     pub password: String,
 }
 
-pub(super) fn build_base_config(
-    db_user: &str,
-    db_pass: &str,
-    db_name: &str,
-) -> deadpool_postgres::Config {
-    let mut cfg = deadpool_postgres::Config::new();
+pub(super) fn build_base_config(db_user: &str, db_pass: &str, db_name: &str) -> PgConfig {
+    let mut cfg = PgConfig::new();
     cfg.dbname = Some(db_name.to_string());
     cfg.user = Some(db_user.to_string());
     cfg.password = Some(db_pass.to_string());
@@ -28,11 +24,11 @@ pub(super) fn build_base_config(
 }
 
 pub(super) fn build_final_config(
-    base_cfg: &deadpool_postgres::Config,
+    base_cfg: &PgConfig,
     settings: &InstanceSettings,
     user: &str,
     password: &str,
-) -> deadpool_postgres::Config {
+) -> PgConfig {
     let mut final_cfg = base_cfg.clone();
     final_cfg.port = Some(settings.port);
     final_cfg.host = Some(settings.host.clone());
@@ -63,7 +59,7 @@ pub(super) async fn start_postgres_instance(
 pub(super) async fn ensure_target_user(
     db_user: &str,
     db_pass: &str,
-    base_cfg: &deadpool_postgres::Config,
+    base_cfg: &PgConfig,
     settings: &InstanceSettings,
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
     if db_user == settings.username {

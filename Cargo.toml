@@ -17,7 +17,7 @@ unsafe_code = "deny"
 [features]
 default = ["postgres", "sqlite"]
 sqlite = ["dep:rusqlite", "dep:bb8", "dep:bb8-rusqlite"]
-postgres = ["dep:tokio-postgres", "dep:deadpool-postgres", "dep:bb8"]
+postgres = ["dep:tokio-postgres", "dep:bb8"]
 typed-postgres = ["postgres"] # compatibility alias; typed API is always on when postgres is enabled
 mssql = ["dep:tiberius", "dep:deadpool-tiberius", "dep:futures-util"]
 libsql = ["dep:deadpool-libsql"]
@@ -35,14 +35,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio-postgres = { version = "0", features = ["with-chrono-0_4", "with-serde_json-1"], optional = true }
 chrono = {version = "0", features = ["serde"] }
-deadpool-postgres = { version = "0", optional = true }
 regex = "1"
 clap = { version = "4", features = ["derive"] }
-deadpool = "0"
+
 thiserror = "2"
 async-trait = "0"
 # SQL Server dependencies
 tiberius = { version = "0", features = ["chrono", "sql-browser-tokio"], optional = true }
+deadpool = "0"
 deadpool-tiberius = { version = "0", optional = true }
 futures-util = { version = "0", optional = true }
 lazy_static = "1"

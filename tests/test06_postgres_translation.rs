@@ -119,36 +119,20 @@ async fn typed_translation_skip_comments_and_literals(
 }
 
 #[cfg(feature = "postgres")]
-fn build_typed_pg_config(cfg: &deadpool_postgres::Config) -> tokio_postgres::Config {
-    let mut pg_cfg = tokio_postgres::Config::new();
-    if let Some(user) = cfg.user.as_deref() {
-        pg_cfg.user(user);
-    }
-    if let Some(password) = cfg.password.as_deref() {
-        pg_cfg.password(password);
-    }
-    if let Some(host) = cfg.host.as_deref() {
-        pg_cfg.host(host);
-    }
-    if let Some(port) = cfg.port {
-        pg_cfg.port(port);
-    }
-    if let Some(dbname) = cfg.dbname.as_deref() {
-        pg_cfg.dbname(dbname);
-    }
-    pg_cfg
+fn build_typed_pg_config(cfg: &PgConfig) -> tokio_postgres::Config {
+    cfg.to_tokio_config()
 }
 
 #[test]
 fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let mut cfg = deadpool_postgres::Config::new();
+        let mut cfg = PgConfig::new();
         cfg.dbname = Some("testing".to_string());
         cfg.host = Some("10.3.0.201".to_string());
         cfg.port = Some(5432);
         cfg.user = Some("testuser".to_string()); // default user
-        // Deadpool requires a password field; default to empty for trust auth, allow env override.
+        // Default to empty for trust auth, allow env override when a password is needed.
         cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
         #[cfg(feature = "postgres")]
@@ -196,7 +180,7 @@ fn postgres_url_literal_vs_placeholder() -> Result<(), Box<dyn std::error::Error
 fn postgres_translation_force_on_override_default_off() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let mut cfg = deadpool_postgres::Config::new();
+        let mut cfg = PgConfig::new();
         cfg.dbname = Some("testing".to_string());
         cfg.host = Some("10.3.0.201".to_string());
         cfg.port = Some(5432);
@@ -240,7 +224,7 @@ fn postgres_translation_force_on_override_default_off() -> Result<(), Box<dyn st
 fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let mut cfg = deadpool_postgres::Config::new();
+        let mut cfg = PgConfig::new();
         cfg.dbname = Some("testing".to_string());
         cfg.host = Some("10.3.0.201".to_string());
         cfg.port = Some(5432);
@@ -275,7 +259,7 @@ fn postgres_translation_force_off_with_pool_default_on() -> Result<(), Box<dyn s
 fn postgres_translation_skips_comments_and_literals() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let mut cfg = deadpool_postgres::Config::new();
+        let mut cfg = PgConfig::new();
         cfg.dbname = Some("testing".to_string());
         cfg.host = Some("10.3.0.201".to_string());
         cfg.port = Some(5432);

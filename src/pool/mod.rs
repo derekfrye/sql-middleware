@@ -1,7 +1,9 @@
+pub mod any_conn_wrapper;
 pub mod connection;
 pub mod interaction;
 pub mod types;
 
+pub use any_conn_wrapper::AnyConnWrapper;
 pub use connection::MiddlewarePoolConnection;
 pub use types::MiddlewarePool;
 

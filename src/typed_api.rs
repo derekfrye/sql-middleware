@@ -7,9 +7,9 @@ use crate::SqlMiddlewareDbError;
 use crate::{middleware::RowValues, query_builder::QueryBuilder, results::ResultSet};
 
 #[cfg(feature = "postgres")]
-use crate::typed_postgres::{Idle as PgIdle, InTx as PgInTx, PgConnection};
+use crate::postgres::typed::{Idle as PgIdle, InTx as PgInTx, PgConnection};
 #[cfg(feature = "turso")]
-use crate::typed_turso::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
+use crate::turso::typed::{Idle as TuIdle, InTx as TuInTx, TursoConnection};
 
 /// Minimal query surface shared by idle and tx connections.
 pub trait Queryable {
