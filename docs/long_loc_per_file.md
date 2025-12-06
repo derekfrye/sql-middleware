@@ -34,4 +34,4 @@
 
 ## src/translation.rs
 - Option 1: Split types from algorithm: `translation/types.rs` for `PlaceholderStyle`, `TranslationMode`, `QueryOptions`, and `translation/engine.rs` for `translate_placeholders` and its state machine utilities.
-- Option 2: Separate state machine pieces: keep public API in `translation/mod.rs`, move scanning helpers/state enums into `translation/scanner.rs`, and house dollar-quote/comment parsing in `translation/parsers.rs` to make the main function read shorter.
+- Option 2: Separate state machine pieces: keep public API in `translation/mod.rs`, move scanning helpers/state enums into `translation/scanner.rs`, and house dollar-quote/comment parsing in `translation/parsers.rs` to make the main function read shorter. **Implemented.**

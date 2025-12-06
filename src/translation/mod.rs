@@ -1,5 +1,14 @@
 use std::borrow::Cow;
 
+mod parsers;
+mod scanner;
+
+use parsers::{
+    is_block_comment_end, is_block_comment_start, is_line_comment_start, matches_tag,
+    try_start_dollar_quote,
+};
+use scanner::{scan_digits, State};
+
 /// Target placeholder style for translation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaceholderStyle {
@@ -103,12 +112,8 @@ pub fn translate_placeholders(sql: &str, target: PlaceholderStyle, enabled: bool
             State::Normal => match b {
                 b'\'' => state = State::SingleQuoted,
                 b'"' => state = State::DoubleQuoted,
-                b'-' if bytes.get(idx + 1) == Some(&b'-') => {
-                    state = State::LineComment;
-                }
-                b'/' if bytes.get(idx + 1) == Some(&b'*') => {
-                    state = State::BlockComment(1);
-                }
+                _ if is_line_comment_start(bytes, idx) => state = State::LineComment,
+                _ if is_block_comment_start(bytes, idx) => state = State::BlockComment(1),
                 b'$' => {
                     if let Some((tag, advance)) = try_start_dollar_quote(bytes, idx) {
                         state = State::DollarQuoted(tag);
@@ -158,9 +163,9 @@ pub fn translate_placeholders(sql: &str, target: PlaceholderStyle, enabled: bool
                 }
             }
             State::BlockComment(depth) => {
-                if b == b'/' && bytes.get(idx + 1) == Some(&b'*') {
+                if is_block_comment_start(bytes, idx) {
                     state = State::BlockComment(depth + 1);
-                } else if b == b'*' && bytes.get(idx + 1) == Some(&b'/') {
+                } else if is_block_comment_end(bytes, idx) {
                     if depth == 1 {
                         state = State::Normal;
                     } else {
@@ -190,55 +195,6 @@ pub fn translate_placeholders(sql: &str, target: PlaceholderStyle, enabled: bool
         Some(buf) => Cow::Owned(buf),
         None => Cow::Borrowed(sql),
     }
-}
-
-#[derive(Clone)]
-enum State {
-    Normal,
-    SingleQuoted,
-    DoubleQuoted,
-    LineComment,
-    BlockComment(u32),
-    DollarQuoted(String),
-}
-
-fn scan_digits(bytes: &[u8], start: usize) -> Option<(usize, &str)> {
-    let mut idx = start;
-    while idx < bytes.len() && bytes[idx].is_ascii_digit() {
-        idx += 1;
-    }
-    if idx == start {
-        None
-    } else {
-        std::str::from_utf8(&bytes[start..idx])
-            .ok()
-            .map(|digits| (idx, digits))
-    }
-}
-
-fn try_start_dollar_quote(bytes: &[u8], start: usize) -> Option<(String, usize)> {
-    let mut idx = start + 1;
-    while idx < bytes.len() && bytes[idx] != b'$' {
-        let b = bytes[idx];
-        if !(b.is_ascii_alphanumeric() || b == b'_') {
-            return None;
-        }
-        idx += 1;
-    }
-
-    if idx < bytes.len() && bytes[idx] == b'$' {
-        let tag = String::from_utf8(bytes[start + 1..idx].to_vec()).ok()?;
-        Some((tag, idx))
-    } else {
-        None
-    }
-}
-
-fn matches_tag(bytes: &[u8], idx: usize, tag: &str) -> bool {
-    let end = idx + 1 + tag.len();
-    end < bytes.len()
-        && bytes[idx + 1..=end].starts_with(tag.as_bytes())
-        && bytes.get(end) == Some(&b'$')
 }
 
 #[cfg(test)]
