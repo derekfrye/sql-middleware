@@ -1,55 +1,57 @@
-#![cfg(all(feature = "postgres", feature = "sqlite"))]
+#![cfg(any(feature = "postgres", feature = "sqlite", feature = "turso"))]
 
 use sql_middleware::middleware::{RowValues, SqlMiddlewareDbError};
 use sql_middleware::translation::TranslationMode;
 use sql_middleware::typed_api::{AnyIdle, BeginTx, Queryable, TxConn, TypedConnOps};
+#[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
+#[cfg(feature = "sqlite")]
 use sql_middleware::typed_sqlite::{Idle as SqIdle, SqliteTypedConnection};
 #[cfg(feature = "turso")]
 use sql_middleware::typed_turso::{Idle as TuIdle, TursoConnection, TursoManager};
 
+#[cfg(feature = "sqlite")]
+use sql_middleware::sqlite::config::SqliteManager;
+
+#[derive(Clone, Copy, Debug)]
+enum Backend {
+    #[cfg(feature = "postgres")]
+    Postgres,
+    #[cfg(feature = "turso")]
+    Turso,
+    #[cfg(feature = "sqlite")]
+    Sqlite,
+}
+
 /// Minimal end-to-end smoke test exercising AnyIdle/AnyTx + typed connections for issue #2 API shape.
 #[tokio::test]
 async fn test_issue_2_anyidle_flow() -> Result<(), SqlMiddlewareDbError> {
-    let backend = std::env::var("DB").unwrap_or_else(|_| "sqlite".to_string());
+    for backend in enabled_backends() {
+        run_backend_flow(backend).await?;
+    }
+    Ok(())
+}
 
-    // Build a typed connection for the selected backend.
-    let mut conn: AnyIdle = match backend.as_str() {
-        "postgres" => {
-            let mut cfg = tokio_postgres::Config::new();
-            cfg.host("10.3.0.201")
-                .port(5432)
-                .dbname("testing")
-                .user("testuser");
-            if let Ok(pw) = std::env::var("TESTING_PG_PASSWORD") {
-                cfg.password(pw);
-            }
-            let pool = PgManager::new(cfg).build_pool().await?;
-            AnyIdle::Postgres(PgConnection::<PgIdle>::from_pool(&pool).await?)
-        }
-        #[cfg(feature = "turso")]
-        "turso" => {
-            let db = turso::Builder::new_local(":memory:")
-                .build()
-                .await
-                .map_err(|e| SqlMiddlewareDbError::ConnectionError(e.to_string()))?;
-            let pool = TursoManager::new(db).build_pool().await?;
-            AnyIdle::Turso(TursoConnection::<TuIdle>::from_pool(&pool).await?)
-        }
-        // default: sqlite
-        _ => {
-            let pool = sql_middleware::sqlite::config::SqliteManager::new(
-                "file::memory:?cache=shared".to_string(),
-            )
-            .build_pool()
-            .await?;
-            AnyIdle::Sqlite(SqliteTypedConnection::<SqIdle>::from_pool(&pool).await?)
-        }
-    };
+fn enabled_backends() -> Vec<Backend> {
+    let mut backends = Vec::new();
+    #[cfg(feature = "postgres")]
+    backends.push(Backend::Postgres);
+    #[cfg(feature = "turso")]
+    backends.push(Backend::Turso);
+    #[cfg(feature = "sqlite")]
+    backends.push(Backend::Sqlite);
+    backends
+}
 
-    // DDL once (force translation for SQLite/Turso because the query uses $-style placeholders).
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS test11_users (id INT PRIMARY KEY, name TEXT);")
-        .await?;
+async fn run_backend_flow(backend: Backend) -> Result<(), SqlMiddlewareDbError> {
+    let mut conn = build_connection(backend).await?;
+
+    // Reset the table so each backend run is independent.
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS test11_users; \
+         CREATE TABLE test11_users (id INT PRIMARY KEY, name TEXT);",
+    )
+    .await?;
 
     // Auto-commit insert on the idle connection.
     conn.query("INSERT INTO test11_users (id, name) VALUES ($2, $1)")
@@ -59,14 +61,64 @@ async fn test_issue_2_anyidle_flow() -> Result<(), SqlMiddlewareDbError> {
         .await?;
 
     // Verify initial value.
-    assert_eq!(fetch_name(&mut conn).await?, "Alice");
+    assert_eq!(
+        fetch_name(&mut conn).await?,
+        "Alice",
+        "backend {:?}",
+        backend
+    );
 
     // Run shared auto-commit + transaction flow.
     let mut restored = more_work(conn).await?;
 
     // Verify final value after updates.
-    assert_eq!(fetch_name(&mut restored).await?, "Bob");
+    assert_eq!(
+        fetch_name(&mut restored).await?,
+        "Bob",
+        "backend {:?}",
+        backend
+    );
     Ok(())
+}
+
+async fn build_connection(backend: Backend) -> Result<AnyIdle, SqlMiddlewareDbError> {
+    match backend {
+        #[cfg(feature = "postgres")]
+        Backend::Postgres => {
+            let mut cfg = tokio_postgres::Config::new();
+            cfg.host("10.3.0.201")
+                .port(5432)
+                .dbname("testing")
+                .user("testuser");
+            if let Ok(pw) = std::env::var("TESTING_PG_PASSWORD") {
+                cfg.password(pw);
+            }
+            let pool = PgManager::new(cfg).build_pool().await?;
+            Ok(AnyIdle::Postgres(
+                PgConnection::<PgIdle>::from_pool(&pool).await?,
+            ))
+        }
+        #[cfg(feature = "turso")]
+        Backend::Turso => {
+            let db = turso::Builder::new_local(":memory:")
+                .build()
+                .await
+                .map_err(|e| SqlMiddlewareDbError::ConnectionError(e.to_string()))?;
+            let pool = TursoManager::new(db).build_pool().await?;
+            Ok(AnyIdle::Turso(
+                TursoConnection::<TuIdle>::from_pool(&pool).await?,
+            ))
+        }
+        #[cfg(feature = "sqlite")]
+        Backend::Sqlite => {
+            let pool = SqliteManager::new("file::memory:?cache=shared".to_string())
+                .build_pool()
+                .await?;
+            Ok(AnyIdle::Sqlite(
+                SqliteTypedConnection::<SqIdle>::from_pool(&pool).await?,
+            ))
+        }
+    }
 }
 
 async fn more_work(mut conn: AnyIdle) -> Result<AnyIdle, SqlMiddlewareDbError> {
