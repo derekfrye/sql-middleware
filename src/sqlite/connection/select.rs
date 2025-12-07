@@ -32,7 +32,7 @@ impl SqliteConnection {
         let params_owned = params.to_vec();
         run_blocking(self.conn_handle(), move |guard| {
             let mut stmt = guard
-                .prepare(&sql_owned)
+                .prepare_cached(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
             builder(&mut stmt, &params_owned)
         })
@@ -66,7 +66,7 @@ impl SqliteConnection {
         let params_owned = params.to_vec();
         run_blocking(self.conn_handle(), move |guard| {
             let mut stmt = guard
-                .prepare(&sql_owned)
+                .prepare_cached(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
             builder(&mut stmt, &params_owned)
         })
@@ -94,7 +94,7 @@ pub async fn select(
     let handle = Arc::clone(&*conn);
     run_blocking(handle, move |guard| {
         let mut stmt = guard
-            .prepare(&sql_owned)
+            .prepare_cached(&sql_owned)
             .map_err(SqlMiddlewareDbError::SqliteError)?;
         super::super::query::build_result_set(&mut stmt, &params_owned)
     })

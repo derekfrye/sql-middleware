@@ -18,9 +18,6 @@ use crate::sqlite::SqliteConnection;
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Object as LibsqlObject;
 
-#[cfg(feature = "libsql")]
-pub use libsql::prepare_libsql_statement;
-
 #[cfg(feature = "turso")]
 use ::turso::Connection as TursoConnection;
 

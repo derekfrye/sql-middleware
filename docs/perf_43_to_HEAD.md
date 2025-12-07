@@ -17,3 +17,17 @@ Likely fixes to regain performance
   - Use a non-async mutex (e.g., `parking_lot::Mutex`) and lock inside the blocking section to cut async mutex overhead on hot paths.
   - Pre-warm and reuse prepared statements inside the blocking section (or per-connection cache) to avoid repeated `prepare` calls on every query execution.
   - If “no extra hops” is required, revert to a worker-thread-backed connection (even without deadpool) to mirror the prior behavior.
+
+## Fix status
+- `SqliteConnection` now uses `prepare_cached` for select and DML helpers so warmed statements are reused instead of recompiling every query.
+- The SQLite pool now wraps each rusqlite connection in a dedicated worker thread driven by a `crossbeam-channel` queue, removing per-call `tokio::spawn_blocking` hops and mutex locking on the hot path.
+
+## TODO
+1. Reintroduce a per-connection worker to remove per-call `spawn_blocking` overhead while keeping bb8 pooling (or otherwise batch multiple lookups under one blocking task).
+   - Status: implemented with a crossbeam-channel-backed worker thread per pooled connection; async paths now dispatch to the worker instead of `spawn_blocking`.
+   - Expected churn: contained to the SQLite pool/connection plumbing (~150–250 LOC). Likely touch `src/sqlite/config.rs` (manager returns worker-backed handles instead of `Arc<Mutex<Connection>>`), `src/sqlite/connection/core.rs` and `typed/core.rs` (new “send to worker” helper replacing `spawn_blocking + lock`), `select.rs`/`dml.rs` call sites, and `typed/tx.rs` drop path plus related tests (e.g., `tests/test10_bad_drop.rs`). Public surface can stay stable.
+2. Re-run `sqlite_single_row_lookup/middleware/1000` after the worker change to see if the ~3–4 ms gap to the pre-bb8 baseline closes.
+   - Status: completed; latest run shows ~14.16 ms mean / 13.92 ms median (change: -39.5% mean, CI [-42.56%, -36.91%]), beating the ~19 ms baseline.
+   - Expected churn: light; re-run Criterion bench and capture new `bench_results/sqlite_single_row_lookup/middleware/1000/{latest,new}` artifacts.
+3. Verify prepared statements stay hot across iterations (consider warming once per checkout and reusing handles) if the worker change alone doesn’t recover the baseline.
+   - Expected churn: small to medium depending on approach. Likely localized to prepared-statement creation/checkout flow; may need a per-connection cache or “warm on checkout” path plus minor test adjustments.

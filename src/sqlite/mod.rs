@@ -1,6 +1,6 @@
 //! `SQLite` backend glue backed by a bb8 pool of `rusqlite` connections.
 //!
-//! Blocking `rusqlite` work runs in `tokio::spawn_blocking` using the pooled connection's mutex,
+//! Blocking `rusqlite` work runs on a dedicated worker thread per pooled connection,
 //! keeping the async runtime responsive while avoiding deadpool-sqlite.
 //!
 //! Submodules:

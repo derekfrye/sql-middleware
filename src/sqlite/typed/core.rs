@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use bb8::{Pool, PooledConnection};
-use tokio::task::spawn_blocking;
 
 use crate::middleware::SqlMiddlewareDbError;
 
@@ -91,13 +90,12 @@ where
     F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
     R: Send + 'static,
 {
-    spawn_blocking(move || {
-        let mut guard = conn.blocking_lock();
-        func(&mut guard)
-    })
-    .await
-    .map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("sqlite spawn_blocking join error: {e}"))
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    conn.execute(move |conn| {
+        let _ = tx.send(func(conn));
+    })?;
+    rx.await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("sqlite worker receive error: {e}"))
     })?
 }
 

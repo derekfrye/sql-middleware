@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::middleware::SqlMiddlewareDbError;
 
 use crate::sqlite::config::{SharedSqliteConnection, SqlitePooledConnection};
+use tokio::sync::oneshot;
 
 /// Connection wrapper backed by a bb8 pooled `SQLite` connection.
 pub struct SqliteConnection {
@@ -68,13 +69,12 @@ where
     F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,
     R: Send + 'static,
 {
-    tokio::task::spawn_blocking(move || {
-        let mut guard = conn.blocking_lock();
-        func(&mut guard)
-    })
-    .await
-    .map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("sqlite spawn_blocking join error: {e}"))
+    let (tx, rx) = oneshot::channel();
+    conn.execute(move |conn| {
+        let _ = tx.send(func(conn));
+    })?;
+    rx.await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("sqlite worker receive error: {e}"))
     })?
 }
 

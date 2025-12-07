@@ -104,12 +104,16 @@ impl<State> Drop for SqliteTypedConnection<State> {
             // could race with the next checkout.
             if Handle::try_current().is_ok() {
                 block_in_place(|| {
-                    let guard = conn_handle.blocking_lock();
-                    let _ = guard.execute_batch("ROLLBACK");
+                    let _ = conn_handle.execute_blocking(|conn| {
+                        conn.execute_batch("ROLLBACK")
+                            .map_err(SqlMiddlewareDbError::SqliteError)
+                    });
                 });
             } else {
-                let guard = conn_handle.blocking_lock();
-                let _ = guard.execute_batch("ROLLBACK");
+                let _ = conn_handle.execute_blocking(|conn| {
+                    conn.execute_batch("ROLLBACK")
+                        .map_err(SqlMiddlewareDbError::SqliteError)
+                });
             }
         }
     }

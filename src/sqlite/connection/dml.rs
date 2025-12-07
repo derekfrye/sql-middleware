@@ -47,7 +47,7 @@ impl SqliteConnection {
         let params_owned = params.to_vec();
         run_blocking(self.conn_handle(), move |guard| {
             let mut stmt = guard
-                .prepare(&sql_owned)
+                .prepare_cached(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
             let refs: Vec<&dyn rusqlite::ToSql> = params_owned
                 .iter()
@@ -79,7 +79,7 @@ impl SqliteConnection {
         let params_owned = params.to_vec();
         run_blocking(self.conn_handle(), move |guard| {
             let mut stmt = guard
-                .prepare(&sql_owned)
+                .prepare_cached(&sql_owned)
                 .map_err(SqlMiddlewareDbError::SqliteError)?;
             let refs: Vec<&dyn rusqlite::ToSql> = params_owned
                 .iter()
@@ -128,7 +128,7 @@ pub async fn dml(
     let handle = Arc::clone(&*conn);
     run_blocking(handle, move |guard| {
         let mut stmt = guard
-            .prepare(&sql_owned)
+            .prepare_cached(&sql_owned)
             .map_err(SqlMiddlewareDbError::SqliteError)?;
         let refs: Vec<&dyn rusqlite::ToSql> = params_owned
             .iter()

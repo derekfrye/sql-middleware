@@ -46,6 +46,8 @@ deadpool = "0"
 bb8-tiberius = { version = "0", optional = true }
 futures-util = { version = "0", optional = true }
 lazy_static = "1"
+parking_lot = "0"
+crossbeam-channel = "0"
 postgresql_embedded = { version = "0", features = ["bundled"], optional = true }
 # Benchmark dependencies
 criterion = { version = "0", features = ["async_tokio"], optional = true }

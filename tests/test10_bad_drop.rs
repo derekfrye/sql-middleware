@@ -236,21 +236,7 @@ async fn run_sqlite_bad_drop() -> Result<(), SqlMiddlewareDbError> {
         "sqlite: legacy drop behavior (skip rollback) should leave row present"
     );
     drop(conn);
-    {
-        let raw = pool.get_owned().await.map_err(|e| {
-            SqlMiddlewareDbError::ConnectionError(format!("sqlite cleanup checkout error: {e}"))
-        })?;
-        tokio::task::spawn_blocking(move || {
-            let guard = raw.blocking_lock();
-            guard
-                .execute_batch("ROLLBACK;")
-                .map_err(SqlMiddlewareDbError::SqliteError)
-        })
-        .await
-        .map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("sqlite cleanup join error: {e}"))
-        })??;
-    }
+    sql_middleware::sqlite::config::rollback_for_tests(&pool).await?;
 
     // Now verify default (fixed) behavior rolls back.
     {
