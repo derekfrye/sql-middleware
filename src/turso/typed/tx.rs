@@ -2,7 +2,7 @@ use tokio::runtime::Handle;
 
 use crate::middleware::SqlMiddlewareDbError;
 
-use super::core::{InTx, Idle, SKIP_DROP_ROLLBACK};
+use super::core::{Idle, InTx, SKIP_DROP_ROLLBACK};
 use super::{TursoConnection, TursoManager};
 
 impl TursoConnection<Idle> {

@@ -1,9 +1,9 @@
 use crate::error::SqlMiddlewareDbError;
-use crate::executor::{execute_dml_dispatch, QueryTarget, QueryTargetKind};
+use crate::executor::{QueryTarget, QueryTargetKind, execute_dml_dispatch};
 
-use super::{translate_query_for_target, QueryBuilder};
+use super::{QueryBuilder, translate_query_for_target};
 
-impl<'conn, 'q> QueryBuilder<'conn, 'q> {
+impl QueryBuilder<'_, '_> {
     /// Execute a DML statement and return rows affected.
     ///
     /// # Errors

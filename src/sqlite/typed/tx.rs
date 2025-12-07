@@ -1,13 +1,13 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
 
 use crate::middleware::SqlMiddlewareDbError;
 
-use super::core::{begin_from_conn, run_blocking, SKIP_DROP_ROLLBACK};
 use super::SqliteTypedConnection;
+use super::core::{SKIP_DROP_ROLLBACK, begin_from_conn, run_blocking};
 use crate::sqlite::config::SharedSqliteConnection;
 
 impl SqliteTypedConnection<super::core::Idle> {
@@ -15,7 +15,9 @@ impl SqliteTypedConnection<super::core::Idle> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if transitioning into a transaction fails.
-    pub async fn begin(mut self) -> Result<SqliteTypedConnection<super::core::InTx>, SqlMiddlewareDbError> {
+    pub async fn begin(
+        mut self,
+    ) -> Result<SqliteTypedConnection<super::core::InTx>, SqlMiddlewareDbError> {
         begin_from_conn(self.take_conn()?).await
     }
 }
@@ -25,7 +27,9 @@ impl SqliteTypedConnection<super::core::InTx> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if committing the transaction fails.
-    pub async fn commit(mut self) -> Result<SqliteTypedConnection<super::core::Idle>, SqlMiddlewareDbError> {
+    pub async fn commit(
+        mut self,
+    ) -> Result<SqliteTypedConnection<super::core::Idle>, SqlMiddlewareDbError> {
         let conn_handle = self.conn_handle()?;
         let commit_result = run_blocking(Arc::clone(&conn_handle), |guard| {
             guard
@@ -60,7 +64,9 @@ impl SqliteTypedConnection<super::core::InTx> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if rolling back the transaction fails.
-    pub async fn rollback(mut self) -> Result<SqliteTypedConnection<super::core::Idle>, SqlMiddlewareDbError> {
+    pub async fn rollback(
+        mut self,
+    ) -> Result<SqliteTypedConnection<super::core::Idle>, SqlMiddlewareDbError> {
         let conn_handle = self.conn_handle()?;
         let rollback_result = run_blocking(Arc::clone(&conn_handle), |guard| {
             guard

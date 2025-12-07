@@ -11,7 +11,7 @@ use turso::Database;
 use super::MiddlewarePoolConnection;
 
 #[cfg(feature = "turso")]
-pub(super) async fn get_connection(
+pub(super) fn get_connection(
     db: &Database,
     translate_placeholders: bool,
 ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
@@ -24,6 +24,10 @@ pub(super) async fn get_connection(
 
 #[cfg(feature = "turso")]
 impl MiddlewarePoolConnection {
+    /// Prepare a Turso statement on this connection.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if the statement preparation fails or the connection is not Turso-backed.
     pub async fn prepare_turso_statement(
         &mut self,
         query: &str,

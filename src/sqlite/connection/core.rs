@@ -19,6 +19,10 @@ impl SqliteConnection {
         }
     }
 
+    /// Run `func` on the pooled rusqlite connection while no other transaction is in flight.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ExecutionError` if the connection is in a transaction or the closure returns an error.
     pub async fn with_connection<F, R>(&self, func: F) -> Result<R, SqlMiddlewareDbError>
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, SqlMiddlewareDbError> + Send + 'static,

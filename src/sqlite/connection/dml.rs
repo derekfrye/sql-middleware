@@ -3,9 +3,9 @@ use std::sync::Arc;
 use crate::middleware::SqlMiddlewareDbError;
 use crate::types::RowValues;
 
+use super::{SqliteConnection, run_blocking};
 use crate::sqlite::config::SqliteManager;
 use crate::sqlite::params::Params;
-use super::{SqliteConnection, run_blocking};
 use bb8::PooledConnection;
 
 impl SqliteConnection {

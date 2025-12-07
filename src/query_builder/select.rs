@@ -1,10 +1,10 @@
 use crate::error::SqlMiddlewareDbError;
-use crate::executor::{execute_select_dispatch, QueryTarget, QueryTargetKind};
+use crate::executor::{QueryTarget, QueryTargetKind, execute_select_dispatch};
 use crate::results::ResultSet;
 
-use super::{translate_query_for_target, QueryBuilder};
+use super::{QueryBuilder, translate_query_for_target};
 
-impl<'conn, 'q> QueryBuilder<'conn, 'q> {
+impl QueryBuilder<'_, '_> {
     /// Execute a SELECT and return the result set.
     ///
     /// # Errors

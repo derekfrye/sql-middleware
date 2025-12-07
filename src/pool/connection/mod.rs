@@ -4,19 +4,19 @@ mod postgres;
 mod sqlite;
 mod turso;
 
-#[cfg(any(feature = "postgres", feature = "mssql"))]
-use bb8::PooledConnection;
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::PgManager;
+#[cfg(any(feature = "postgres", feature = "mssql"))]
+use bb8::PooledConnection;
 #[cfg(feature = "mssql")]
 use bb8_tiberius::ConnectionManager;
 
+use super::types::MiddlewarePool;
+use crate::error::SqlMiddlewareDbError;
 #[cfg(feature = "sqlite")]
 use crate::sqlite::SqliteConnection;
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Object as LibsqlObject;
-use super::types::MiddlewarePool;
-use crate::error::SqlMiddlewareDbError;
 
 #[cfg(feature = "libsql")]
 pub use libsql::prepare_libsql_statement;
@@ -100,7 +100,7 @@ impl MiddlewarePool {
                 libsql::get_connection(pool, translate_placeholders).await
             }
             #[cfg(feature = "turso")]
-            MiddlewarePool::Turso(db) => turso::get_connection(db, translate_placeholders).await,
+            MiddlewarePool::Turso(db) => turso::get_connection(db, translate_placeholders),
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),

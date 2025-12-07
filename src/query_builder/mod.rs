@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::executor::QueryTarget;
 use crate::pool::MiddlewarePoolConnection;
-use crate::translation::{translate_placeholders, QueryOptions, TranslationMode};
+use crate::translation::{QueryOptions, TranslationMode, translate_placeholders};
 use crate::types::RowValues;
 
 mod dml;

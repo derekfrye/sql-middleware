@@ -7,7 +7,7 @@ use parsers::{
     is_block_comment_end, is_block_comment_start, is_line_comment_start, matches_tag,
     try_start_dollar_quote,
 };
-use scanner::{scan_digits, State};
+use scanner::{State, scan_digits};
 
 /// Target placeholder style for translation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

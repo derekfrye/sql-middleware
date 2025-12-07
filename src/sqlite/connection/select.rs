@@ -5,9 +5,9 @@ use crate::middleware::{ResultSet, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
 use crate::types::RowValues;
 
+use super::{SqliteConnection, run_blocking};
 use crate::sqlite::config::SqliteManager;
 use crate::sqlite::params::Params;
-use super::{SqliteConnection, run_blocking};
 
 impl SqliteConnection {
     /// Execute a SELECT and materialize into a `ResultSet`.

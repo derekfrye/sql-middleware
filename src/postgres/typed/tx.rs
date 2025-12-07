@@ -2,7 +2,7 @@ use tokio::runtime::Handle;
 
 use crate::middleware::SqlMiddlewareDbError;
 
-use super::core::{InTx, Idle, PgConnection, SKIP_DROP_ROLLBACK};
+use super::core::{Idle, InTx, PgConnection, SKIP_DROP_ROLLBACK};
 
 impl PgConnection<Idle> {
     /// Begin an explicit transaction.

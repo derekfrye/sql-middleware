@@ -165,6 +165,7 @@ impl TxConn for AnyTx {
         }
     }
 
+    /// Rollback and return to idle.
     #[allow(clippy::manual_async_fn)]
     fn rollback(
         self,

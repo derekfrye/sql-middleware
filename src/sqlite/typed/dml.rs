@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 
+use super::SqliteTypedConnection;
 use crate::sqlite::config::SqliteManager;
 use crate::sqlite::params::Params;
-use super::SqliteTypedConnection;
 
 impl SqliteTypedConnection<super::core::Idle> {
     /// Auto-commit batch (BEGIN/COMMIT around it).
