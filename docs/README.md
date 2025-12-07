@@ -2,13 +2,11 @@
 
 ![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
 
-Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [libsql](https://crates.io/crates/libsql), experimental [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with bb8-backed pools for Postgres/SQLite (and Turso handles) plus [deadpool](https://github.com/deadpool-rs/deadpool) pools for LibSQL/SQL Server, and an async api. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with bb8-backed pools for Postgres/SQLite (and Turso handles) plus [deadpool](https://github.com/deadpool-rs/deadpool) pools for SQL Server. A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
 
 Motivated from trying SQLx and not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192). 
 
-This middleware performance is about 14% faster than SQlx for at least some SQLite workloads. (That could be my misunderstanding of SQLx rather than an inherent performance difference.) For current evidence, see our [benchmark results](/bench_results/index.md).
-
-See also: [API test coverage](docs/api_test_coverage.md) for a map of the public surface to current tests.
+Current benches vs. SQL are about 29% faster on the single-row SQLite lookup benchmark, and about 32% faster on the multithread pool checkout/parallel `SELECT` benchmark. See [benchmark results](/bench_results/index.md). (Keep in mind this performance difference is one data point and there may be other reasons to use SQLx.) Of note, however, `rusqlite` (without a connection pool) is by far the fastest, at roughly 1.x msec avg per operation for single-row lookups. You may not need a connection pool or this middleware if you're designing your application to use a single database backend and its likely inevitable you will you pay some performance hit using a middleware over raw backend use.
 
 ## Goals
 * Convenience functions for common async SQL query patterns
@@ -236,6 +234,70 @@ enum PreparedStmt {
     Libsql(LibsqlPrepared),
 }
 
+pub async fn get_scores_from_db(
+    config_and_pool: &ConfigAndPool,
+    event_id: i64,
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let mut conn = config_and_pool.get_connection().await?;
+
+    // Author once; translate for SQLite-family backends when preparing.
+    let base_query = "SELECT grp, golfername, playername, eup_id, espn_id \
+                      FROM sp_get_player_names($1) ORDER BY grp, eup_id";
+    let (tx, stmt) = match &mut conn {
+        MiddlewarePoolConnection::Turso { conn: client, .. } => {
+            let tx = begin_turso_tx(client).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref()).await?;
+            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
+        }
+        MiddlewarePoolConnection::Postgres {
+            client: pg_conn, ..
+        } => {
+            let tx = begin_postgres_tx(pg_conn).await?;
+            let stmt = tx.prepare(base_query).await?;
+            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
+        }
+        MiddlewarePoolConnection::Sqlite {
+            conn,
+            translate_placeholders: translate_default,
+        } => {
+            // Take ownership of the SQLite connection (tx API consumes it).
+            let sqlite_conn = conn
+                .take()
+                .ok_or_else(|| {
+                SqlMiddlewareDbError::ExecutionError(
+                    "SQLite connection already taken".to_string(),
+                )
+            })?;
+            let mut tx = begin_sqlite_tx(sqlite_conn, *translate_default).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref())?;
+            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
+        }
+        MiddlewarePoolConnection::Libsql { conn, .. } => {
+            let tx = begin_libsql_tx(conn).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let stmt = tx.prepare(q.as_ref())?;
+            (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
+        }
+        _ => {
+            return Err(SqlMiddlewareDbError::Unimplemented(
+                "expected Turso, Postgres, SQLite, or LibSQL connection".to_string(),
+            ));
+        }
+    };
+
+    // Build params however you like in your business logic.
+    let dynamic_params = vec![RowValues::Int(event_id)];
+    let mut restored = None;
+    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params, &mut restored).await?;
+    if let Some(restored_conn) = restored.take() {
+        // Reinsert SQLite connection so this pooled wrapper stays usable for subsequent work.
+        *conn = restored_conn;
+    }
+    Ok(rows)
+}
+
 impl<'conn> BackendTx<'conn> {
     async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         match self {
@@ -305,70 +367,6 @@ async fn run_prepared_with_finalize<'conn>(
         }
     }
 }
-
-pub async fn get_scores_from_db(
-    config_and_pool: &ConfigAndPool,
-    event_id: i64,
-) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let mut conn = config_and_pool.get_connection().await?;
-
-    // Author once; translate for SQLite-family backends when preparing.
-    let base_query = "SELECT grp, golfername, playername, eup_id, espn_id \
-                      FROM sp_get_player_names($1) ORDER BY grp, eup_id";
-    let (tx, stmt) = match &mut conn {
-        MiddlewarePoolConnection::Turso { conn: client, .. } => {
-            let tx = begin_turso_tx(client).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref()).await?;
-            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
-        }
-        MiddlewarePoolConnection::Postgres {
-            client: pg_conn, ..
-        } => {
-            let tx = begin_postgres_tx(pg_conn).await?;
-            let stmt = tx.prepare(base_query).await?;
-            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
-        }
-        MiddlewarePoolConnection::Sqlite {
-            conn,
-            translate_placeholders: translate_default,
-        } => {
-            // Take ownership of the SQLite connection (tx API consumes it).
-            let sqlite_conn = conn
-                .take()
-                .ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError(
-                    "SQLite connection already taken".to_string(),
-                )
-            })?;
-            let mut tx = begin_sqlite_tx(sqlite_conn, *translate_default).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref())?;
-            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
-        }
-        MiddlewarePoolConnection::Libsql { conn, .. } => {
-            let tx = begin_libsql_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref())?;
-            (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
-        }
-        _ => {
-            return Err(SqlMiddlewareDbError::Unimplemented(
-                "expected Turso, Postgres, SQLite, or LibSQL connection".to_string(),
-            ));
-        }
-    };
-
-    // Build params however you like in your business logic.
-    let dynamic_params = vec![RowValues::Int(event_id)];
-    let mut restored = None;
-    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params, &mut restored).await?;
-    if let Some(restored_conn) = restored.take() {
-        // Reinsert SQLite connection so this pooled wrapper stays usable for subsequent work.
-        *conn = restored_conn;
-    }
-    Ok(rows)
-}
 ```
 
 ### Using the query builder in helpers
@@ -435,15 +433,21 @@ let rows = conn
     - Notice that `test4_trait` does have hard-coded testing postgres connection strings. I can't get codex to work with postgres embedded anymore, so when working on this test w codex I've hardcoded those values so I can work around it's lack of network connectivity. You'll have to change them if you want that test to compile in your environment. 
 - Run with Turso: `cargo test --features turso`
 - Run with LibSQL: `cargo test --features libsql`
+- See also: [API test coverage](docs/api_test_coverage.md) for a map of the public surface to current tests.
 
 ### Our use of `[allow(...)]`s
 
 - `#[allow(clippy::unused_async)]` keeps public constructors async so the signature stays consistent even when the current body has no awaits. You’ll see this on `ConfigAndPool::new_postgres` (src/postgres/config.rs), `ConfigAndPool::new_mssql` (src/mssql/config.rs), and `MiddlewarePool::get` (src/pool/types.rs). We also call out the rationale in **[Async Design Decisions](async.md)**.
-- `#[allow(clippy::useless_conversion)]` is used once to satisfy `rusqlite::params_from_iter`, which requires an iterator type that Clippy would otherwise collapse away (`src/sqlite/params.rs:79`).
-- `#[allow(unreachable_patterns)]` guards catch-all branches that only fire when a backend feature is disabled, preventing false positives when matching on `MiddlewarePoolConnection` (`src/pool/connection.rs:102`, `src/executor.rs:64`, `src/executor.rs:97`, `src/executor.rs:130`, `src/pool/interaction.rs:40`, `src/pool/interaction.rs:78`).
-- `#[allow(unused_variables)]` appears around the interaction helpers because the higher-order functions take arguments that are only needed for certain backend combinations (`src/pool/interaction.rs:10`, `src/pool/interaction.rs:51`).
+- `#[allow(clippy::manual_async_fn)]` lives on the typed trait impls and re-exports because we expose `impl Future`-returning trait methods without `async-trait`, requiring manual async blocks. We intentionally skip `async-trait` to avoid the boxed futures and blanket `Send` bounds it injects; sticking with `impl Future` keeps these adapters zero-alloc and aligned to the concrete backend lifetimes. You’ll see it across `src/typed/traits.rs`, the typed backend impls (`src/typed/impl_{sqlite,turso,postgres}.rs`, `src/postgres/typed/core.rs`, `src/turso/typed/core.rs`), and the `Any*` wrappers (`src/typed/any/ops.rs`, `src/typed/any/queryable.rs`).
+- `#[allow(unreachable_patterns)]` guards catch-all branches that only fire when a backend feature is disabled, preventing false positives when matching on `MiddlewarePoolConnection` or the typed wrappers (`src/executor/dispatch.rs`, `src/executor/targets.rs`, `src/pool/connection/mod.rs`, `src/pool/interaction.rs`, `src/typed/any/ops.rs`, `src/typed/any/queryable.rs`).
+- `#[allow(unused_variables)]` appears around the interaction helpers because the higher-order functions take arguments that are only needed for certain backend combinations (`src/pool/interaction.rs`).
+- `#[allow(unused_imports)]` sits on re-exports in the SQLite module to keep the public API visible while some submodules are feature-gated (`src/sqlite/mod.rs`).
+- `#[allow(dead_code)]` and `#[allow(clippy::too_many_arguments)]` are present in the SQL Server backend while we keep the API surface and wiring ready even when the feature is off (`src/mssql/{executor.rs,params.rs,config.rs}`).
 
 ## Release Notes
 
+See also [the changelog](/docs/CHANGELOG.md).
+
+- 0.4.0: Introduced the typed API (`typed` module with `AnyIdle`/`AnyTx`, backend wrappers, and `TxOutcome`) so query/execute flows work consistently across pooled connections and transactions, and swapped Postgres/SQLite pooling to bb8 with new builders and placeholder-translation options to support that API. SQLite now runs on a pooled rusqlite worker with safer transaction semantics, LibSQL is deprecated in favor of Turso, and docs/tests/benches were expanded to cover the new flows.
 - 0.3.0: Defaulted to the fluent query builder for prepared statements (older `execute_select`/`execute_dml` helpers on `MiddlewarePoolConnection` were removed), expanded placeholder translation docs and examples, switched pool constructors to backend options + builders (instead of per-feature constructor permutations), and improved Postgres integer binding to downcast to `INT2/INT4` when inferred.
 - 0.1.9: Switched the project license from BSD-2-Clause to MIT, added third-party notice documentation, and introduced optional placeholder translation (pool defaults + per-call `QueryOptions`).
