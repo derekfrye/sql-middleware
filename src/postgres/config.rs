@@ -1,43 +1,118 @@
+use super::typed::PgManager;
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
-use deadpool_postgres::Config as PgConfig;
-use tokio_postgres::NoTls;
 
-impl ConfigAndPool {
-    /// Asynchronous initializer for `ConfigAndPool` with Postgres
-    ///
-    /// # Errors
-    /// Returns `SqlMiddlewareDbError::ConfigError` if required config fields are missing or `SqlMiddlewareDbError::ConnectionError` if pool creation fails.
-    #[allow(clippy::unused_async)]
-    pub async fn new_postgres(pg_config: PgConfig) -> Result<Self, SqlMiddlewareDbError> {
-        Self::new_postgres_with_translation(pg_config, false).await
+/// Minimal Postgres configuration (keeps the public API backward-compatible
+/// with the old `deadpool_postgres::Config` usage).
+#[derive(Clone, Debug, Default)]
+pub struct PgConfig {
+    pub dbname: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+}
+
+impl PgConfig {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Asynchronous initializer for `ConfigAndPool` with Postgres and optional translation default.
+    #[must_use]
+    pub fn to_tokio_config(&self) -> tokio_postgres::Config {
+        let mut cfg = tokio_postgres::Config::new();
+        if let Some(dbname) = &self.dbname {
+            cfg.dbname(dbname);
+        }
+        if let Some(host) = &self.host {
+            cfg.host(host);
+        }
+        if let Some(port) = self.port {
+            cfg.port(port);
+        }
+        if let Some(user) = &self.user {
+            cfg.user(user);
+        }
+        if let Some(password) = &self.password {
+            cfg.password(password);
+        }
+        cfg
+    }
+}
+
+/// Options for configuring a Postgres pool.
+#[derive(Clone)]
+pub struct PostgresOptions {
+    pub config: PgConfig,
+    pub translate_placeholders: bool,
+}
+
+impl PostgresOptions {
+    #[must_use]
+    pub fn new(config: PgConfig) -> Self {
+        Self {
+            config,
+            translate_placeholders: false,
+        }
+    }
+
+    #[must_use]
+    pub fn with_translation(mut self, translate_placeholders: bool) -> Self {
+        self.translate_placeholders = translate_placeholders;
+        self
+    }
+}
+
+/// Fluent builder for Postgres options.
+#[derive(Clone)]
+pub struct PostgresOptionsBuilder {
+    opts: PostgresOptions,
+}
+
+impl PostgresOptionsBuilder {
+    #[must_use]
+    pub fn new(config: PgConfig) -> Self {
+        Self {
+            opts: PostgresOptions::new(config),
+        }
+    }
+
+    #[must_use]
+    pub fn translation(mut self, translate_placeholders: bool) -> Self {
+        self.opts.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn finish(self) -> PostgresOptions {
+        self.opts
+    }
+
+    /// Build a `ConfigAndPool` for `PostgreSQL`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SqlMiddlewareDbError` if pool creation fails.
+    pub async fn build(self) -> Result<ConfigAndPool, SqlMiddlewareDbError> {
+        ConfigAndPool::new_postgres(self.finish()).await
+    }
+}
+
+impl ConfigAndPool {
+    #[must_use]
+    pub fn postgres_builder(pg_config: PgConfig) -> PostgresOptionsBuilder {
+        PostgresOptionsBuilder::new(pg_config)
+    }
+
+    /// Asynchronous initializer for `ConfigAndPool` with Postgres.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConfigError` if required config fields are missing or `SqlMiddlewareDbError::ConnectionError` if pool creation fails.
-    ///
-    /// Warning: translation skips placeholders inside quoted strings, comments, and dollar-quoted
-    /// blocks via a lightweight state machine; it may miss edge cases in complex SQL (e.g.,
-    /// PL/pgSQL bodies). Prefer backend-specific SQL instead of relying on translation:
-    /// ```rust
-    /// # use sql_middleware::prelude::*;
-    /// let query = match &conn {
-    ///     MiddlewarePoolConnection::Postgres { .. } => r#"$function$
-    /// BEGIN
-    ///     RETURN ($1 ~ $q$[\t\r\n\v\\]$q$);
-    /// END;
-    /// $function$"#,
-    ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
-    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
-    ///     }
-    /// };
-    /// ```
     #[allow(clippy::unused_async)]
-    pub async fn new_postgres_with_translation(
-        pg_config: PgConfig,
-        translate_placeholders: bool,
-    ) -> Result<Self, SqlMiddlewareDbError> {
+    pub async fn new_postgres(opts: PostgresOptions) -> Result<Self, SqlMiddlewareDbError> {
+        let pg_config = opts.config;
+        let translate_placeholders = opts.translate_placeholders;
+
         // Validate all required config fields are present
         if pg_config.dbname.is_none() {
             return Err(SqlMiddlewareDbError::ConfigError(
@@ -67,13 +142,8 @@ impl ConfigAndPool {
         }
 
         // Attempt to create connection pool
-        let pg_pool = pg_config
-            .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
-            .map_err(|e| {
-                SqlMiddlewareDbError::ConnectionError(format!(
-                    "Failed to create Postgres pool: {e}"
-                ))
-            })?;
+        let manager = PgManager::new(pg_config.to_tokio_config());
+        let pg_pool = manager.build_pool().await?;
 
         Ok(ConfigAndPool {
             pool: MiddlewarePool::Postgres(pg_pool),

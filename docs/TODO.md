@@ -20,23 +20,23 @@ Proposed Next Steps
 
 Scan Summary
 - Files > 200 LOC
-  - 493 lines — `tests/test4_AnyConnWrapper.rs`
+  - 493 lines — `tests/test04_AnyConnWrapper.rs`
 - Near-threshold files (watch for growth)
   - 198 lines — `src/test_utils/postgres/tests.rs`
-  - 193 lines — `tests/test2_postgres.rs`
+  - 193 lines — `tests/test02_postgres.rs`
   - 192 lines — `src/benchmark/postgres.rs`
 
 - Functions > 50 lines (approx)
-  - `tests/test4_AnyConnWrapper.rs`
+  - `tests/test04_AnyConnWrapper.rs`
     - 374 lines — `async fn run_test_logic(...)`
     - 91 lines — `fn test4_trait(...)`
-  - `tests/test2_postgres.rs`
+  - `tests/test02_postgres.rs`
     - 171 lines — `fn test2_postgres_cr_and_del_tbls(...)`
-  - `tests/test3_sqlite.rs`
+  - `tests/test03_sqlite.rs`
     - 142 lines — `fn sqlite_and_turso_multiple_column_test_db2(...)`
   - `tests/test_libsql.rs`
     - 110 lines — `fn test_libsql_basic_operations(...)`
-  - `tests/test1.rs`
+  - `tests/test01.rs`
     - 95 lines — `fn sqlite_and_turso_core_logic(...)`
   - `src/test_utils/postgres/embedded.rs`
     - 91 lines — `pub fn setup_postgres_embedded(...)`
@@ -60,7 +60,7 @@ Notes
 - Test files can exceed targets, but still worth splitting for readability.
 
 Recommended Refactor Order (highest impact first)
-1) `tests/test4_AnyConnWrapper.rs`
+1) `tests/test04_AnyConnWrapper.rs`
    - Split into smaller helpers:
      - `setup_db(db_type)`, `apply_schema(conn)`, `seed_basic(conn)`,
        `bulk_insert_mw(conn, params)`, `bulk_insert_tx_postgres(...)`,
@@ -83,11 +83,11 @@ Recommended Refactor Order (highest impact first)
      - `config_from_env()`, `start_embedded()`, `wait_ready()`, `create_db_if_missing()`, `return_handles()`.
    - Improves reuse and test readability.
 
-5) `tests/test2_postgres.rs`
+5) `tests/test02_postgres.rs`
    - Factor monolithic test into multiple `#[test]`s or helper functions:
      - `create_tables()`, `seed_data()`, `verify_rows()`, `drop_tables()`.
 
-6) `tests/test3_sqlite.rs`, `tests/test1.rs`
+6) `tests/test03_sqlite.rs`, `tests/test01.rs`
    - Already table-driven; extract shared helpers into a small test util (e.g., `tests/util/sqlite_like.rs`):
      - `create_test_table(conn)`, `seed_from_sql(conn, &str)`, `select_and_assert(...)`.
 
@@ -97,7 +97,7 @@ Recommended Refactor Order (highest impact first)
 
 Acceptance Criteria
 - After refactors, longest functions in src/ should be ≤ 50 LOC.
-- `tests/test4_AnyConnWrapper.rs` reduced below ~200–250 lines, or split into multiple files under `tests/`.
+- `tests/test04_AnyConnWrapper.rs` reduced below ~200–250 lines, or split into multiple files under `tests/`.
 - No public API changes in library modules; refactors are internal.
 
 Nice-to-Haves
@@ -119,7 +119,7 @@ Implemented now
   - 03_bettor.sql: DATETIME -> TEXT, default literal timestamp.
   - 04_event_user_player.sql: prepared with FK/REFERENCES removed and DATETIME -> TEXT, but NOT executed yet.
   - 05_eup_statistic.sql: prepared with JSON affinity -> TEXT and FK removed, but NOT executed yet.
-  - setup.sql: currently a no-op; main data setup still uses tests/test4.sql for other backends.
+  - setup.sql: currently a no-op; main data setup still uses tests/test04.sql for other backends.
 
 Test adjustments
 - For Turso, DDL is applied per-file (other backends batch join).
@@ -129,7 +129,7 @@ TODOs (as Turso evolves)
 - Re-enable tests/turso/test4/04_event_user_player.sql in Turso DDL list; restore FK REFERENCES and DATETIME defaults.
 - Re-enable tests/turso/test4/05_eup_statistic.sql in Turso DDL list; restore JSON affinity, FK REFERENCES, DATETIME defaults.
 - Switch Turso DDL execution back to a single batched `execute_batch(ddl.join("\n"))` once stable.
-- Expand tests/turso/test4/setup.sql to match tests/test4.sql as constraints become supported.
+- Expand tests/turso/test4/setup.sql to match tests/test04.sql as constraints become supported.
 - Add a dedicated Turso integration test that exercises `with_transaction` end-to-end.
 - Clean up `unused mut` warning in `src/turso/transaction.rs`.
 
@@ -138,12 +138,12 @@ LibSQL prepared (wrapper) note
 - If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
 - Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
 
-- ✅ Added `MiddlewarePoolConnection::with_sqlite_connection` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
+- ✅ Added `MiddlewarePoolConnection::with_blocking_sqlite` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
 - ✅ Introduced `prepare_sqlite_statement` + `SqlitePreparedStatement` for explicit prepared-statement reuse via the worker queue.
 - If we add the guard, benchmark loops would switch from repeated `execute_select`
   calls to something like:
   ```rust
-  MiddlewarePool::with_sqlite_connection(&pool, |conn| {
+  MiddlewarePool::with_blocking_sqlite(&pool, |conn| {
       let mut stmt = conn.prepare_cached(query)?;
       let mut params = [RowValues::Int(0)];
       for &id in &ids {

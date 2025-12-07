@@ -72,7 +72,9 @@ async fn setup_libsql_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
     }
 
     println!("setup_libsql_db: Creating new ConfigAndPool");
-    let config_and_pool = ConfigAndPool::new_libsql(db_path.to_string()).await?;
+    let config_and_pool = ConfigAndPool::libsql_builder(db_path.to_string())
+        .build()
+        .await?;
     println!("setup_libsql_db: ConfigAndPool::new_libsql completed");
 
     let ddl = "CREATE TABLE IF NOT EXISTS test (

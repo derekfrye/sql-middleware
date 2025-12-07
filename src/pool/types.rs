@@ -1,14 +1,17 @@
 #[cfg(feature = "postgres")]
-use deadpool_postgres::Pool as DeadpoolPostgresPool;
+use crate::postgres::typed::PgManager;
+#[cfg(feature = "postgres")]
+use bb8::Pool as PostgresPool;
 
 #[cfg(feature = "sqlite")]
-use deadpool_sqlite::Pool as DeadpoolSqlitePool;
-
+use crate::sqlite::config::SqliteManager;
 #[cfg(feature = "sqlite")]
-pub type SqliteWritePool = DeadpoolSqlitePool;
+use bb8::Pool as Bb8SqlitePool;
 
 #[cfg(feature = "mssql")]
-use deadpool_tiberius::Pool as TiberiusPool;
+use bb8::Pool as Bb8MssqlPool;
+#[cfg(feature = "mssql")]
+use bb8_tiberius::ConnectionManager;
 
 #[cfg(feature = "libsql")]
 use deadpool_libsql::Pool as DeadpoolLibsqlPool;
@@ -25,13 +28,13 @@ use crate::error::SqlMiddlewareDbError;
 pub enum MiddlewarePool {
     /// `PostgreSQL` connection pool
     #[cfg(feature = "postgres")]
-    Postgres(DeadpoolPostgresPool),
+    Postgres(PostgresPool<PgManager>),
     /// `SQLite` connection pool
     #[cfg(feature = "sqlite")]
-    Sqlite(DeadpoolSqlitePool),
+    Sqlite(Bb8SqlitePool<SqliteManager>),
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
-    Mssql(TiberiusPool),
+    Mssql(Bb8MssqlPool<ConnectionManager>),
     /// `LibSQL` connection pool
     #[cfg(feature = "libsql")]
     Libsql(DeadpoolLibsqlPool),
@@ -40,7 +43,7 @@ pub enum MiddlewarePool {
     Turso(TursoDatabase),
 }
 
-// Manual Debug implementation because deadpool_tiberius::Manager doesn't implement Debug
+// Manual Debug implementation because not all pool types expose `Debug`
 impl std::fmt::Debug for MiddlewarePool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

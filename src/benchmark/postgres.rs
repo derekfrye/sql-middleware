@@ -3,7 +3,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
-use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PostgresOptions};
 use crate::test_utils::postgres::EmbeddedPostgres;
 
 use super::common::{generate_postgres_insert_statements, get_benchmark_rows};
@@ -95,7 +95,7 @@ async fn setup_postgres_db(
         config: final_cfg.clone(),
     };
 
-    let config_and_pool = ConfigAndPool::new_postgres(final_cfg).await?;
+    let config_and_pool = ConfigAndPool::new_postgres(PostgresOptions::new(final_cfg)).await?;
     initialise_benchmark_schema(&config_and_pool).await?;
 
     Ok((config_and_pool, postgres_instance))

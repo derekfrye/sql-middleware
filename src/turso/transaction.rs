@@ -1,11 +1,10 @@
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
 };
 use crate::turso::params::Params as TursoParams;
+use crate::tx_outcome::TxOutcome;
 
 /// Lightweight transaction wrapper for Turso.
 ///
@@ -13,6 +12,10 @@ use crate::turso::params::Params as TursoParams;
 /// provided `turso::Connection` and exposes helpers to run queries within that
 /// transaction. It does not depend on a dedicated `turso::Transaction` type, keeping
 /// the API stable and avoiding additional type leakage.
+///
+/// There is no drop guard here—call [`commit`](Tx::commit) or [`rollback`](Tx::rollback)
+/// before letting the handle go out of scope to avoid leaving the connection in an open
+/// transaction.
 pub struct Tx<'a> {
     pub(crate) conn: &'a turso::Connection,
 }
@@ -161,11 +164,12 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` when issuing the COMMIT statement fails.
-    pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn commit(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.conn
             .execute_batch("COMMIT")
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso commit error: {e}")))
+            .map(|()| TxOutcome::without_restored_connection())
     }
 
     /// Roll back the transaction.
@@ -173,11 +177,12 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` when issuing the ROLLBACK statement fails.
-    pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn rollback(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.conn
             .execute_batch("ROLLBACK")
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso rollback error: {e}")))
+            .map(|()| TxOutcome::without_restored_connection())
     }
 }
 
@@ -191,34 +196,4 @@ pub async fn begin_transaction(conn: &turso::Connection) -> Result<Tx<'_>, SqlMi
         SqlMiddlewareDbError::ExecutionError(format!("Turso begin transaction error: {e}"))
     })?;
     Ok(Tx { conn })
-}
-
-/// Run a closure inside a transaction, committing on success, rolling back on error.
-///
-/// # Errors
-///
-/// Returns `SqlMiddlewareDbError` if beginning the transaction or committing fails, or if the
-/// provided closure returns an error. Rollback errors are ignored because the rollback is
-/// already part of the error path.
-pub async fn with_transaction<F, T>(
-    conn: &turso::Connection,
-    f: F,
-) -> Result<T, SqlMiddlewareDbError>
-where
-    F: for<'a> FnOnce(
-        &'a Tx<'a>,
-    ) -> Pin<Box<dyn Future<Output = Result<T, SqlMiddlewareDbError>> + 'a>>,
-{
-    let tx = begin_transaction(conn).await?;
-    let res = f(&tx).await;
-    match res {
-        Ok(val) => {
-            tx.commit().await?;
-            Ok(val)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
 }

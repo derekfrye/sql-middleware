@@ -7,9 +7,11 @@ xxx-wal
 benchmark_sqlite_global.db*
 test_sqlite.db*
 test_libsql.db*
-test_turso.db
+test_turso*
 test_turso.db-wal
 benchmark_sqlite_single_lookup.db
 benchmark_sqlite_single_lookup.db*
 benchmark_turso_single_lookup.db*
 perf*.data*
+benchmark_sqlite_multithread_lookup.db*
+tests/sql_server_pwd.txt

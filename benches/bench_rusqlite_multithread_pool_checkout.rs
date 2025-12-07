@@ -10,6 +10,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
+use rusqlite::{Connection, Result as RusqliteResult, Row};
 use sql_middleware::{ConfigAndPool, RowValues, SqlMiddlewareDbError};
 use std::fs;
 use std::hint::black_box;
@@ -48,9 +49,7 @@ struct BenchRow {
 }
 
 impl BenchRow {
-    fn from_rusqlite(
-        row: &deadpool_sqlite::rusqlite::Row<'_>,
-    ) -> deadpool_sqlite::rusqlite::Result<Self> {
+    fn from_rusqlite(row: &Row<'_>) -> RusqliteResult<Self> {
         Ok(Self {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -68,7 +67,7 @@ impl BenchRow {
 /// keep the baseline as close to most common `rusqlite` usage patterns.
 #[derive(Clone)]
 struct BlockingRusqlitePool {
-    connections: Arc<Mutex<Vec<deadpool_sqlite::rusqlite::Connection>>>,
+    connections: Arc<Mutex<Vec<Connection>>>,
 }
 
 impl BlockingRusqlitePool {
@@ -76,8 +75,7 @@ impl BlockingRusqlitePool {
         let size = size.max(1);
         let mut connections = Vec::with_capacity(size);
         for _ in 0..size {
-            let conn = deadpool_sqlite::rusqlite::Connection::open(path)
-                .expect("open rusqlite connection for benchmark");
+            let conn = Connection::open(path).expect("open rusqlite connection for benchmark");
             connections.push(conn);
         }
         Self {
@@ -100,12 +98,12 @@ impl BlockingRusqlitePool {
 }
 
 struct BlockingConnectionGuard<'a> {
-    pool: &'a Mutex<Vec<deadpool_sqlite::rusqlite::Connection>>,
-    conn: Option<deadpool_sqlite::rusqlite::Connection>,
+    pool: &'a Mutex<Vec<Connection>>,
+    conn: Option<Connection>,
 }
 
 impl BlockingConnectionGuard<'_> {
-    fn connection(&mut self) -> &mut deadpool_sqlite::rusqlite::Connection {
+    fn connection(&mut self) -> &mut Connection {
         self.conn
             .as_mut()
             .expect("guard released connection unexpectedly")
@@ -146,7 +144,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
 // Middleware pool initialised once so subsequent benchmark iterations exercise steady-state behaviour.
 static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
     TOKIO_RUNTIME
-        .block_on(ConfigAndPool::new_sqlite(DATASET.path().to_string()))
+        .block_on(ConfigAndPool::sqlite_builder(DATASET.path().to_string()).build())
         .expect("create middleware config and pool")
 });
 
@@ -175,12 +173,12 @@ fn concurrency_to_run() -> usize {
 }
 
 /// Create a fresh `SQLite` file with predictable contents for repeatable runs.
-fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> deadpool_sqlite::rusqlite::Result<()> {
+fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> RusqliteResult<()> {
     if path.exists() {
         let _ = fs::remove_file(path);
     }
 
-    let mut conn = deadpool_sqlite::rusqlite::Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.execute_batch(
         "
         PRAGMA journal_mode = WAL;
@@ -202,12 +200,7 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> deadpool_sqlite::rus
             let name = format!("name-{id}");
             let score = id as f64 * 0.5;
             let active = id % 2 == 0;
-            insert_stmt.execute(deadpool_sqlite::rusqlite::params![
-                id,
-                name,
-                score,
-                i32::from(active)
-            ])?;
+            insert_stmt.execute(rusqlite::params![id, name, score, i32::from(active)])?;
         }
     }
     tx.commit()?;
@@ -235,7 +228,7 @@ async fn middleware_parallel_select(
         let chunk = chunk.to_vec();
         join_set.spawn(async move {
             let mut conn = config_and_pool.get_connection().await?;
-            let prepared = conn.prepare_sqlite_statement(SQLITE_SELECT).await?;
+            let mut prepared = conn.prepare_sqlite_statement(SQLITE_SELECT).await?;
             let mut params = vec![RowValues::Int(0)];
             for id in chunk {
                 params[0] = RowValues::Int(id);
@@ -285,7 +278,7 @@ async fn rusqlite_parallel_select(
     pool: BlockingRusqlitePool,
     ids: &[i64],
     concurrency: usize,
-) -> deadpool_sqlite::rusqlite::Result<()> {
+) -> RusqliteResult<()> {
     let per_worker = chunk_size(ids.len(), concurrency);
     let mut handles = Vec::new();
 
@@ -301,7 +294,7 @@ async fn rusqlite_parallel_select(
                 // try to prevent compiler optimizing away the work we're timing
                 black_box(row);
             }
-            Ok::<(), deadpool_sqlite::rusqlite::Error>(())
+            Ok::<(), rusqlite::Error>(())
         }));
     }
 

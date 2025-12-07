@@ -47,8 +47,8 @@ pub async fn clean_sqlite_tables(
     let mut conn = config_and_pool.get_connection().await?;
 
     if matches!(&conn, MiddlewarePoolConnection::Sqlite { .. }) {
-        conn.with_sqlite_connection(move |connection| {
-            connection.execute("DROP TABLE IF EXISTS test", [])?;
+        conn.with_blocking_sqlite(move |connection| {
+            connection.execute("DROP TABLE IF EXISTS test", rusqlite::params![])?;
 
             let create_sql = "CREATE TABLE IF NOT EXISTS test (
             recid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +56,7 @@ pub async fn clean_sqlite_tables(
             d real, e boolean, f blob, g json,
             h text, i text, j text, k text, l text, m text, n text, o text, p text
         )";
-            connection.execute(create_sql, [])?;
+            connection.execute(create_sql, rusqlite::params![])?;
 
             Ok::<_, SqlMiddlewareDbError>(())
         })
@@ -77,7 +77,9 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
         println!("setup_sqlite_db: Warning – failed to remove existing file {db_path}: {err}");
     }
 
-    let config_and_pool = ConfigAndPool::new_sqlite(db_path.to_string()).await?;
+    let config_and_pool = ConfigAndPool::sqlite_builder(db_path.to_string())
+        .build()
+        .await?;
 
     let ddl = "CREATE TABLE IF NOT EXISTS test (
         recid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +92,7 @@ async fn setup_sqlite_db(db_path: &str) -> Result<ConfigAndPool, SqlMiddlewareDb
 
     if matches!(&sqlite_conn, MiddlewarePoolConnection::Sqlite { .. }) {
         sqlite_conn
-            .with_sqlite_connection(move |connection| {
+            .with_blocking_sqlite(move |connection| {
                 let transaction = connection.transaction()?;
                 transaction.execute_batch(ddl)?;
                 transaction.commit()?;
@@ -138,7 +140,7 @@ pub fn benchmark_sqlite(c: &mut Criterion, runtime: &Runtime) {
                             let start = Instant::now();
 
                             sqlite_conn
-                                .with_sqlite_connection(move |connection| {
+                                .with_blocking_sqlite(move |connection| {
                                     let transaction = connection.transaction()?;
                                     transaction.execute_batch(&statements_clone)?;
                                     transaction.commit()?;

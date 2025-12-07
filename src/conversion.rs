@@ -29,7 +29,7 @@ use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddleware
 ///
 /// ```rust,no_run
 /// use sql_middleware::prelude::*;
-/// use sql_middleware::exports::PostgresParams;
+/// use sql_middleware::postgres::Params as PostgresParams;
 /// use sql_middleware::conversion::convert_sql_params;
 ///
 /// fn convert_parameters<'a>(values: &'a [RowValues]) -> Result<PostgresParams<'a>, SqlMiddlewareDbError> {

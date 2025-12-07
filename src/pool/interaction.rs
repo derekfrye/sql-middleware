@@ -1,9 +1,13 @@
 use super::connection::MiddlewarePoolConnection;
 use crate::error::SqlMiddlewareDbError;
-use crate::query::AnyConnWrapper;
+use crate::pool::AnyConnWrapper;
 
 impl MiddlewarePoolConnection {
-    /// Interact with the connection asynchronously
+    /// Interact with the connection asynchronously.
+    ///
+    /// This hands the raw driver client into your closure on the async runtime.
+    /// Keep the closure non-blocking—doing heavy work here will stall the runtime.
+    /// For `SQLite`, use `with_blocking_sqlite` / `interact_sync` instead.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::Unimplemented` for unsupported database types.
@@ -19,8 +23,8 @@ impl MiddlewarePoolConnection {
         match self {
             #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres { client: pg_obj, .. } => {
-                // Assuming PostgresObject dereferences to tokio_postgres::Client
-                let client: &mut tokio_postgres::Client = pg_obj.as_mut();
+                // `PooledConnection` dereferences to the underlying `tokio_postgres::Client`.
+                let client: &mut tokio_postgres::Client = pg_obj;
                 Ok(func(AnyConnWrapper::Postgres(client)).await)
             }
             #[cfg(feature = "mssql")]
@@ -61,12 +65,17 @@ impl MiddlewarePoolConnection {
             MiddlewarePoolConnection::Sqlite {
                 conn: sqlite_conn, ..
             } => {
-                sqlite_conn
-                    .with_connection(move |conn| {
-                        let wrapper = AnyConnWrapper::Sqlite(conn);
-                        Ok(f(wrapper))
-                    })
-                    .await
+                let conn = sqlite_conn.as_ref().ok_or_else(|| {
+                    SqlMiddlewareDbError::ExecutionError(
+                        "SQLite connection already taken from pool wrapper".into(),
+                    )
+                })?;
+
+                conn.with_connection(move |conn| {
+                    let wrapper = AnyConnWrapper::Sqlite(conn);
+                    Ok(f(wrapper))
+                })
+                .await
             }
             #[cfg(feature = "postgres")]
             MiddlewarePoolConnection::Postgres { .. } => Err(SqlMiddlewareDbError::Unimplemented(

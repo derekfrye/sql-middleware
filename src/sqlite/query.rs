@@ -1,33 +1,24 @@
-use deadpool_sqlite::rusqlite;
 use rusqlite::types::Value;
 use rusqlite::{Statement, ToSql};
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
-/// Extract a `RowValues` from a `SQLite` row
+/// Extract a `RowValues` from a `SQLite` row.
+///
+/// # Errors
+///
+/// Returns `SqlMiddlewareDbError` if the value cannot be converted.
 pub fn sqlite_extract_value_sync(
     row: &rusqlite::Row,
     idx: usize,
 ) -> Result<RowValues, SqlMiddlewareDbError> {
-    let val_ref_res = row.get_ref(idx);
-    match val_ref_res {
-        Err(e) => Err(SqlMiddlewareDbError::SqliteError(e)),
-        Ok(rusqlite::types::ValueRef::Null) => Ok(RowValues::Null),
-        Ok(rusqlite::types::ValueRef::Integer(i)) => Ok(RowValues::Int(i)),
-        Ok(rusqlite::types::ValueRef::Real(f)) => Ok(RowValues::Float(f)),
-        Ok(rusqlite::types::ValueRef::Text(bytes)) => {
-            // Fast path for ASCII (which most database text likely is)
-            if bytes.is_ascii() {
-                // ASCII is valid UTF-8, use lossy conversion for safety
-                let s = String::from_utf8_lossy(bytes).into_owned();
-                Ok(RowValues::Text(s))
-            } else {
-                // Fallback for non-ASCII
-                let s = String::from_utf8_lossy(bytes).into_owned();
-                Ok(RowValues::Text(s))
-            }
-        }
-        Ok(rusqlite::types::ValueRef::Blob(b)) => Ok(RowValues::Blob(b.to_vec())),
+    let value: Value = row.get(idx).map_err(SqlMiddlewareDbError::SqliteError)?;
+    match value {
+        Value::Null => Ok(RowValues::Null),
+        Value::Integer(i) => Ok(RowValues::Int(i)),
+        Value::Real(f) => Ok(RowValues::Float(f)),
+        Value::Text(s) => Ok(RowValues::Text(s)),
+        Value::Blob(b) => Ok(RowValues::Blob(b)),
     }
 }
 

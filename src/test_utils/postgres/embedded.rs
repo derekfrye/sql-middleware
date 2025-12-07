@@ -1,5 +1,5 @@
 use super::super::SHARED_RUNTIME;
-use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection};
+use crate::middleware::{ConfigAndPool, MiddlewarePoolConnection, PgConfig, PostgresOptions};
 
 #[cfg(feature = "test-utils")]
 use postgresql_embedded::PostgreSQL;
@@ -11,7 +11,7 @@ pub struct EmbeddedPostgres {
     pub port: u16,
     pub database_url: String,
     /// The actual working configuration with correct credentials
-    pub config: deadpool_postgres::Config,
+    pub config: PgConfig,
 }
 
 /// Set up an embedded `PostgreSQL` instance for testing or benchmarking.
@@ -24,7 +24,7 @@ pub struct EmbeddedPostgres {
 /// Panics if `cfg.dbname` is `None` because the target database name is required.
 #[cfg(feature = "test-utils")]
 pub fn setup_postgres_embedded(
-    cfg: &deadpool_postgres::Config,
+    cfg: &PgConfig,
 ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
     SHARED_RUNTIME.block_on(async {
         let mut postgresql = PostgreSQL::default();
@@ -60,7 +60,8 @@ pub fn setup_postgres_embedded(
                 admin_cfg.password = Some(embedded_password.clone());
                 admin_cfg.dbname = Some("postgres".to_string());
 
-                let admin_pool = ConfigAndPool::new_postgres(admin_cfg).await?;
+                let admin_pool =
+                    ConfigAndPool::new_postgres(PostgresOptions::new(admin_cfg)).await?;
                 let admin_conn = admin_pool.get_connection().await?;
 
                 if let MiddlewarePoolConnection::Postgres {
@@ -97,7 +98,8 @@ pub fn setup_postgres_embedded(
         final_cfg.password = Some(final_password);
 
         // Quick connection test
-        let config_and_pool = ConfigAndPool::new_postgres(final_cfg.clone()).await?;
+        let config_and_pool =
+            ConfigAndPool::new_postgres(PostgresOptions::new(final_cfg.clone())).await?;
         let conn = config_and_pool.get_connection().await?;
 
         if let MiddlewarePoolConnection::Postgres {
@@ -136,7 +138,7 @@ pub fn stop_postgres_embedded(postgres: EmbeddedPostgres) {
 /// See [`setup_postgres_embedded`].
 #[cfg(feature = "test-utils")]
 pub fn setup_postgres_container(
-    cfg: &deadpool_postgres::Config,
+    cfg: &PgConfig,
 ) -> Result<EmbeddedPostgres, Box<dyn std::error::Error>> {
     setup_postgres_embedded(cfg)
 }

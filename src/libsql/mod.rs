@@ -1,10 +1,10 @@
-// LibSQL module - provides libsql-specific database functionality
-//
-// This module is split into several sub-modules for better organization:
-// - config: Connection configuration and pool setup
-// - params: Parameter conversion between middleware and libsql types
-// - query: Result extraction and building
-// - executor: Database operation execution
+//! `LibSQL` backend glue (local or remote).
+//!
+//! Mirrors the SQLite/Turso module layout:
+//! - `config`: connection configuration and pool setup
+//! - `params`: parameter conversion between middleware and `LibSQL` types
+//! - `query`: result extraction and building
+//! - `executor`: database operation execution
 
 pub mod config;
 pub mod executor;
@@ -13,6 +13,9 @@ pub mod query;
 pub mod transaction;
 
 // Re-export the public API
+pub use config::{
+    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
+};
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
 pub use query::build_result_set;

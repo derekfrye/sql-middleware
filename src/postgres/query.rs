@@ -1,8 +1,10 @@
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::types::{ConversionMode, ParamConverter};
 use chrono::NaiveDateTime;
-use deadpool_postgres::Transaction;
 use serde_json::Value;
-use tokio_postgres::{Statement, types::ToSql};
+use tokio_postgres::{Client, Statement, Transaction, types::ToSql};
+
+use super::params::Params as PgParams;
 
 /// Build a result set from a Postgres query execution
 ///
@@ -50,8 +52,11 @@ pub async fn build_result_set(
     Ok(result_set)
 }
 
-/// Extracts a `RowValues` from a `tokio_postgres` Row at the given index
-fn postgres_extract_value(
+/// Extracts a `RowValues` from a `tokio_postgres` Row at the given index.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the column cannot be retrieved.
+pub fn postgres_extract_value(
     row: &tokio_postgres::Row,
     idx: usize,
 ) -> Result<RowValues, SqlMiddlewareDbError> {
@@ -62,14 +67,10 @@ fn postgres_extract_value(
     // For simplicity, we'll handle common types. You may need to expand this.
     if type_info.name() == "int2" {
         let val: Option<i16> = row.try_get(idx)?;
-        Ok(val
-            .map(|v| RowValues::Int(i64::from(v)))
-            .unwrap_or(RowValues::Null))
+        Ok(val.map_or(RowValues::Null, |v| RowValues::Int(i64::from(v))))
     } else if type_info.name() == "int4" {
         let val: Option<i32> = row.try_get(idx)?;
-        Ok(val
-            .map(|v| RowValues::Int(i64::from(v)))
-            .unwrap_or(RowValues::Null))
+        Ok(val.map_or(RowValues::Null, |v| RowValues::Int(i64::from(v))))
     } else if type_info.name() == "int8" {
         let val: Option<i64> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Int))
@@ -99,4 +100,68 @@ fn postgres_extract_value(
         let val: Option<String> = row.try_get(idx)?;
         Ok(val.map_or(RowValues::Null, RowValues::Text))
     }
+}
+
+/// Build a result set from raw Postgres rows (without a Transaction)
+///
+/// # Errors
+/// Returns errors from result processing.
+pub fn build_result_set_from_rows(
+    rows: &[tokio_postgres::Row],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let mut result_set = ResultSet::with_capacity(rows.len());
+    if let Some(row) = rows.first() {
+        let cols: Vec<String> = row.columns().iter().map(|c| c.name().to_string()).collect();
+        result_set.set_column_names(std::sync::Arc::new(cols));
+    }
+
+    for row in rows {
+        let col_count = row.columns().len();
+        let mut row_values = Vec::with_capacity(col_count);
+        for idx in 0..col_count {
+            row_values.push(postgres_extract_value(row, idx)?);
+        }
+        result_set.add_row_values(row_values);
+    }
+
+    Ok(result_set)
+}
+
+/// Execute a SELECT query on a client without managing transactions
+///
+/// # Errors
+/// Returns errors from parameter conversion or query execution.
+pub async fn execute_query_on_client(
+    client: &Client,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let converted = PgParams::convert_sql_params(params, ConversionMode::Query)?;
+    let rows = client
+        .query(query, converted.as_refs())
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("postgres select error: {e}")))?;
+    build_result_set_from_rows(&rows)
+}
+
+/// Execute a DML query on a client without managing transactions
+///
+/// # Errors
+/// Returns errors from parameter conversion or query execution.
+pub async fn execute_dml_on_client(
+    client: &Client,
+    query: &str,
+    params: &[RowValues],
+    err_label: &str,
+) -> Result<usize, SqlMiddlewareDbError> {
+    let converted = PgParams::convert_sql_params(params, ConversionMode::Execute)?;
+    let rows = client
+        .execute(query, converted.as_refs())
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("{err_label}: {e}")))?;
+    usize::try_from(rows).map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!(
+            "postgres affected rows conversion error: {e}"
+        ))
+    })
 }

@@ -1,10 +1,10 @@
-// Turso module - provides turso-specific database functionality
-//
-// This module mirrors the libsql module structure for consistency:
-// - config: Connection configuration and pool setup
-// - params: Parameter conversion between middleware and turso types
-// - query: Result extraction and building
-// - executor: Database operation execution
+//! Turso backend glue (SQLite-compatible, in-process).
+//!
+//! Mirrors the LibSQL/SQLite module layout:
+//! - `config`: connection configuration and pool setup
+//! - `params`: parameter conversion between middleware and Turso types
+//! - `query`: result extraction and building
+//! - `executor`: database operation execution
 
 pub mod config;
 pub mod executor;
@@ -12,10 +12,13 @@ pub mod params;
 pub mod prepared;
 pub mod query;
 pub mod transaction;
+pub mod typed;
 
 // Re-export the public API for convenience
+pub use config::{TursoOptions, TursoOptionsBuilder};
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
-pub use prepared::TursoPreparedStatement;
+pub use prepared::TursoNonTxPreparedStatement;
 pub use query::build_result_set;
-pub use transaction::{Prepared, Tx, begin_transaction, with_transaction};
+pub use transaction::{Prepared, Tx, begin_transaction};
+pub use typed::{Idle as TypedIdle, InTx as TypedInTx, TursoConnection, TursoManager};

@@ -53,7 +53,7 @@ Throughput is reported as lookups per iteration. Adjust `BENCH_LOOKUPS` (or `BEN
 Additional micro-benches in the same Criterion group isolate specific parts of the middleware stack:
 - `pool_acquire` – measures connection checkout/drop latency. Current [results](../bench_results/pool_acquire.md).
 - `middleware_prepare` – times statement preparation through the middleware. Current [results](../bench_results/prepare.md).
-- `middleware_interact` – measures the `deadpool_sqlite::Object::interact` hop with an empty closure. Current [results](../bench_results/interact.md).
+- `middleware_interact` (legacy name) – measures the worker hand-off when calling `with_blocking_sqlite` on a pooled SQLite handle without executing SQL. Current [results](../bench_results/interact.md).
 - `middleware_marshalling` – runs `build_result_set` directly to capture row materialisation cost. Current [results](../bench_results/query_raw.md).
 - `middleware_decode` – decodes a cached `CustomDbRow` into the bench struct to isolate row conversion cost. Current [results](../bench_results/decode.md).
 - `middleware_param_convert` – benchmarks parameter conversion from `RowValues` into `rusqlite::Value`s. Current [results](../bench_results/param_bind.md).
@@ -61,7 +61,7 @@ Additional micro-benches in the same Criterion group isolate specific parts of t
 #### Differences vs SQLx
 - Middleware materialises an entire `Vec<CustomDbRow>` for each call before decoding the first row, while the SQLx manual decode path works with the `SqliteRow` returned from the driver and never builds an intermediate result-set buffer. We do this because materializing a Vec<CustomDbRow> is typical usage of the middleware library whereas SQLx calling code would obviously not materialize a `Vec<CustomDbRow>`.
 - Middleware reuses and mutates a single `Vec<RowValues>` to avoid allocation during parameter binding; the SQLx harness creates a new builder via `.bind(id)` on every loop iteration. The reusable buffer keeps allocations out of the hot loop for benchmarking; production code can adopt the same pattern when profiles show parameter allocation cost, but many callers today likely build fresh parameter collections (likely a minor perf hit).
-- Middleware iterations run through `MiddlewarePool` (backed by `deadpool_sqlite`) with a single pooled connection and can emit `BENCH_TRACE` timing breakdowns, whereas the SQLx run uses an `SqlitePool` with up to five connections and no per-row tracing.
+- Middleware iterations run through `MiddlewarePool` (backed by `deadpool_sqlite` and a worker thread for SQLite) with a single pooled connection and can emit `BENCH_TRACE` timing breakdowns, whereas the SQLx run uses an `SqlitePool` with up to five connections and no per-row tracing.
 
 ### SQLx harness (`bench-harnesses/sqlx_lookup`)
 - Rebuilds the same on-disk datasets as the middleware benches (`benchmark_sqlite_single_lookup.db` for single-row, `benchmark_sqlite_multithread_lookup.db` for multi-thread) using SQLx with identical seeds and schemas.
@@ -76,7 +76,7 @@ The harness also exposes SQLx-specific micro-benches:
 - `sqlx_query_raw` – fetches rows as `SqliteRow` and stops before decoding to isolate driver overhead. This is functionally equivalent to middleware micro-benchmark `middleware_marshalling`.
 - `sqlx_decode` – decodes previously fetched `SqliteRow` values into the bench struct. This is functionally equivalent to middleware micro-benchmark `middleware_decode`.
 - `sqlx_param_bind` – records the cost of constructing and binding parameters on the query builder. This is functionally equivalent to middleware micro-benchmark `middleware_param_convert`.
-- There's no equivalent SQLx micro-benchmark to `middleware_interact` because `middleware_interact` times the `deadpool_sqlite::Object::interact` hop the middleware uses to shuttle blocking work onto the pool’s thread, and SQLx’s sqlite driver is async and doesn’t take that detour, so there's nothing similar to measure.
+- There's no equivalent SQLx micro-benchmark to `middleware_interact` because it times the worker hand-off the middleware uses to run blocking SQLite work off the async runtime. SQLx's sqlite driver is async and doesn't take that detour, so there's nothing similar to measure.
 
 #### Differences vs middleware
 - SQLx fetches a single `SqliteRow` per query and decodes immediately, whereas middleware calls populate a vector of `CustomDbRow` values before picking the first entry to decode. This part of the benchmark favors SQLx and is likely more similar to how SQLx users would query the data. 

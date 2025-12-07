@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 
 // Test utilities module - only compiled with test-utils feature
+#[path = "test_utils/test_helpers.rs"]
+pub mod test_helpers;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
@@ -11,55 +13,68 @@ pub mod benchmark;
 
 // Public API modules
 pub mod conversion;
-pub mod exports;
-pub mod helpers;
 pub mod prelude;
-pub mod query_builder;
 pub mod translation;
+pub mod tx_outcome;
+pub mod typed;
+/// Back-compat re-export: `typed_api` is now `typed`.
+pub use typed as typed_api;
+#[cfg(feature = "postgres")]
+pub mod typed_postgres;
+#[cfg(feature = "sqlite")]
+pub mod typed_sqlite;
+#[cfg(feature = "turso")]
+pub mod typed_turso;
 
-// Core modules
+// Core modules (public for docs/advanced use)
 pub mod error;
-pub mod executor;
+pub(crate) mod executor;
 pub mod middleware;
 pub mod pool;
 pub mod query;
-pub mod results;
-pub mod types;
+
+// Internal modules (types are re-exported; modules stay private)
+pub(crate) mod query_builder;
+pub(crate) mod results;
+pub(crate) mod types;
 
 // Private database-specific modules
 #[cfg(feature = "libsql")]
+#[deprecated(
+    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
+)]
 pub mod libsql;
 #[cfg(feature = "mssql")]
-mod mssql;
+pub mod mssql;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(feature = "sqlite")]
-mod sqlite;
+pub mod sqlite;
 #[cfg(feature = "turso")]
 pub mod turso;
 
-#[cfg(feature = "benchmarks")]
-pub use crate::sqlite::{
-    params::{SqliteParamsExecute, SqliteParamsQuery},
-    query::build_result_set as sqlite_build_result_set,
-};
-
-#[cfg(feature = "benchmarks")]
-pub use crate::conversion::convert_sql_params as sqlite_convert_params;
-
 // Direct exports for frequently used types
 pub use middleware::{
-    AnyConnWrapper, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool,
-    MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder, ResultSet, RowValues,
-    SqlMiddlewareDbError,
+    AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
+    MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder,
+    QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch,
 };
+#[cfg(feature = "libsql")]
+#[deprecated(
+    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
+)]
+pub use middleware::{
+    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
+};
+#[cfg(feature = "mssql")]
+pub use middleware::{MssqlOptions, MssqlOptionsBuilder};
+#[cfg(feature = "postgres")]
+pub use middleware::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
+#[cfg(feature = "sqlite")]
+pub use middleware::{SqliteOptions, SqliteOptionsBuilder};
+#[cfg(feature = "turso")]
+pub use middleware::{TursoOptions, TursoOptionsBuilder};
 
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;
-pub use exports::*;
 pub use translation::{PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders};
-
-// Compatibility alias for existing code
-pub mod test_helpers {
-    pub use crate::helpers::create_test_row;
-}

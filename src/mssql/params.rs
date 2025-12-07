@@ -5,6 +5,7 @@ use tiberius::{ColumnData, ToSql};
 use crate::middleware::{ConversionMode, ParamConverter, RowValues, SqlMiddlewareDbError};
 
 /// Container for SQL Server parameters with lifetime tracking
+#[allow(dead_code)]
 pub struct Params<'a> {
     pub(crate) references: Vec<&'a (dyn ToSql + Sync)>,
 }
@@ -14,6 +15,7 @@ impl<'a> Params<'a> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConversionError` if parameter conversion fails.
+    #[allow(dead_code)]
     pub fn convert(params: &'a [RowValues]) -> Result<Params<'a>, SqlMiddlewareDbError> {
         // Pre-allocate space for performance
         let mut references = Vec::with_capacity(params.len());
@@ -28,6 +30,7 @@ impl<'a> Params<'a> {
 
     /// Get a reference to the underlying parameter array
     #[must_use]
+    #[allow(dead_code)]
     pub fn as_refs(&self) -> &[&(dyn ToSql + Sync)] {
         &self.references
     }

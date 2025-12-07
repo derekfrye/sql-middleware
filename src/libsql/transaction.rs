@@ -1,8 +1,13 @@
 use crate::libsql::{Params as LibsqlParams, build_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::tx_outcome::TxOutcome;
 use deadpool_libsql::Object;
 
 /// Lightweight transaction wrapper for libsql using explicit BEGIN/COMMIT.
+///
+/// This type does **not** auto-rollback on drop. Always call [`commit`](Tx::commit) or
+/// [`rollback`](Tx::rollback) before letting it go out of scope to avoid leaving the connection
+/// in an open transaction.
 pub struct Tx<'a> {
     conn: &'a Object,
 }
@@ -36,26 +41,37 @@ impl Tx<'_> {
         })
     }
 
+    /// Execute a batch of SQL statements within this transaction.
+    ///
+    /// # Errors
+    /// Returns an error if the underlying libsql batch execution fails.
+    pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
+        self.conn.execute_batch(sql).await.map_err(|error| {
+            SqlMiddlewareDbError::ExecutionError(format!("libsql tx execute_batch error: {error}"))
+        })?;
+        Ok(())
+    }
+
     /// Commit the active transaction.
     ///
     /// # Errors
     /// Returns an error if the `COMMIT` statement fails.
-    pub async fn commit(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn commit(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let _ = self.conn.execute_batch("COMMIT").await.map_err(|error| {
             SqlMiddlewareDbError::ExecutionError(format!("libsql commit error: {error}"))
         })?;
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 
     /// Roll back the active transaction.
     ///
     /// # Errors
     /// Returns an error if the `ROLLBACK` statement fails.
-    pub async fn rollback(&self) -> Result<(), SqlMiddlewareDbError> {
+    pub async fn rollback(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let _ = self.conn.execute_batch("ROLLBACK").await.map_err(|error| {
             SqlMiddlewareDbError::ExecutionError(format!("libsql rollback error: {error}"))
         })?;
-        Ok(())
+        Ok(TxOutcome::without_restored_connection())
     }
 
     /// Execute a pre-bound statement, returning the affected row count.

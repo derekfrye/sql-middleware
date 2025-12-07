@@ -88,11 +88,9 @@ impl ToSql for RowValues {
                     })?;
                     v.to_sql(ty, out)
                 }
-                _ => {
-                    return Err(Box::new(SqlMiddlewareDbError::ExecutionError(
-                        format!("unsupported integer parameter type: {ty:?}"),
-                    )))
-                }
+                _ => Err(Box::new(SqlMiddlewareDbError::ExecutionError(format!(
+                    "unsupported integer parameter type: {ty:?}"
+                )))),
             },
             RowValues::Float(f) => (*f).to_sql(ty, out),
             RowValues::Text(s) => s.to_sql(ty, out),

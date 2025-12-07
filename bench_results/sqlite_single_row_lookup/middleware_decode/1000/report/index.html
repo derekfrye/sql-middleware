@@ -118,45 +118,45 @@
                         <tbody>
                             <tr>
                                 <td>Slope</td>
-                                <td class="ci-bound">55.455 µs</td>
-                                <td>55.636 µs</td>
-                                <td class="ci-bound">55.877 µs</td>
+                                <td class="ci-bound">54.865 µs</td>
+                                <td>55.119 µs</td>
+                                <td class="ci-bound">55.401 µs</td>
                             </tr>
                             <tr>
                                 <td>Throughput</td>
-                                <td class="ci-bound">17.896 Melem/s</td>
-                                <td>17.974 Melem/s</td>
-                                <td class="ci-bound">18.033 Melem/s</td>
+                                <td class="ci-bound">18.050 Melem/s</td>
+                                <td>18.143 Melem/s</td>
+                                <td class="ci-bound">18.227 Melem/s</td>
                             </tr>
                             <tr>
                                 <td>R&#xb2;</td>
-                                <td class="ci-bound">0.9670120</td>
-                                <td>0.9684061</td>
-                                <td class="ci-bound">0.9659148</td>
+                                <td class="ci-bound">0.8765341</td>
+                                <td>0.8786642</td>
+                                <td class="ci-bound">0.8760374</td>
                             </tr>
                             <tr>
                                 <td>Mean</td>
-                                <td class="ci-bound">55.579 µs</td>
-                                <td>55.739 µs</td>
-                                <td class="ci-bound">55.934 µs</td>
+                                <td class="ci-bound">54.772 µs</td>
+                                <td>55.258 µs</td>
+                                <td class="ci-bound">56.018 µs</td>
                             </tr>
                             <tr>
                                 <td title="Standard Deviation">Std. Dev.</td>
-                                <td class="ci-bound">457.23 ns</td>
-                                <td>916.91 ns</td>
-                                <td class="ci-bound">1.3197 µs</td>
+                                <td class="ci-bound">930.36 ns</td>
+                                <td>3.3566 µs</td>
+                                <td class="ci-bound">5.5575 µs</td>
                             </tr>
                             <tr>
                                 <td>Median</td>
-                                <td class="ci-bound">55.435 µs</td>
-                                <td>55.522 µs</td>
-                                <td class="ci-bound">55.615 µs</td>
+                                <td class="ci-bound">54.814 µs</td>
+                                <td>54.989 µs</td>
+                                <td class="ci-bound">55.122 µs</td>
                             </tr>
                             <tr>
                                 <td title="Median Absolute Deviation">MAD</td>
-                                <td class="ci-bound">323.15 ns</td>
-                                <td>423.90 ns</td>
-                                <td class="ci-bound">529.14 ns</td>
+                                <td class="ci-bound">492.33 ns</td>
+                                <td>706.42 ns</td>
+                                <td class="ci-bound">953.41 ns</td>
                             </tr>
                         </tbody>
                     </table>
@@ -194,7 +194,7 @@
                 <p>The plot on the right shows the linear regression calculated from the measurements. Each point
                     represents a sample, though here it shows the total time for the sample rather than time per
                     iteration. The line is the line of best fit for these measurements.</p>
-                <p>See <a href="https://bheisler.github.io/criterion.rs/book/user_guide/command_line_output.html#additional-statistics">the
+                <p>See <a href="https://criterion-rs.github.io/book/user_guide/command_line_output.html#additional-statistics">the
                         documentation</a> for more details on the additional statistics.</p>
             </section>
         </div>
@@ -237,22 +237,22 @@
                     <tbody>
                         <tr>
                             <td>Change in time</td>
-                            <td class="ci-bound">+0.3719%</td>
-                            <td>+0.9061%</td>
-                            <td class="ci-bound">+1.4296%</td>
-                            <td>(p = 0.00 &lt;
+                            <td class="ci-bound">−0.5819%</td>
+                            <td>+0.5362%</td>
+                            <td class="ci-bound">+1.9406%</td>
+                            <td>(p = 0.48 &gt;
                                 0.05)</td>
                         </tr>
                         <tr>
                             <td>Change in throughput</td>
-                            <td class="ci-bound">−0.3705%</td>
-                            <td>−0.8980%</td>
-                            <td class="ci-bound">−1.4094%</td>
+                            <td class="ci-bound">+0.5853%</td>
+                            <td>−0.5333%</td>
+                            <td class="ci-bound">−1.9036%</td>
                             <td></td>
                         </tr>
                     </tbody>
                 </table>
-                Change within noise threshold.
+                No change in performance detected.
             </div>
             <div class="additional_plots">
                 <h4>Additional Plots:</h4>
@@ -278,13 +278,13 @@
                 plot for a larger view.</p>
             <p>The plot on the right shows the two regressions. Again, the red line represents the previous measurement
                 while the blue line shows the current measurement.</p>
-            <p>See <a href="https://bheisler.github.io/criterion.rs/book/user_guide/command_line_output.html#change">the
+            <p>See <a href="https://criterion-rs.github.io/book/user_guide/command_line_output.html#change">the
                     documentation</a> for more details on the additional statistics.</p>
         </section>
     </div>
     <div id="footer">
         <p>This report was generated by
-            <a href="https://github.com/bheisler/criterion.rs">Criterion.rs</a>, a statistics-driven benchmarking
+            <a href="https://github.com/criterion-rs/criterion.rs">Criterion.rs</a>, a statistics-driven benchmarking
             library in Rust.</p>
     </div>
 </body>

@@ -1,6 +1,6 @@
 [package]
 name = "sql-middleware"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
@@ -8,19 +8,21 @@ description = "Lightweight async wrappers for tokio-postgres, rusqlite, libsql, 
 repository = "https://github.com/derekfrye/sql-middleware"
 readme = "docs/README.md"
 homepage = "https://github.com/derekfrye/sql-middleware"
-keywords = ["sql", "sqlite", "postgresql", "libsql", "turso"]
+keywords = ["sql", "sqlite", "postgresql", "turso", "mssql"]
 documentation = "https://docs.rs/sql-middleware"
 
 [lints.rust]
 unsafe_code = "deny"
 
 [features]
-default = ["sqlite", "postgres"]
-sqlite = ["deadpool-sqlite"]
-postgres = ["tokio-postgres", "deadpool-postgres"]
-mssql = ["tiberius", "deadpool-tiberius", "futures-util"]
-libsql = ["deadpool-libsql"]
-turso = ["dep:turso"]
+default = ["postgres", "sqlite"]
+sqlite = ["dep:rusqlite", "dep:bb8", "dep:bb8-rusqlite"]
+postgres = ["dep:tokio-postgres", "dep:bb8"]
+typed-postgres = ["postgres"] # compatibility alias; typed API is always on when postgres is enabled
+mssql = ["dep:tiberius", "dep:futures-util", "dep:bb8-tiberius"]
+libsql = ["dep:deadpool-libsql"]
+turso = ["dep:turso", "dep:bb8"]
+typed-turso = ["turso"] # compatibility alias; typed API is always on when turso is enabled
 test-utils-postgres = ["dep:postgresql_embedded"]
 test-utils = ["test-utils-postgres"]
 benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
@@ -33,18 +35,19 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio-postgres = { version = "0", features = ["with-chrono-0_4", "with-serde_json-1"], optional = true }
 chrono = {version = "0", features = ["serde"] }
-deadpool-postgres = { version = "0", optional = true }
 regex = "1"
 clap = { version = "4", features = ["derive"] }
-deadpool-sqlite = { version = "0", features = ["rt_tokio_1"], optional = true }
-deadpool = "0"
+
 thiserror = "2"
 async-trait = "0"
 # SQL Server dependencies
 tiberius = { version = "0", features = ["chrono", "sql-browser-tokio"], optional = true }
-deadpool-tiberius = { version = "0", optional = true }
+deadpool = "0"
+bb8-tiberius = { version = "0", optional = true }
 futures-util = { version = "0", optional = true }
 lazy_static = "1"
+parking_lot = "0"
+crossbeam-channel = "0"
 postgresql_embedded = { version = "0", features = ["bundled"], optional = true }
 # Benchmark dependencies
 criterion = { version = "0", features = ["async_tokio"], optional = true }
@@ -54,6 +57,10 @@ rand_chacha = { version = "0", optional = true }
 deadpool-libsql = { version = "0", optional = true }
 # turso deps
 turso = { version = "0.3.2", optional = true }
+bb8 = { version = "0", optional = true }
+bb8-rusqlite = { version = "0", optional = true }
+rusqlite = { version = "0", optional = true }
+tracing = "0"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--deny", "unsafe_code"]
@@ -67,8 +74,8 @@ features = ["full"]
 criterion = { version = "0", features = ["async_tokio"] }
 rand = "0"
 rand_chacha = "0"
-sql-middleware = { path = ".", features = ["benchmarks", "mssql", "libsql", "turso", "test-utils"] }
-rusqlite = "0"
+sql-middleware = { path = ".", default-features = false, features = ["benchmarks", "mssql", "turso", "test-utils", "sqlite"] }
+tempfile = "3"
 
 [[bench]]
 name = "database_benchmark"

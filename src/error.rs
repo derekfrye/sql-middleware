@@ -1,9 +1,15 @@
 use thiserror::Error;
 
+#[cfg(any(feature = "postgres", feature = "mssql"))]
+use bb8;
+
+#[cfg(feature = "mssql")]
+use bb8_tiberius::Error as Bb8TiberiusError;
+
 #[cfg(feature = "libsql")]
 use deadpool_libsql;
 #[cfg(feature = "sqlite")]
-use deadpool_sqlite::rusqlite;
+use rusqlite;
 #[cfg(feature = "mssql")]
 use tiberius;
 #[cfg(feature = "postgres")]
@@ -27,15 +33,11 @@ pub enum SqlMiddlewareDbError {
 
     #[cfg(feature = "postgres")]
     #[error(transparent)]
-    PoolErrorPostgres(#[from] deadpool::managed::PoolError<tokio_postgres::Error>),
-
-    #[cfg(feature = "sqlite")]
-    #[error(transparent)]
-    PoolErrorSqlite(#[from] deadpool::managed::PoolError<rusqlite::Error>),
+    PoolErrorPostgres(#[from] bb8::RunError<tokio_postgres::Error>),
 
     #[cfg(feature = "mssql")]
     #[error(transparent)]
-    PoolErrorMssql(#[from] deadpool::managed::PoolError<tiberius::error::Error>),
+    PoolErrorMssql(#[from] bb8::RunError<Bb8TiberiusError>),
 
     #[cfg(feature = "libsql")]
     #[error(transparent)]
@@ -48,10 +50,6 @@ pub enum SqlMiddlewareDbError {
     #[cfg(feature = "turso")]
     #[error(transparent)]
     TursoError(#[from] turso::Error),
-
-    #[cfg(feature = "mssql")]
-    #[error("SQL Server connection pool error: {0}")]
-    TiberiusPoolError(String),
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -70,4 +68,11 @@ pub enum SqlMiddlewareDbError {
 
     #[error("Other database error: {0}")]
     Other(String),
+}
+
+#[cfg(feature = "sqlite")]
+impl From<bb8::RunError<SqlMiddlewareDbError>> for SqlMiddlewareDbError {
+    fn from(err: bb8::RunError<SqlMiddlewareDbError>) -> Self {
+        SqlMiddlewareDbError::ConnectionError(format!("SQLite pool error: {err}"))
+    }
 }

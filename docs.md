@@ -1,13 +1,15 @@
-    # SQL Middleware - A lightweight wrapper SQL backends
+# SQL Middleware - A lightweight wrapper for SQL backends
+
+*Keywords: postgres, sqlite, libsql, turso, deadpool, bb8, async, pool, query builder*
 
 This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
-similar, async-compatible API consistent across databases.
+similar, async-compatible API consistent across databases. Full examples on [github](https://github.com/derekfrye/sql-middleware/).
 
 ## Features
 
 - Similar API regardless of backend (as much as possible)
 - Asynchronous (where available)
-- `deadpool` connection pooling (where available)
+- Connection pooling via `bb8` (Postgres/SQLite) and `deadpool` (LibSQL/SQL Server)
 - Transaction support
 - Not an ORM
 
@@ -78,7 +80,36 @@ pub async fn set_scores_in_db(
         .select()
         .await
 }
-
-// For more in-depth examples (batch queries, query builder usage, benchmarks),
-// see the project README: https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md
 ```
+
+### `SQLite` worker helpers
+
+`SQLite` pooling runs through a worker thread so blocking `rusqlite` calls never stall the async runtime. Two helpers expose that surface:
+
+```rust,no_run
+use sql_middleware::prelude::*;
+
+let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".into())
+    .build()
+    .await?;
+let mut conn = cap.get_connection().await?;
+
+// Borrow the raw rusqlite::Connection on the worker for batched work.
+conn.with_blocking_sqlite(|raw| {
+    let tx = raw.transaction()?;
+    tx.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);")?;
+    tx.execute("INSERT INTO t (name) VALUES (?1)", ["alice"])?;
+    tx.commit()?;
+    Ok::<_, SqlMiddlewareDbError>(())
+})
+.await?;
+
+// Prepare once and reuse via the worker queue.
+let prepared = conn
+    .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
+    .await?;
+let rows = prepared.query(&[RowValues::Int(1)]).await?;
+assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
+```
+
+For more in-depth examples (batch queries, query builder usage, benchmarks), see the project README: <https://github.com/derekfrye/sql-middleware/blob/main/docs/README.md>

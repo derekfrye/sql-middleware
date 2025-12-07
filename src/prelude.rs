@@ -4,37 +4,27 @@
 //! to make it easier to get started with the library.
 
 pub use crate::middleware::{
-    AnyConnWrapper, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType, MiddlewarePool,
-    MiddlewarePoolConnection, QueryAndParams, QueryBuilder, ResultSet, RowValues,
-    SqlMiddlewareDbError,
+    AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
+    MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, QueryBuilder, QueryTarget, ResultSet,
+    RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch, query,
 };
 
 pub use crate::conversion::convert_sql_params;
+#[cfg(feature = "libsql")]
+#[deprecated(
+    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
+)]
+pub use crate::libsql::{
+    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
+};
+#[cfg(feature = "mssql")]
+pub use crate::mssql::{MssqlOptions, MssqlOptionsBuilder};
+#[cfg(feature = "postgres")]
+pub use crate::postgres::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
+#[cfg(feature = "sqlite")]
+pub use crate::sqlite::{SqliteOptions, SqliteOptionsBuilder};
 pub use crate::translation::{
     PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
 };
-
-#[cfg(feature = "postgres")]
-pub use crate::exports::PostgresParams;
-#[cfg(feature = "postgres")]
-pub use crate::exports::postgres_build_result_set;
-
-#[cfg(feature = "sqlite")]
-pub use crate::exports::SqliteConnection;
-#[cfg(feature = "sqlite")]
-pub use crate::exports::SqliteParamsExecute;
-#[cfg(feature = "sqlite")]
-pub use crate::exports::SqliteParamsQuery;
-#[cfg(feature = "sqlite")]
-pub use crate::exports::SqlitePreparedStatement;
-#[cfg(feature = "sqlite")]
-pub use crate::exports::sqlite_build_result_set;
-
-#[cfg(feature = "mssql")]
-pub use crate::exports::MssqlClient;
-#[cfg(feature = "mssql")]
-pub use crate::exports::MssqlParams;
-#[cfg(feature = "mssql")]
-pub use crate::exports::create_mssql_client;
-#[cfg(feature = "mssql")]
-pub use crate::exports::mssql_build_result_set;
+#[cfg(feature = "turso")]
+pub use crate::turso::{TursoOptions, TursoOptionsBuilder};
