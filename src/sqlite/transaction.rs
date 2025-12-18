@@ -9,6 +9,19 @@ use crate::tx_outcome::TxOutcome;
 use super::connection::SqliteConnection;
 use super::params::Params;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static REWRAP_ON_ROLLBACK_FAILURE: AtomicBool = AtomicBool::new(false);
+
+#[doc(hidden)]
+pub fn set_rewrap_on_rollback_failure_for_tests(rewrap: bool) {
+    REWRAP_ON_ROLLBACK_FAILURE.store(rewrap, Ordering::Relaxed);
+}
+
+fn rewrap_on_rollback_failure_for_tests() -> bool {
+    REWRAP_ON_ROLLBACK_FAILURE.load(Ordering::Relaxed)
+}
+
 /// Transaction handle that owns the `SQLite` connection until completion.
 pub struct Tx<'a> {
     conn: Option<SqliteConnection>,
@@ -127,9 +140,19 @@ impl Tx<'_> {
                 Ok(TxOutcome::without_restored_connection())
             }
             Err(err) => {
-                let _ = conn.rollback().await;
-                conn.in_transaction = false;
-                self.rewrap(conn);
+                let handle = conn.conn_handle();
+                let rollback_result =
+                    super::connection::rollback_with_busy_retries(handle.clone());
+                if rollback_result.is_ok() {
+                    conn.in_transaction = false;
+                    self.rewrap(conn);
+                } else if rewrap_on_rollback_failure_for_tests() {
+                    conn.in_transaction = false;
+                    self.rewrap(conn);
+                    return Err(err);
+                } else {
+                    handle.mark_broken();
+                }
                 Err(err)
             }
         }
@@ -143,10 +166,24 @@ impl Tx<'_> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
         })?;
-        let result = conn.rollback().await;
-        conn.in_transaction = false;
-        self.rewrap(conn);
-        result.map(|()| TxOutcome::without_restored_connection())
+        let handle = conn.conn_handle();
+        match super::connection::rollback_with_busy_retries(handle.clone()) {
+            Ok(()) => {
+                conn.in_transaction = false;
+                self.rewrap(conn);
+                Ok(TxOutcome::without_restored_connection())
+            }
+            Err(err) => {
+                if rewrap_on_rollback_failure_for_tests() {
+                    conn.in_transaction = false;
+                    self.rewrap(conn);
+                    return Err(err);
+                } else {
+                    handle.mark_broken();
+                    Err(err)
+                }
+            }
+        }
     }
 
     fn rewrap(&mut self, conn: SqliteConnection) {
@@ -165,13 +202,19 @@ impl Drop for Tx<'_> {
     /// is simply to leave the connection in a clean state before returning it to the pool.
     fn drop(&mut self) {
         if let Some(mut conn) = self.conn.take() {
-            let _ = conn.conn_handle().execute_blocking(|guard| {
-                guard
-                    .execute_batch("ROLLBACK")
-                    .map_err(SqlMiddlewareDbError::SqliteError)
-            });
-            conn.in_transaction = false;
-            self.rewrap(conn);
+            let handle = conn.conn_handle();
+            let rollback_result = super::connection::rollback_with_busy_retries(handle.clone());
+            if rollback_result.is_ok() {
+                conn.in_transaction = false;
+                self.rewrap(conn);
+            } else if rewrap_on_rollback_failure_for_tests() {
+                conn.in_transaction = false;
+                self.rewrap(conn);
+            } else {
+                // Mark broken so the pool will drop and replace this connection instead of
+                // handing out one that might still be mid-transaction.
+                handle.mark_broken();
+            }
         }
     }
 }

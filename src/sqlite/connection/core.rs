@@ -41,6 +41,15 @@ impl SqliteConnection {
         Arc::clone(&*self.conn)
     }
 
+    pub(crate) fn mark_broken(&self) {
+        self.conn_handle().mark_broken();
+    }
+
+    #[doc(hidden)]
+    pub fn set_force_rollback_busy_for_tests(&self, force: bool) {
+        self.conn_handle().set_force_rollback_busy_for_tests(force);
+    }
+
     pub(crate) fn ensure_not_in_tx(&self, ctx: &str) -> Result<(), SqlMiddlewareDbError> {
         if self.in_transaction {
             Err(SqlMiddlewareDbError::ExecutionError(format!(

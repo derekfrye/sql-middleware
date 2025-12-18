@@ -37,6 +37,7 @@ enum SqliteWorkerMessage {
 pub struct SqliteWorker {
     sender: Sender<SqliteWorkerMessage>,
     broken: Arc<AtomicBool>,
+    force_rollback_busy_for_tests: AtomicBool,
 }
 
 impl SqliteWorker {
@@ -72,7 +73,11 @@ impl SqliteWorker {
                 broken_flag.store(true, Ordering::Relaxed);
             });
 
-        Arc::new(Self { sender, broken })
+        Arc::new(Self {
+            sender,
+            broken,
+            force_rollback_busy_for_tests: AtomicBool::new(false),
+        })
     }
 
     pub(crate) fn execute<F>(&self, func: F) -> Result<(), SqlMiddlewareDbError>
@@ -119,6 +124,20 @@ impl SqliteWorker {
     #[must_use]
     pub fn is_broken_for_tests(&self) -> bool {
         self.is_broken()
+    }
+
+    pub(crate) fn mark_broken(&self) {
+        self.broken.store(true, Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    pub fn set_force_rollback_busy_for_tests(&self, force: bool) {
+        self.force_rollback_busy_for_tests
+            .store(force, Ordering::Relaxed);
+    }
+
+    pub(crate) fn force_rollback_busy_for_tests(&self) -> bool {
+        self.force_rollback_busy_for_tests.load(Ordering::Relaxed)
     }
 }
 
