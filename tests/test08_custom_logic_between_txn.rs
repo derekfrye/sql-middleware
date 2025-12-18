@@ -124,25 +124,20 @@ impl PreparedStmt {
 }
 
 async fn run_execute_with_finalize(
+    conn: &mut MiddlewarePoolConnection,
     mut tx: BackendTx<'_>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
-    conn_slot: &mut Option<MiddlewarePoolConnection>,
 ) -> Result<usize, SqlMiddlewareDbError> {
     let result = stmt.execute_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
-            let outcome = tx.commit().await?;
-            if let Some(restored) = outcome.into_restored_connection() {
-                *conn_slot = Some(restored);
-            }
+            tx.commit().await?.restore_into(conn);
             Ok(rows)
         }
         Err(e) => {
-            if let Ok(outcome) = tx.rollback().await
-                && let Some(restored) = outcome.into_restored_connection()
-            {
-                *conn_slot = Some(restored);
+            if let Ok(outcome) = tx.rollback().await {
+                outcome.restore_into(conn);
             }
             Err(e)
         }
@@ -202,34 +197,26 @@ async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMid
     // Success path should commit.
     {
         let (tx, stmt) = prepare_backend_tx_and_stmt(conn, insert_query).await?;
-        let mut restored = None;
         run_execute_with_finalize(
+            conn,
             tx,
             stmt,
             vec![RowValues::Int(1), RowValues::Text("ok".into())],
-            &mut restored,
         )
         .await?;
-        if let Some(restored_conn) = restored.take() {
-            *conn = restored_conn;
-        }
     }
 
     // Duplicate insert should roll back and propagate the error.
     {
         let (tx, stmt) = prepare_backend_tx_and_stmt(conn, insert_query).await?;
-        let mut restored = None;
         let res = run_execute_with_finalize(
+            conn,
             tx,
             stmt,
             vec![RowValues::Int(1), RowValues::Text("dup".into())],
-            &mut restored,
         )
         .await;
         assert!(res.is_err(), "expected duplicate key to fail");
-        if let Some(restored_conn) = restored.take() {
-            *conn = restored_conn;
-        }
     }
 
     // Verify only the committed row exists.

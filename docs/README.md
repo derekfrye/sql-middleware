@@ -289,12 +289,8 @@ pub async fn get_scores_from_db(
 
     // Build params however you like in your business logic.
     let dynamic_params = vec![RowValues::Int(event_id)];
-    let mut restored = None;
-    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params, &mut restored).await?;
-    if let Some(restored_conn) = restored.take() {
-        // Reinsert SQLite connection so this pooled wrapper stays usable for subsequent work.
-        *conn = restored_conn;
-    }
+    let rows =
+        run_prepared_with_finalize(&mut conn, tx, stmt, dynamic_params).await?;
     Ok(rows)
 }
 
@@ -342,26 +338,21 @@ impl PreparedStmt {
 }
 
 async fn run_prepared_with_finalize<'conn>(
+    conn: &mut MiddlewarePoolConnection,
     mut tx: BackendTx<'conn>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
-    restored: &mut Option<MiddlewarePoolConnection>,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let result = stmt.query_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
-            let outcome = tx.commit().await?;
-            if let Some(conn) = outcome.into_restored_connection() {
-                // Hand connection back to caller so the pooled wrapper remains usable.
-                *restored = Some(conn);
-            }
+            tx.commit().await?.restore_into(conn);
             Ok(rows)
         }
         Err(e) => {
             if let Ok(outcome) = tx.rollback().await {
-                if let Some(conn) = outcome.into_restored_connection() {
-                    *restored = Some(conn);
-                }
+                // Hand connection back to caller so the pooled wrapper remains usable.
+                outcome.restore_into(conn);
             }
             Err(e)
         }

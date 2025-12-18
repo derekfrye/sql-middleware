@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use bb8::{ManageConnection, Pool, PooledConnection};
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{Sender, unbounded};
 
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
@@ -16,9 +16,7 @@ pub type SharedSqliteConnection = Arc<SqliteWorker>;
 /// Test-only helper to rollback a connection from the pool.
 #[doc(hidden)]
 #[cfg(feature = "sqlite")]
-pub async fn rollback_for_tests(
-    pool: &Pool<SqliteManager>,
-) -> Result<(), SqlMiddlewareDbError> {
+pub async fn rollback_for_tests(pool: &Pool<SqliteManager>) -> Result<(), SqlMiddlewareDbError> {
     let conn = pool.get_owned().await.map_err(|e| {
         SqlMiddlewareDbError::ConnectionError(format!("sqlite cleanup checkout error: {e}"))
     })?;
@@ -105,13 +103,11 @@ impl SqliteWorker {
                     "sqlite worker channel unexpectedly closed".into(),
                 )
             })?;
-        resp_rx
-            .recv()
-            .map_err(|_| {
-                SqlMiddlewareDbError::ExecutionError(
-                    "sqlite worker response channel unexpectedly closed".into(),
-                )
-            })?
+        resp_rx.recv().map_err(|_| {
+            SqlMiddlewareDbError::ExecutionError(
+                "sqlite worker response channel unexpectedly closed".into(),
+            )
+        })?
     }
 
     #[must_use]
@@ -171,7 +167,10 @@ mod tests {
                 .map_err(SqlMiddlewareDbError::SqliteError)
         })
         .await?;
-        assert!(!conn.is_broken(), "replacement connection should be healthy");
+        assert!(
+            !conn.is_broken(),
+            "replacement connection should be healthy"
+        );
         Ok(())
     }
 }

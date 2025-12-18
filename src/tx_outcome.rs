@@ -44,6 +44,17 @@ impl TxOutcome {
         self.restored_connection
     }
 
+    /// Restore any pooled connection contained in this outcome back into the caller's slot.
+    ///
+    /// This is primarily useful for SQLite, where the transaction API consumes the pooled wrapper
+    /// and returns it on commit/rollback. Other backends return an empty outcome, making this a
+    /// no-op.
+    pub fn restore_into(self, conn_slot: &mut MiddlewarePoolConnection) {
+        if let Some(conn) = self.into_restored_connection() {
+            *conn_slot = conn;
+        }
+    }
+
     /// Consume the outcome and unwrap the `SQLite` connection + translation flag.
     #[cfg(feature = "sqlite")]
     pub fn into_sqlite_parts(self) -> Option<(SqliteConnection, bool)> {
