@@ -46,7 +46,7 @@ impl TxOutcome {
 
     /// Restore any pooled connection contained in this outcome back into the caller's slot.
     ///
-    /// This is primarily useful for SQLite, where the transaction API consumes the pooled wrapper
+    /// This is primarily useful for `SQLite`, where the transaction API consumes the pooled wrapper
     /// and returns it on commit/rollback. Other backends return an empty outcome, making this a
     /// no-op.
     pub fn restore_into(self, conn_slot: &mut MiddlewarePoolConnection) {

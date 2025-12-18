@@ -48,8 +48,7 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
             let _permit = sem.acquire().await;
             let mut conn = cap.get_connection().await?;
             let _ = apply_pragmas(&mut conn).await;
-            let (conn, translate) = conn.into_sqlite()?;
-            let mut tx = begin_transaction(conn, translate).await?;
+            let mut tx = begin_transaction(&mut conn).await?;
             let stmt = tx.prepare("INSERT INTO stress (id, val) VALUES (?1, ?2)")?;
             let params = [RowValues::Int(i), RowValues::Text(format!("ok-{i}"))];
             tx.execute_prepared(&stmt, &params).await?;
@@ -65,8 +64,7 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
             let _permit = sem.acquire().await;
             let mut conn = cap.get_connection().await?;
             let _ = apply_pragmas(&mut conn).await;
-            let (conn, translate) = conn.into_sqlite()?;
-            let mut tx = begin_transaction(conn, translate).await?;
+            let mut tx = begin_transaction(&mut conn).await?;
             let stmt = tx.prepare("INSERT INTO stress (id, val) VALUES (?1, ?2)")?;
             let params = [RowValues::Int(0), RowValues::Text("dupe".into())];
             let res = tx.execute_prepared(&stmt, &params).await;
@@ -152,9 +150,8 @@ async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
     conn.execute_batch("CREATE TABLE t3 (id INTEGER PRIMARY KEY)")
         .await?;
 
-    let (conn_inner, translate) = conn.into_sqlite()?;
     {
-        let mut tx = begin_transaction(conn_inner, translate).await?;
+        let mut tx = begin_transaction(&mut conn).await?;
         let stmt = tx.prepare("INSERT INTO t3 (id) VALUES (?1)")?;
         let params = [RowValues::Int(1)];
         // Ignore result; drop without explicit commit/rollback should auto-rollback.
@@ -191,15 +188,10 @@ async fn sqlite_tx_rejects_second_begin() -> Result<(), Box<dyn std::error::Erro
     apply_pragmas(&mut conn).await?;
     conn.execute_batch("CREATE TABLE t4 (id INTEGER)").await?;
 
-    let (conn_inner, translate) = conn.into_sqlite()?;
-    let mut tx = begin_transaction(conn_inner, translate).await?;
+    let mut tx = begin_transaction(&mut conn).await?;
     let stmt = tx.prepare("INSERT INTO t4 (id) VALUES (?1)")?;
     tx.execute_prepared(&stmt, &[RowValues::Int(1)]).await?;
-    let outcome = tx.commit().await?;
-
-    let mut conn = outcome
-        .into_restored_connection()
-        .expect("sqlite commit should restore connection");
+    tx.commit().await?;
     let rs = conn
         .query("SELECT COUNT(*) AS cnt FROM t4")
         .select()

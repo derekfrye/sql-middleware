@@ -51,7 +51,7 @@ enum BackendTx<'conn> {
     #[cfg(feature = "postgres")]
     Postgres(PostgresTx<'conn>),
     #[cfg(feature = "sqlite")]
-    Sqlite(SqliteTx),
+    Sqlite(SqliteTx<'conn>),
     #[cfg(feature = "libsql")]
     Libsql(LibsqlTx<'conn>),
 }
@@ -124,7 +124,6 @@ impl PreparedStmt {
 }
 
 async fn run_execute_with_finalize(
-    conn: &mut MiddlewarePoolConnection,
     mut tx: BackendTx<'_>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
@@ -132,13 +131,11 @@ async fn run_execute_with_finalize(
     let result = stmt.execute_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
-            tx.commit().await?.restore_into(conn);
+            tx.commit().await?;
             Ok(rows)
         }
         Err(e) => {
-            if let Ok(outcome) = tx.rollback().await {
-                outcome.restore_into(conn);
-            }
+            let _ = tx.rollback().await;
             Err(e)
         }
     }
@@ -171,16 +168,12 @@ async fn prepare_backend_tx_and_stmt<'conn>(
         }
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite {
-            conn,
             translate_placeholders: translate_default,
+            ..
         } => {
-            let sqlite_conn = conn.take().ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError(
-                    "SQLite connection already taken from wrapper".into(),
-                )
-            })?;
-            let tx = begin_sqlite_tx(sqlite_conn, *translate_default).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let translate_default = *translate_default;
+            let tx = begin_sqlite_tx(conn).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, translate_default);
             let stmt = tx.prepare(q.as_ref())?;
             Ok((BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)))
         }
@@ -198,7 +191,6 @@ async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMid
     {
         let (tx, stmt) = prepare_backend_tx_and_stmt(conn, insert_query).await?;
         run_execute_with_finalize(
-            conn,
             tx,
             stmt,
             vec![RowValues::Int(1), RowValues::Text("ok".into())],
@@ -210,7 +202,6 @@ async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMid
     {
         let (tx, stmt) = prepare_backend_tx_and_stmt(conn, insert_query).await?;
         let res = run_execute_with_finalize(
-            conn,
             tx,
             stmt,
             vec![RowValues::Int(1), RowValues::Text("dup".into())],

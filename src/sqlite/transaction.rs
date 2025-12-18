@@ -10,9 +10,9 @@ use super::connection::SqliteConnection;
 use super::params::Params;
 
 /// Transaction handle that owns the `SQLite` connection until completion.
-pub struct Tx {
+pub struct Tx<'a> {
     conn: Option<SqliteConnection>,
-    translate_placeholders: bool,
+    conn_slot: &'a mut MiddlewarePoolConnection,
 }
 
 /// Prepared statement tied to a `SQLite` transaction.
@@ -20,25 +20,33 @@ pub struct Prepared {
     sql: Arc<String>,
 }
 
-/// Begin a transaction, consuming the `SQLite` connection until commit/rollback.
-///
-/// `translate_placeholders` keeps the pool's translation default attached so the
-/// connection can be rewrapped after commit/rollback.
+/// Begin a transaction, temporarily taking ownership of the pooled `SQLite` connection
+/// until commit/rollback (or drop) returns it to the wrapper.
 ///
 /// # Errors
 /// Returns `SqlMiddlewareDbError` if the transaction cannot be started.
 pub async fn begin_transaction(
-    mut conn: SqliteConnection,
-    translate_placeholders: bool,
-) -> Result<Tx, SqlMiddlewareDbError> {
+    conn_slot: &mut MiddlewarePoolConnection,
+) -> Result<Tx<'_>, SqlMiddlewareDbError> {
+    let MiddlewarePoolConnection::Sqlite { conn, .. } = conn_slot else {
+        return Err(SqlMiddlewareDbError::Unimplemented(
+            "begin_transaction is only available for SQLite connections".into(),
+        ));
+    };
+
+    let mut conn = conn.take().ok_or_else(|| {
+        SqlMiddlewareDbError::ExecutionError(
+            "SQLite connection already taken from pool wrapper".into(),
+        )
+    })?;
     conn.begin().await?;
     Ok(Tx {
         conn: Some(conn),
-        translate_placeholders,
+        conn_slot,
     })
 }
 
-impl Tx {
+impl Tx<'_> {
     fn conn_mut(&mut self) -> Result<&mut SqliteConnection, SqlMiddlewareDbError> {
         self.conn.as_mut().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
@@ -105,49 +113,65 @@ impl Tx {
         conn.execute_batch_in_tx(sql).await
     }
 
-    /// Commit the transaction and surface the restored connection.
+    /// Commit the transaction and rewrap the pooled connection.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if committing the transaction fails.
-    ///
-    /// Use the returned connection (via [`TxOutcome::into_restored_connection`](TxOutcome::into_restored_connection))
-    /// for further work so the pool wrapper and placeholder-translation flag stay in sync.
     pub async fn commit(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
         })?;
-        conn.commit().await?;
-        let restored =
-            MiddlewarePoolConnection::from_sqlite_parts(conn, self.translate_placeholders);
-        Ok(TxOutcome::with_restored_connection(restored))
+        match conn.commit().await {
+            Ok(()) => {
+                self.rewrap(conn);
+                Ok(TxOutcome::without_restored_connection())
+            }
+            Err(err) => {
+                let _ = conn.rollback().await;
+                conn.in_transaction = false;
+                self.rewrap(conn);
+                Err(err)
+            }
+        }
     }
 
-    /// Roll back the transaction and surface the restored connection.
+    /// Roll back the transaction and rewrap the pooled connection.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if rolling back fails.
-    ///
-    /// Use the returned connection (via [`TxOutcome::into_restored_connection`](TxOutcome::into_restored_connection))
-    /// for further work so the pool wrapper and placeholder-translation flag stay in sync.
     pub async fn rollback(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         let mut conn = self.conn.take().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
         })?;
-        conn.rollback().await?;
-        let restored =
-            MiddlewarePoolConnection::from_sqlite_parts(conn, self.translate_placeholders);
-        Ok(TxOutcome::with_restored_connection(restored))
+        let result = conn.rollback().await;
+        conn.in_transaction = false;
+        self.rewrap(conn);
+        result.map(|()| TxOutcome::without_restored_connection())
+    }
+
+    fn rewrap(&mut self, conn: SqliteConnection) {
+        let MiddlewarePoolConnection::Sqlite { conn: slot, .. } = self.conn_slot else {
+            return;
+        };
+        debug_assert!(slot.is_none(), "sqlite conn slot should be empty during tx");
+        *slot = Some(conn);
     }
 }
 
-impl Drop for Tx {
+impl Drop for Tx<'_> {
+    /// Rolls back on drop to avoid leaking open transactions; the rollback is best-effort and
+    /// SQLite may report "no transaction is active" if the transaction was already completed
+    /// by user code (e.g., via `execute_batch_in_tx`). Such errors are ignored because the goal
+    /// is simply to leave the connection in a clean state before returning it to the pool.
     fn drop(&mut self) {
-        if let Some(mut conn) = self.conn.take()
-            && let Ok(handle) = tokio::runtime::Handle::try_current()
-        {
-            handle.spawn(async move {
-                let _ = conn.rollback().await;
+        if let Some(mut conn) = self.conn.take() {
+            let _ = conn.conn_handle().execute_blocking(|guard| {
+                guard
+                    .execute_batch("ROLLBACK")
+                    .map_err(SqlMiddlewareDbError::SqliteError)
             });
+            conn.in_transaction = false;
+            self.rewrap(conn);
         }
     }
 }

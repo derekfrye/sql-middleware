@@ -203,7 +203,7 @@ async fn list_users(pool: &ConfigAndPool) -> Result<ResultSet, SqlMiddlewareDbEr
 
 ### Custom logic in between transactions
 
-Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block across backends. `commit()`/`rollback()` return a `TxOutcome`, which carries the rewrapped pooled connection for SQLite (translation flag included) so you can keep using the same `MiddlewarePoolConnection` afterward.
+Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block across backends. `commit()`/`rollback()` return a `TxOutcome`; for SQLite the connection is rewrapped automatically by the transaction handle so you can keep using the same `MiddlewarePoolConnection` afterward.
 
 ```rust
 use sql_middleware::prelude::*;
@@ -223,7 +223,7 @@ use sql_middleware::turso::{
 enum BackendTx<'conn> {
     Turso(TursoTx<'conn>),
     Postgres(PostgresTx<'conn>),
-    Sqlite(SqliteTx),
+    Sqlite(SqliteTx<'conn>),
     Libsql(LibsqlTx<'conn>),
 }
 
@@ -258,19 +258,11 @@ pub async fn get_scores_from_db(
             (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
         }
         MiddlewarePoolConnection::Sqlite {
-            conn,
             translate_placeholders: translate_default,
+            ..
         } => {
-            // Take ownership of the SQLite connection (tx API consumes it).
-            let sqlite_conn = conn
-                .take()
-                .ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError(
-                    "SQLite connection already taken".to_string(),
-                )
-            })?;
-            let mut tx = begin_sqlite_tx(sqlite_conn, *translate_default).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
+            let mut tx = begin_sqlite_tx(conn).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, *translate_default);
             let stmt = tx.prepare(q.as_ref())?;
             (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
         }
@@ -289,8 +281,7 @@ pub async fn get_scores_from_db(
 
     // Build params however you like in your business logic.
     let dynamic_params = vec![RowValues::Int(event_id)];
-    let rows =
-        run_prepared_with_finalize(&mut conn, tx, stmt, dynamic_params).await?;
+    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params).await?;
     Ok(rows)
 }
 
@@ -338,7 +329,6 @@ impl PreparedStmt {
 }
 
 async fn run_prepared_with_finalize<'conn>(
-    conn: &mut MiddlewarePoolConnection,
     mut tx: BackendTx<'conn>,
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
@@ -346,14 +336,11 @@ async fn run_prepared_with_finalize<'conn>(
     let result = stmt.query_prepared(&mut tx, &params).await;
     match result {
         Ok(rows) => {
-            tx.commit().await?.restore_into(conn);
+            tx.commit().await?;
             Ok(rows)
         }
         Err(e) => {
-            if let Ok(outcome) = tx.rollback().await {
-                // Hand connection back to caller so the pooled wrapper remains usable.
-                outcome.restore_into(conn);
-            }
+            let _ = tx.rollback().await;
             Err(e)
         }
     }

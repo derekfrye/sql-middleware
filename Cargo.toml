@@ -1,6 +1,6 @@
 [package]
 name = "sql-middleware"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
@@ -16,7 +16,7 @@ unsafe_code = "deny"
 
 [features]
 default = ["postgres", "sqlite"]
-sqlite = ["dep:rusqlite", "dep:bb8", "dep:bb8-rusqlite"]
+sqlite = ["dep:rusqlite", "dep:bb8"]
 postgres = ["dep:tokio-postgres", "dep:bb8"]
 typed-postgres = ["postgres"] # compatibility alias; typed API is always on when postgres is enabled
 mssql = ["dep:tiberius", "dep:futures-util", "dep:bb8-tiberius"]
@@ -58,7 +58,6 @@ deadpool-libsql = { version = "0", optional = true }
 # turso deps
 turso = { version = "0.3.2", optional = true }
 bb8 = { version = "0", optional = true }
-bb8-rusqlite = { version = "0", optional = true }
 rusqlite = { version = "0", optional = true }
 tracing = "0"
 

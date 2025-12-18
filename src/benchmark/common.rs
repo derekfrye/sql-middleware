@@ -18,35 +18,37 @@ pub fn generate_insert_statements(num_rows: usize) -> String {
     let mut statements = String::with_capacity(num_rows * 200);
 
     for i in 0..num_rows {
-        let a = rng.random_range(1..1000);
-        let b_suffix = rng.random_range(1..1000);
+        let a = rng.gen_range(1, 1000);
+        let b_suffix = rng.gen_range(1, 1000);
         let b = format!("text-{b_suffix}");
 
-        let timestamp_year = rng.random_range(2020..2026);
-        let timestamp_month = rng.random_range(1..13);
-        let timestamp_day = rng.random_range(1..29);
-        let timestamp_hour = rng.random_range(0..24);
-        let timestamp_minute = rng.random_range(0..60);
-        let timestamp_second = rng.random_range(0..60);
+        let timestamp_year = rng.gen_range(2020, 2026);
+        let timestamp_month = rng.gen_range(1, 13);
+        let timestamp_day = rng.gen_range(1, 29);
+        let timestamp_hour = rng.gen_range(0, 24);
+        let timestamp_minute = rng.gen_range(0, 60);
+        let timestamp_second = rng.gen_range(0, 60);
         let timestamp = format!(
             "{timestamp_year:04}-{timestamp_month:02}-{timestamp_day:02} {timestamp_hour:02}:{timestamp_minute:02}:{timestamp_second:02}"
         );
 
-        let d: f64 = rng.random_range(0.0..1000.0);
-        let e = rng.random_bool(0.5);
+        let d: f64 = rng.gen_range(0.0, 1000.0);
+        let e = rng.gen_bool(0.5);
 
-        let blob_len = rng.random_range(10..21);
-        let blob: Vec<u8> = (0..blob_len).map(|_| rng.random::<u8>()).collect();
+        let blob_len = rng.gen_range(10, 21);
+        let blob: Vec<u8> = (0..blob_len)
+            .map(|_| rand::Rng::r#gen::<u8>(&mut rng))
+            .collect();
         let mut blob_hex = String::with_capacity(blob_len * 2);
         for byte in &blob {
             write!(blob_hex, "{byte:02X}").expect("writing to string");
         }
 
-        let validation_tag = rng.random_range(1..10);
-        let audit_tag = rng.random_range(1..10);
+        let validation_tag = rng.gen_range(1, 10);
+        let audit_tag = rng.gen_range(1, 10);
         let json_value = json!({
             "id": i,
-            "value": rng.random_range(1..100),
+            "value": rng.gen_range(1, 100),
             "tags": [
                 format!("tag-{validation_tag}"),
                 format!("tag-{audit_tag}")
@@ -82,35 +84,37 @@ pub fn generate_postgres_insert_statements(num_rows: usize) -> String {
     let mut statements = String::with_capacity(num_rows * 200);
 
     for i in 0..num_rows {
-        let a = rng.random_range(1..1000);
-        let b_suffix = rng.random_range(1..1000);
+        let a = rng.gen_range(1, 1000);
+        let b_suffix = rng.gen_range(1, 1000);
         let b = format!("text-{b_suffix}");
 
-        let timestamp_year = rng.random_range(2020..2026);
-        let timestamp_month = rng.random_range(1..13);
-        let timestamp_day = rng.random_range(1..29);
-        let timestamp_hour = rng.random_range(0..24);
-        let timestamp_minute = rng.random_range(0..60);
-        let timestamp_second = rng.random_range(0..60);
+        let timestamp_year = rng.gen_range(2020, 2026);
+        let timestamp_month = rng.gen_range(1, 13);
+        let timestamp_day = rng.gen_range(1, 29);
+        let timestamp_hour = rng.gen_range(0, 24);
+        let timestamp_minute = rng.gen_range(0, 60);
+        let timestamp_second = rng.gen_range(0, 60);
         let timestamp = format!(
             "{timestamp_year:04}-{timestamp_month:02}-{timestamp_day:02} {timestamp_hour:02}:{timestamp_minute:02}:{timestamp_second:02}"
         );
 
-        let d: f64 = rng.random_range(0.0..1000.0);
-        let e = rng.random_bool(0.5);
+        let d: f64 = rng.gen_range(0.0, 1000.0);
+        let e = rng.gen_bool(0.5);
 
-        let blob_len = rng.random_range(10..21);
-        let blob: Vec<u8> = (0..blob_len).map(|_| rng.random::<u8>()).collect();
+        let blob_len = rng.gen_range(10, 21);
+        let blob: Vec<u8> = (0..blob_len)
+            .map(|_| rand::Rng::r#gen::<u8>(&mut rng))
+            .collect();
         let mut blob_hex = String::with_capacity(blob_len * 2);
         for byte in &blob {
             write!(blob_hex, "{byte:02x}").expect("writing to string");
         }
 
-        let validation_tag = rng.random_range(1..10);
-        let audit_tag = rng.random_range(1..10);
+        let validation_tag = rng.gen_range(1, 10);
+        let audit_tag = rng.gen_range(1, 10);
         let json_value = json!({
             "id": i,
-            "value": rng.random_range(1..100),
+            "value": rng.gen_range(1, 100),
             "tags": [
                 format!("tag-{validation_tag}"),
                 format!("tag-{audit_tag}")
