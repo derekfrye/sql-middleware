@@ -50,6 +50,8 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             "alice"
         );
 
+        conn.execute_batch("DROP TABLE IF EXISTS t;").await?;
+
         #[cfg(feature = "postgres")]
         {
             // Exercise the typestate API against the same backend using a separate table.
@@ -74,6 +76,9 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
                 )
                 .await?;
             assert_eq!(rs.results[0].get("name").unwrap().as_text().unwrap(), "bob");
+            typed_conn
+                .execute_batch("DROP TABLE IF EXISTS t_typed;")
+                .await?;
         }
         Ok::<(), SqlMiddlewareDbError>(())
     })?;

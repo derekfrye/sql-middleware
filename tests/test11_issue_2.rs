@@ -68,6 +68,9 @@ async fn run_backend_flow(backend: Backend) -> Result<(), SqlMiddlewareDbError> 
 
     // Verify final value after updates.
     assert_eq!(fetch_name(&mut restored).await?, "Bob");
+    restored
+        .execute_batch("DROP TABLE IF EXISTS test11_users;")
+        .await?;
     Ok(())
 }
 

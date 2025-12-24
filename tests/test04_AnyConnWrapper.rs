@@ -716,5 +716,11 @@ END;
 
     // assert_eq!(res.rows_affected, 1);
 
+    if db_type == DatabaseType::Postgres {
+        conn.execute_batch(&format!("DROP TABLE IF EXISTS {test_table} CASCADE;"))
+            .await?;
+        reset_backend(conn, &db_type).await?;
+    }
+
     Ok(())
 }

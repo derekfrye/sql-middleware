@@ -82,6 +82,8 @@ async fn run_backend(mut conn: AnyIdle) -> Result<(), SqlMiddlewareDbError> {
 
     // Final check: back to 10 rows.
     assert_eq!(count_rows(&mut conn).await?, 10);
+    conn.execute_batch("DROP TABLE IF EXISTS typed_api_users;")
+        .await?;
     Ok(())
 }
 

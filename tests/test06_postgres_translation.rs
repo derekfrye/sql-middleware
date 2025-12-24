@@ -50,6 +50,9 @@ async fn typed_translation_force_on(
     assert_eq!(typed_rs.results.len(), 1);
     assert_eq!(*typed_rs.results[0].get("id").unwrap().as_int().unwrap(), 8);
     drop(typed_rs);
+    typed_conn
+        .execute_batch("DROP TABLE IF EXISTS tbl_translate_force_on;")
+        .await?;
     Ok(())
 }
 
