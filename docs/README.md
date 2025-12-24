@@ -31,16 +31,12 @@ Available features:
 - `sqlite`: Enables SQLite support
 - `postgres`: Enables PostgreSQL support
 - `mssql`: Enables SQL Server support
-- `libsql`: Enables LibSQL support (local or remote)
 - `turso`: Enables Turso (in-process, SQLite-compatible). Experimental. Uses direct handles (no pool backend yet).
 - `default`: Enables common backends (sqlite, postgres). Enable others as needed.
-- `test-utils`: Enables test utilities for internal testing
-
-> **Deprecated backend:** `libsql` is now deprecated in favor of the Turso backend. The `libsql` feature is still available today for legacy needs, but support will eventually be removed. Prefer the `turso` feature for new work and plan to migrate existing consumers before the next major release.
 
 ### Parameterized queries for reading or changing data
 
-`QueryAndParams` gives you a single API for both reads and writes through the query builder. The query builder optionally supports same SQL regardless of backend, even with different parameter placeholders ([`$1` or `?1`, with some limitations](#placeholder-translation)). Here is an example that supports PostgreSQL, SQLite, LibSQL, or Turso without duplicating logic.
+`QueryAndParams` gives you a single API for both reads and writes through the query builder. The query builder optionally supports same SQL regardless of backend, even with different parameter placeholders ([`$1` or `?1`, with some limitations](#placeholder-translation)). Here is an example that supports PostgreSQL, SQLite, or Turso without duplicating logic.
 
 ```rust
 use chrono::NaiveDateTime;
@@ -179,7 +175,7 @@ async fn create_temp_table(cap: &ConfigAndPool) -> Result<(), SqlMiddlewareDbErr
 ```
 ### Queries without parameters
 
-You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, LibSQL, and Turso:
+You can issue no-parameter queries directly, the same for PostgreSQL, SQLite, and Turso:
 
 ```rust
 async fn list_users(pool: &ConfigAndPool) -> Result<ResultSet, SqlMiddlewareDbError> {
@@ -207,9 +203,6 @@ Here, because the underlying libraries are different, the snippets can get chatt
 
 ```rust
 use sql_middleware::prelude::*;
-use sql_middleware::libsql::{
-    begin_transaction as begin_libsql_tx, Prepared as LibsqlPrepared, Tx as LibsqlTx,
-};
 use sql_middleware::postgres::{
     begin_transaction as begin_postgres_tx, Prepared as PostgresPrepared, Tx as PostgresTx,
 };
@@ -224,14 +217,12 @@ enum BackendTx<'conn> {
     Turso(TursoTx<'conn>),
     Postgres(PostgresTx<'conn>),
     Sqlite(SqliteTx<'conn>),
-    Libsql(LibsqlTx<'conn>),
 }
 
 enum PreparedStmt {
     Turso(TursoPrepared),
     Postgres(PostgresPrepared),
     Sqlite(SqlitePrepared),
-    Libsql(LibsqlPrepared),
 }
 
 pub async fn get_scores_from_db(
@@ -266,15 +257,9 @@ pub async fn get_scores_from_db(
             let stmt = tx.prepare(q.as_ref())?;
             (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
         }
-        MiddlewarePoolConnection::Libsql { conn, .. } => {
-            let tx = begin_libsql_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref())?;
-            (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt))
-        }
         _ => {
             return Err(SqlMiddlewareDbError::Unimplemented(
-                "expected Turso, Postgres, SQLite, or LibSQL connection".to_string(),
+                "expected Turso, Postgres, or SQLite connection".to_string(),
             ));
         }
     };
@@ -291,7 +276,6 @@ impl<'conn> BackendTx<'conn> {
             BackendTx::Turso(tx) => tx.commit().await,
             BackendTx::Postgres(tx) => tx.commit().await,
             BackendTx::Sqlite(tx) => tx.commit().await,
-            BackendTx::Libsql(tx) => tx.commit().await,
         }
     }
 
@@ -300,7 +284,6 @@ impl<'conn> BackendTx<'conn> {
             BackendTx::Turso(tx) => tx.rollback().await,
             BackendTx::Postgres(tx) => tx.rollback().await,
             BackendTx::Sqlite(tx) => tx.rollback().await,
-            BackendTx::Libsql(tx) => tx.rollback().await,
         }
     }
 }
@@ -319,9 +302,6 @@ impl PreparedStmt {
                 tx.query_prepared(stmt, params).await
             }
             (&mut BackendTx::Sqlite(ref mut tx), PreparedStmt::Sqlite(stmt)) => {
-                tx.query_prepared(stmt, params).await
-            }
-            (&BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
                 tx.query_prepared(stmt, params).await
             }
         }
@@ -350,7 +330,7 @@ async fn run_prepared_with_finalize<'conn>(
 ### Using the query builder in helpers
 
 ```rust
-// This works for PostgreSQL, SQLite, LibSQL, and Turso connections
+// This works for PostgreSQL, SQLite, and Turso connections
 async fn insert_user(
     conn: &mut MiddlewarePoolConnection,
     user_id: i32,
@@ -381,7 +361,6 @@ See further examples in the tests directory:
 - [SQLite test example](/tests/test05c_sqlite.rs), [SQLite bench example 1](../benches/bench_rusqlite_single_row_lookup.rs), [SQLite bench example 2](../benches/bench_rusqlite_multithread_pool_checkout.rs)
 - [Turso test example](/tests/test05d_turso.rs), [Turso bench example 1](../benches/bench_turso_single_row_lookup.rs)
 - [PostgreSQL test example](/tests/test05a_postgres.rs)
-- [LibSQL test example](/tests/test05b_libsql.rs)
 
 ## Placeholder Translation
 
@@ -410,7 +389,6 @@ let rows = conn
 - Run tests (defaults): `cargo test` or `cargo nextest run`
     - Notice that `test4_trait` does have hard-coded testing postgres connection strings. I can't get codex to work with postgres embedded anymore, so when working on this test w codex I've hardcoded those values so I can work around it's lack of network connectivity. You'll have to change them if you want that test to compile in your environment. 
 - Run with Turso: `cargo test --features turso`
-- Run with LibSQL: `cargo test --features libsql`
 - See also: [API test coverage](docs/api_test_coverage.md) for a map of the public surface to current tests.
 
 ### Our use of `[allow(...)]`s
