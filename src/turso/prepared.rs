@@ -12,7 +12,7 @@ use super::params::Params as TursoParams;
 ///
 /// This exists to reuse a compiled Turso statement outside an explicit
 /// transaction. Turso's client lets us keep a connection-bound prepared handle,
-/// so we expose it for non-transactional reuse. Other backends (Postgres/LibSQL)
+/// so we expose it for non-transactional reuse. Other backends (Postgres)
 /// prepare statements on their transaction handles instead of exposing a safe
 /// connection-level prepared handle, so we don't mirror this type there.
 ///

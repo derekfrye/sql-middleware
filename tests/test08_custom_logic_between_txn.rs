@@ -1,9 +1,4 @@
-#![cfg(any(
-    feature = "sqlite",
-    feature = "postgres",
-    feature = "libsql",
-    feature = "turso"
-))]
+#![cfg(any(feature = "sqlite", feature = "postgres", feature = "turso"))]
 
 use std::env;
 
@@ -13,10 +8,6 @@ use sql_middleware::middleware::{
 };
 use tokio::runtime::Runtime;
 
-#[cfg(feature = "libsql")]
-use sql_middleware::libsql::{
-    Prepared as LibsqlPrepared, Tx as LibsqlTx, begin_transaction as begin_libsql_tx,
-};
 #[cfg(feature = "postgres")]
 use sql_middleware::postgres::{
     PostgresOptions, Prepared as PostgresPrepared, Tx as PostgresTx,
@@ -52,8 +43,6 @@ enum BackendTx<'conn> {
     Postgres(PostgresTx<'conn>),
     #[cfg(feature = "sqlite")]
     Sqlite(SqliteTx<'conn>),
-    #[cfg(feature = "libsql")]
-    Libsql(LibsqlTx<'conn>),
 }
 
 enum PreparedStmt {
@@ -63,8 +52,6 @@ enum PreparedStmt {
     Postgres(PostgresPrepared),
     #[cfg(feature = "sqlite")]
     Sqlite(SqlitePrepared),
-    #[cfg(feature = "libsql")]
-    Libsql(LibsqlPrepared),
 }
 
 impl BackendTx<'_> {
@@ -76,8 +63,6 @@ impl BackendTx<'_> {
             BackendTx::Postgres(tx) => tx.commit().await,
             #[cfg(feature = "sqlite")]
             BackendTx::Sqlite(tx) => tx.commit().await,
-            #[cfg(feature = "libsql")]
-            BackendTx::Libsql(tx) => tx.commit().await,
         }
     }
 
@@ -89,8 +74,6 @@ impl BackendTx<'_> {
             BackendTx::Postgres(tx) => tx.rollback().await,
             #[cfg(feature = "sqlite")]
             BackendTx::Sqlite(tx) => tx.rollback().await,
-            #[cfg(feature = "libsql")]
-            BackendTx::Libsql(tx) => tx.rollback().await,
         }
     }
 }
@@ -112,10 +95,6 @@ impl PreparedStmt {
             }
             #[cfg(feature = "sqlite")]
             (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
-                tx.execute_prepared(stmt, params).await
-            }
-            #[cfg(feature = "libsql")]
-            (BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)) => {
                 tx.execute_prepared(stmt, params).await
             }
             _ => unreachable!("transaction and prepared variants should align"),
@@ -159,13 +138,6 @@ async fn prepare_backend_tx_and_stmt<'conn>(
             let stmt = tx.prepare(base_query).await?;
             Ok((BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)))
         }
-        #[cfg(feature = "libsql")]
-        MiddlewarePoolConnection::Libsql { conn, .. } => {
-            let tx = begin_libsql_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref())?;
-            Ok((BackendTx::Libsql(tx), PreparedStmt::Libsql(stmt)))
-        }
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite {
             translate_placeholders: translate_default,
@@ -178,7 +150,7 @@ async fn prepare_backend_tx_and_stmt<'conn>(
             Ok((BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)))
         }
         _ => Err(SqlMiddlewareDbError::Unimplemented(
-            "expected Turso, Postgres, SQLite, or LibSQL connection".to_string(),
+            "expected Turso, Postgres, or SQLite connection".to_string(),
         )),
     }
 }
@@ -313,21 +285,6 @@ fn custom_logic_between_transactions_across_backends() -> Result<(), Box<dyn std
             run_typed_pg_roundtrip(typed_conn).await?;
             println!("typed-postgres backend run successful");
         }
-
-        // LibSQL ( broken )
-        // #[cfg(feature = "libsql")]
-        // {
-        //     let cap = ConfigAndPool::libsql_builder(":memory:".to_string())
-        //         .build()
-        //         .await?;
-        //     let mut conn = cap.get_connection().await?;
-        //     conn.execute_batch(
-        //         "CREATE TABLE IF NOT EXISTS custom_logic_txn (id INTEGER PRIMARY KEY, note TEXT);",
-        //     )
-        //     .await?;
-        //     run_roundtrip(&mut conn).await?;
-        //     println!("libsql backend run successful");
-        // }
 
         // Turso (optional feature)
         #[cfg(feature = "turso")]

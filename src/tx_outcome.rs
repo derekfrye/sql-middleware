@@ -17,7 +17,7 @@ pub struct TxOutcome {
 }
 
 impl TxOutcome {
-    /// Outcome with no connection to restore (common for Postgres, `LibSQL`, Turso, MSSQL).
+    /// Outcome with no connection to restore (common for Postgres, Turso, MSSQL).
     #[must_use]
     pub fn without_restored_connection() -> Self {
         Self {

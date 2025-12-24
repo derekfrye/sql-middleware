@@ -13,8 +13,6 @@ use bb8::Pool as Bb8MssqlPool;
 #[cfg(feature = "mssql")]
 use bb8_tiberius::ConnectionManager;
 
-#[cfg(feature = "libsql")]
-use deadpool_libsql::Pool as DeadpoolLibsqlPool;
 #[cfg(feature = "turso")]
 use turso::Database as TursoDatabase;
 
@@ -35,9 +33,6 @@ pub enum MiddlewarePool {
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
     Mssql(Bb8MssqlPool<ConnectionManager>),
-    /// `LibSQL` connection pool
-    #[cfg(feature = "libsql")]
-    Libsql(DeadpoolLibsqlPool),
     /// `Turso` pseudo-pool (Database handle)
     #[cfg(feature = "turso")]
     Turso(TursoDatabase),
@@ -53,8 +48,6 @@ impl std::fmt::Debug for MiddlewarePool {
             Self::Sqlite(pool) => f.debug_tuple("Sqlite").field(pool).finish(),
             #[cfg(feature = "mssql")]
             Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
-            #[cfg(feature = "libsql")]
-            Self::Libsql(pool) => f.debug_tuple("Libsql").field(pool).finish(),
             #[cfg(feature = "turso")]
             Self::Turso(_) => f.debug_tuple("Turso").field(&"<Database>").finish(),
         }

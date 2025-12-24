@@ -44,30 +44,6 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `ConfigAndPool::get_connection`
   - **Coverage:** Used widely across integration tests.
   - **Purpose:** Acquire pooled connection with pool defaults; public entry point.
-- `ConfigAndPool::new_libsql`
-  - **Coverage:** `tests/test05b_libsql.rs`, `tests/test06_libsql.rs`, `tests/test06_libsql_simple.rs`.
-  - **Purpose:** Local LibSQL constructor taking `LibsqlOptions`; public to initialize pool.
-- `ConfigAndPool::libsql_builder`
-  - **Coverage:** `tests/test05b_libsql.rs`, `tests/test06_libsql.rs`, `tests/test06_libsql_simple.rs`.
-  - **Purpose:** Fluent builder wrapper for `LibsqlOptions` to avoid option permutations.
-- `LibsqlOptions`
-  - **Coverage:** Indirect via builder; not constructed directly in tests.
-  - **Purpose:** Local LibSQL config (path + translation default) for pool creation.
-- `LibsqlOptionsBuilder`
-  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::libsql_builder`.
-  - **Purpose:** Fluent builder for `LibsqlOptions`; public for ergonomic construction and parity with other backends.
-- `ConfigAndPool::new_libsql_remote`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** Remote LibSQL/Turso URL constructor taking `LibsqlRemoteOptions`; public for remote deployments.
-- `ConfigAndPool::libsql_remote_builder`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** Fluent builder for remote LibSQL options (URL/auth + translation default).
-- `LibsqlRemoteOptions`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** Remote LibSQL config (URL/auth + translation default) for pool creation.
-- `LibsqlRemoteOptionsBuilder`
-  - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::libsql_remote_builder`.
-  - **Purpose:** Fluent builder for `LibsqlRemoteOptions`; public for ergonomic remote configuration.
 - `ConfigAndPool::new_mssql`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** MSSQL constructor taking `MssqlOptions`; public for SQL Server consumers.
@@ -130,15 +106,15 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `MiddlewarePool::get_connection`
   - **Coverage:** Invoked indirectly via `ConfigAndPool::get_connection` throughout integration tests that borrow pooled connections; not called directly in tests.
   - **Purpose:** Attach pool-level translation defaults while checking out a connection; public for callers that hold a `MiddlewarePool` without `ConfigAndPool`.
-- `MiddlewarePoolConnection` variants (`Postgres`, `Sqlite`, `Mssql`, `Libsql`, `Turso`)
-  - **Coverage:** Postgres in `tests/test02_postgres.rs`/`tests/test06_postgres_translation.rs`; SQLite in `tests/test01.rs`/`tests/test03_sqlite.rs`/`tests/test05c_sqlite.rs`/`tests/test7_new_rusqlite.rs`; LibSQL in `tests/test05b_libsql.rs`/`tests/test06_libsql.rs`; Turso in `tests/test05d_turso.rs`/`tests/test06_turso_translation.rs`; MSSQL only pattern-matched in `tests/test02_postgres.rs` and `tests/test04_AnyConnWrapper.rs` (no live connections).
+- `MiddlewarePoolConnection` variants (`Postgres`, `Sqlite`, `Mssql`, `Turso`)
+  - **Coverage:** Postgres in `tests/test02_postgres.rs`/`tests/test06_postgres_translation.rs`; SQLite in `tests/test01.rs`/`tests/test03_sqlite.rs`/`tests/test05c_sqlite.rs`/`tests/test7_new_rusqlite.rs`; Turso in `tests/test05d_turso.rs`/`tests/test06_turso_translation.rs`; MSSQL only pattern-matched in `tests/test02_postgres.rs` and `tests/test04_AnyConnWrapper.rs` (no live connections).
   - **Purpose:** Erased connection handle; public so callers can branch on backend.
 - `execute_batch` (crate root/prelude) + `MiddlewarePoolConnection::execute_batch`
-  - **Coverage:** Used across backends in `tests/test01.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test05b_libsql.rs`, `tests/test05c_sqlite.rs`, `tests/test05d_turso.rs`, `tests/test06_postgres_translation.rs`, `tests/test06_libsql.rs`, `tests/test06_turso_translation.rs`, `tests/test7_new_rusqlite.rs`.
+  - **Coverage:** Used across backends in `tests/test01.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test05c_sqlite.rs`, `tests/test05d_turso.rs`, `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`, `tests/test7_new_rusqlite.rs`.
   - **Purpose:** Run batch SQL without params; public convenience. Top-level `execute_batch` now accepts pooled connections or backend transactions via `BatchTarget`, while the method form remains for pooled connections.
 - `MiddlewarePoolConnection::interact_async`
   - **Coverage:** **Not covered**.
-  - **Purpose:** Async access to raw backend client (Postgres/MSSQL/LibSQL); public escape hatch.
+  - **Purpose:** Async access to raw backend client (Postgres/MSSQL); public escape hatch.
 - `MiddlewarePoolConnection::interact_sync`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Sync access to SQLite connection; public escape hatch.
@@ -249,30 +225,16 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 
 ## Values and types
 - `DatabaseType` enum
-  - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`, `tests/test06_libsql.rs`, `tests/test06_libsql_simple.rs`.
+  - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Identify backend; public for branching logic.
 - `RowValues` enum
   - **Coverage:** All variants used across tests (`Int`, `Float`, `Text`, `Bool`, `Timestamp`, `Null`, `JSON`, `Blob`).
   - **Purpose:** Unified value representation; public for params/results.
 - `RowValues` accessors (`is_null`, `as_int`, `as_text`, `as_bool`, `as_timestamp`, `as_float`, `as_blob`)
-  - **Coverage:** `as_int`/`as_text`/`as_bool`/`as_timestamp`/`as_float`/`as_blob` used across tests; `is_null` used in `tests/test06_libsql.rs`.
+  - **Coverage:** `as_int`/`as_text`/`as_bool`/`as_timestamp`/`as_float`/`as_blob` used across tests; `is_null` not covered directly.
   - **Purpose:** Typed extraction; public for consumers.
 
 ## Backend-specific re-exports
-### LibSQL
-- `execute_batch`, `execute_dml`, `execute_select`
-  - **Coverage:** Indirect via connection calls; not direct.
-  - **Purpose:** Direct backend helpers; public for manual execution.
-- `Params`
-  - **Coverage:** **Not covered** (LibSQL tests use `&[RowValues]`).
-  - **Purpose:** Param wrapper for backend parity; public for converters.
-- `build_result_set`
-  - **Coverage:** Not directly called in tests.
-  - **Purpose:** Build results from libsql rows; public for manual execution.
-- `transaction::{Prepared, Tx, begin_transaction}`
-  - **Coverage:** Used in `tests/test05b_libsql.rs`.
-  - **Purpose:** Transaction helpers; public for explicit transactions.
-
 ### MSSQL
 - `create_mssql_client`, `MssqlClient`, `execute_batch`, `execute_dml`, `execute_select`, `Params`, `build_result_set`
   - **Coverage:** **Not covered**.

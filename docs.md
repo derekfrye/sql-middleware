@@ -1,15 +1,15 @@
 # SQL Middleware - A lightweight wrapper for SQL backends
 
-*Keywords: postgres, sqlite, libsql, turso, deadpool, bb8, async, pool, query builder*
+*Keywords: postgres, sqlite, turso, deadpool, bb8, async, pool, query builder*
 
-This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `LibSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
+This crate provides a lightweight async wrapper for `SQLite`, `PostgreSQL`, `Turso` (experimental), and SQL Server (`tiberius`). The goal is a
 similar, async-compatible API consistent across databases. Full examples on [github](https://github.com/derekfrye/sql-middleware/).
 
 ## Features
 
 - Similar API regardless of backend (as much as possible)
 - Asynchronous (where available)
-- Connection pooling via `bb8` (Postgres/SQLite) and `deadpool` (LibSQL/SQL Server)
+- Connection pooling via `bb8` (Postgres/SQLite) and `deadpool` (SQL Server)
 - Transaction support
 - Not an ORM
 
@@ -18,17 +18,15 @@ similar, async-compatible API consistent across databases. Full examples on [git
 Default features are `sqlite` and `postgres`. Enable others as needed:
 
 ```toml
-# Only SQLite and LibSQL
-sql-middleware = { version = "0", features = ["sqlite", "libsql"] }
+# Only SQLite and Turso
+sql-middleware = { version = "0", features = ["sqlite", "turso"] }
 
 # All backends
-sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "libsql", "turso"] }
+sql-middleware = { version = "0", features = ["sqlite", "postgres", "mssql", "turso"] }
 ```
 
 Additional flags:
-- `libsql`: `LibSQL` (local has been tested, remote is present)
 - `turso`: Turso (in-process, SQLite-compatible). Experimental; no remote support.
-- `test-utils`: Test helpers for internal testing
 - `mssql`: SQL Server via `tiberius` (untested, but present)
 - `benchmarks`: Criterion helpers for benches
 
@@ -49,7 +47,7 @@ pub async fn set_scores_in_db(
     config_and_pool: &ConfigAndPool,
     updates: &[ScoreChange],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    // Acquire a pooled connection (Postgres, SQLite, LibSQL, or Turso).
+    // Acquire a pooled connection (Postgres, SQLite, or Turso).
     let mut conn = config_and_pool.get_connection().await?;
 
     // Author once; translation rewrites placeholders per backend.

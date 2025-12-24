@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Source: `src/` with feature-gated modules (`postgres/`, `sqlite/`, `libsql/`, `mssql/`) and core (`conversion.rs`, `executor.rs`, `middleware.rs`, `pool/`, `query.rs`, `results/`, `types.rs`).
+- Source: `src/` with feature-gated modules (`postgres/`, `sqlite/`, `mssql/`, `turso/`) and core (`conversion.rs`, `executor.rs`, `middleware.rs`, `pool/`, `query.rs`, `results/`, `types.rs`).
 - Public entry: `src/lib.rs` (forbids unsafe, re-exports key types; see `docs.md`).
 - Tests: `tests/` (integration-style, e.g., `test03_sqlite.rs`, `test02_postgres.rs`).
 - Benchmarks: `benches/` with Criterion; helper `bench.sh`.
@@ -22,14 +22,14 @@
 - Keep public API small and consistent across backends; add re-exports to `lib.rs` when appropriate.
 
 ## Testing Guidelines
-- Framework: `cargo test` (async via `tokio`). Tests cover SQLite, PostgreSQL (embedded), and LibSQL.
-- Naming: descriptive file names in `tests/` (e.g., `test_libsql.rs`). Group related cases in modules.
+- Framework: `cargo test` (async via `tokio`). Tests cover SQLite, PostgreSQL (embedded), and Turso.
+- Naming: descriptive file names in `tests/` (e.g., `test_turso.rs`). Group related cases in modules.
 - Data files: SQLite tests may create `test_sqlite.db`; tests clean up when possible.
-- Run with features as needed: `cargo test --features libsql,mssql`.
+- Run with features as needed: `cargo test --features mssql,turso`.
 
 ## Commit & Pull Request Guidelines
 - Commits: short, imperative subject (e.g., "Refactor pool module"), focused changes.
-- PRs: include summary, rationale, affected features (`postgres/sqlite/libsql/mssql`), and test/bench evidence. Link issues.
+- PRs: include summary, rationale, affected features (`postgres/sqlite/mssql/turso`), and test/bench evidence. Link issues.
 - Pre-submit: `cargo fmt`, `cargo clippy -D warnings`, `cargo test`, and update `docs/README.md` for user-facing API changes.
 
 ## Security & Configuration Tips

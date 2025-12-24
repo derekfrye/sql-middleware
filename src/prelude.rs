@@ -10,13 +10,6 @@ pub use crate::middleware::{
 };
 
 pub use crate::conversion::convert_sql_params;
-#[cfg(feature = "libsql")]
-#[deprecated(
-    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
-)]
-pub use crate::libsql::{
-    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
-};
 #[cfg(feature = "mssql")]
 pub use crate::mssql::{MssqlOptions, MssqlOptionsBuilder};
 #[cfg(feature = "postgres")]

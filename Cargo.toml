@@ -4,7 +4,7 @@ version = "0.5.0"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
-description = "Lightweight async wrappers for tokio-postgres, rusqlite, libsql, turso, and tiberius."
+description = "Lightweight async wrappers for tokio-postgres, rusqlite, turso, and tiberius."
 repository = "https://github.com/derekfrye/sql-middleware"
 readme = "docs/README.md"
 homepage = "https://github.com/derekfrye/sql-middleware"
@@ -24,11 +24,8 @@ sqlite = ["dep:rusqlite", "dep:bb8"]
 postgres = ["dep:tokio-postgres", "dep:bb8"]
 typed-postgres = ["postgres"] # compatibility alias; typed API is always on when postgres is enabled
 mssql = ["dep:tiberius", "dep:futures-util", "dep:bb8-tiberius"]
-libsql = ["dep:deadpool-libsql"]
 turso = ["dep:turso", "dep:bb8"]
 typed-turso = ["turso"] # compatibility alias; typed API is always on when turso is enabled
-test-utils-postgres = ["dep:postgresql_embedded"]
-test-utils = ["test-utils-postgres"]
 benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]
 
 [dependencies]
@@ -52,13 +49,10 @@ futures-util = { version = "0", optional = true }
 lazy_static = "1"
 parking_lot = "0"
 crossbeam-channel = "0"
-postgresql_embedded = { version = "0", features = ["bundled"], optional = true }
 # Benchmark dependencies
 criterion = { version = "0", features = ["async_tokio"], optional = true }
-rand = { version = "0", optional = true }
-rand_chacha = { version = "0", optional = true }
-# LibSQL dependencies
-deadpool-libsql = { version = "0", optional = true }
+rand = { version = ">=0.9.2", optional = true }
+rand_chacha = { version = ">=0.9.0", optional = true }
 # turso deps
 turso = { version = "0.3.2", optional = true }
 bb8 = { version = "0", optional = true }
@@ -75,9 +69,9 @@ features = ["full"]
 
 [dev-dependencies]
 criterion = { version = "0", features = ["async_tokio"] }
-rand = "0"
-rand_chacha = "0"
-sql-middleware = { path = ".", default-features = false, features = ["benchmarks", "mssql", "turso", "test-utils", "sqlite"] }
+rand = ">=0.9.2"
+rand_chacha = ">=0.9.0"
+sql-middleware = { path = ".", default-features = false, features = ["benchmarks", "mssql", "postgres", "turso", "sqlite"] }
 tempfile = "3"
 
 [[bench]]

@@ -4,8 +4,6 @@ use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
 use crate::types::RowValues;
 
-#[cfg(feature = "libsql")]
-use crate::libsql;
 #[cfg(feature = "mssql")]
 use crate::mssql;
 #[cfg(feature = "postgres")]
@@ -31,8 +29,6 @@ pub async fn execute_batch(
         BatchTarget::PostgresTx(tx) => tx.execute_batch(query).await,
         #[cfg(feature = "mssql")]
         BatchTarget::MssqlTx(tx) => tx.execute_batch(query).await,
-        #[cfg(feature = "libsql")]
-        BatchTarget::LibsqlTx(tx) => tx.execute_batch(query).await,
         #[cfg(feature = "turso")]
         BatchTarget::TursoTx(tx) => tx.execute_batch(query).await,
         #[cfg(feature = "turso")]
@@ -73,11 +69,6 @@ impl MiddlewarePoolConnection {
             MiddlewarePoolConnection::Mssql {
                 conn: mssql_client, ..
             } => mssql::execute_batch(mssql_client, query).await,
-            #[cfg(feature = "libsql")]
-            MiddlewarePoolConnection::Libsql {
-                conn: libsql_client,
-                ..
-            } => libsql::execute_batch(libsql_client, query).await,
             #[cfg(feature = "turso")]
             MiddlewarePoolConnection::Turso {
                 conn: turso_conn, ..
@@ -132,11 +123,6 @@ pub(crate) async fn execute_select_dispatch(
         MiddlewarePoolConnection::Mssql {
             conn: mssql_client, ..
         } => mssql::execute_select(mssql_client, query, params).await,
-        #[cfg(feature = "libsql")]
-        MiddlewarePoolConnection::Libsql {
-            conn: libsql_client,
-            ..
-        } => libsql::execute_select(libsql_client, query, params).await,
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso {
             conn: turso_conn, ..
@@ -167,11 +153,6 @@ pub(crate) async fn execute_dml_dispatch(
         MiddlewarePoolConnection::Mssql {
             conn: mssql_client, ..
         } => mssql::execute_dml(mssql_client, query, params).await,
-        #[cfg(feature = "libsql")]
-        MiddlewarePoolConnection::Libsql {
-            conn: libsql_client,
-            ..
-        } => libsql::execute_dml(libsql_client, query, params).await,
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso {
             conn: turso_conn, ..

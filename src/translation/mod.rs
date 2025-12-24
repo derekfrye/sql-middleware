@@ -14,7 +14,7 @@ use scanner::{State, scan_digits};
 pub enum PlaceholderStyle {
     /// PostgreSQL-style placeholders like `$1`.
     Postgres,
-    /// SQLite-style placeholders like `?1` (also used by LibSQL/Turso).
+    /// SQLite-style placeholders like `?1` (also used by Turso).
     Sqlite,
 }
 

@@ -1,6 +1,4 @@
 pub mod common;
-#[cfg(feature = "libsql")]
-pub mod libsql;
-#[cfg(feature = "test-utils-postgres")]
+#[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod sqlite;

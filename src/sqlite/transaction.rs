@@ -43,7 +43,7 @@ pub async fn begin_transaction(
 ) -> Result<Tx<'_>, SqlMiddlewareDbError> {
     let conn = match conn_slot {
         MiddlewarePoolConnection::Sqlite { conn, .. } => conn,
-        #[cfg(any(feature = "postgres", feature = "mssql", feature = "libsql", feature = "turso"))]
+        #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
         _ => {
             return Err(SqlMiddlewareDbError::Unimplemented(
                 "begin_transaction is only available for SQLite connections".into(),
@@ -193,7 +193,7 @@ impl Tx<'_> {
     fn rewrap(&mut self, conn: SqliteConnection) {
         let slot = match self.conn_slot {
             MiddlewarePoolConnection::Sqlite { conn: slot, .. } => slot,
-            #[cfg(any(feature = "postgres", feature = "mssql", feature = "libsql", feature = "turso"))]
+            #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
             _ => return,
         };
         debug_assert!(slot.is_none(), "sqlite conn slot should be empty during tx");

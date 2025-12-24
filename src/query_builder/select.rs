@@ -78,14 +78,6 @@ impl QueryBuilder<'_, '_> {
                 let prepared = tx.prepare(translated.as_ref())?;
                 tx.query_prepared(&prepared, self.params.as_ref()).await
             }
-            #[cfg(feature = "libsql")]
-            QueryTarget {
-                kind: QueryTargetKind::LibsqlTx(tx),
-                ..
-            } => {
-                let prepared = tx.prepare(translated.as_ref())?;
-                tx.query_prepared(&prepared, self.params.as_ref()).await
-            }
             #[cfg(feature = "turso")]
             QueryTarget {
                 kind: QueryTargetKind::TursoTx(tx),

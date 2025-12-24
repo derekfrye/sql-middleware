@@ -12,14 +12,11 @@ use sql_middleware::middleware::{
 use sql_middleware::postgres::{
     Params as PostgresParams, build_result_set as postgres_build_result_set,
 };
-#[cfg(feature = "test-utils")]
-use sql_middleware::test_utils::testing_postgres::{
-    setup_postgres_container, stop_postgres_container,
-};
 #[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 use sql_middleware::{SqlMiddlewareDbError, convert_sql_params};
 
+use std::env;
 use std::vec;
 use tokio::runtime::Runtime;
 
@@ -31,21 +28,12 @@ fn build_typed_pg_config(cfg: &PgConfig) -> tokio_postgres::Config {
 #[allow(clippy::too_many_lines)]
 #[test]
 fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
-    let db_user = "test_user";
-    // don't use @ or # in here, it fails
-    // https://github.com/launchbadge/sqlx/issues/1624
-    let db_pass = "test_passwordx(!323341";
-    let db_name = "test_db";
-
     let mut cfg = PgConfig::new();
-    cfg.dbname = Some(db_name.to_string());
-    cfg.host = Some("localhost".to_string());
-    // cfg.port = Some(port);
-
-    cfg.user = Some(db_user.to_string());
-    cfg.password = Some(db_pass.to_string());
-    let postgres_stuff = setup_postgres_container(&cfg)?;
-    cfg.port = Some(postgres_stuff.port);
+    cfg.dbname = Some("testing".to_string());
+    cfg.host = Some("10.3.0.201".to_string());
+    cfg.port = Some(5432);
+    cfg.user = Some("testuser".to_string());
+    cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
@@ -76,10 +64,6 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
                 panic!("Only postgres is supported in this test");
             }
             MiddlewarePoolConnection::Mssql { .. } => {
-                panic!("Only postgres is supported in this test");
-            }
-            #[cfg(feature = "libsql")]
-            MiddlewarePoolConnection::Libsql { .. } => {
                 panic!("Only postgres is supported in this test");
             }
             #[cfg(feature = "turso")]
@@ -226,12 +210,8 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             Ok::<_, SqlMiddlewareDbError>(())
         })?;
 
-        // stop the container
-
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
-
-    stop_postgres_container(postgres_stuff);
 
     Ok(())
 }

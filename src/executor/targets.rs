@@ -1,8 +1,6 @@
 use crate::pool::MiddlewarePoolConnection;
 use crate::translation::PlaceholderStyle;
 
-#[cfg(feature = "libsql")]
-use crate::libsql;
 #[cfg(feature = "mssql")]
 use crate::mssql;
 #[cfg(feature = "postgres")]
@@ -25,8 +23,6 @@ pub enum BatchTarget<'a> {
     PostgresTx(&'a postgres::transaction::Tx<'a>),
     #[cfg(feature = "mssql")]
     MssqlTx(&'a mut mssql::transaction::Tx<'a>),
-    #[cfg(feature = "libsql")]
-    LibsqlTx(&'a libsql::transaction::Tx<'a>),
     #[cfg(feature = "turso")]
     TursoTx(&'a turso::transaction::Tx<'a>),
     #[cfg(feature = "turso")]
@@ -75,8 +71,6 @@ pub(crate) enum QueryTargetKind<'a> {
     },
     #[cfg(feature = "mssql")]
     MssqlTx(&'a mut mssql::transaction::Tx<'a>),
-    #[cfg(feature = "libsql")]
-    LibsqlTx(&'a libsql::transaction::Tx<'a>),
     #[cfg(feature = "turso")]
     TursoTx(&'a turso::transaction::Tx<'a>),
 }
@@ -98,13 +92,6 @@ impl<'a> From<&'a postgres::transaction::Tx<'a>> for BatchTarget<'a> {
 impl<'a> From<&'a mut mssql::transaction::Tx<'a>> for BatchTarget<'a> {
     fn from(tx: &'a mut mssql::transaction::Tx<'a>) -> Self {
         BatchTarget::MssqlTx(tx)
-    }
-}
-
-#[cfg(feature = "libsql")]
-impl<'a> From<&'a libsql::transaction::Tx<'a>> for BatchTarget<'a> {
-    fn from(tx: &'a libsql::transaction::Tx<'a>) -> Self {
-        BatchTarget::LibsqlTx(tx)
     }
 }
 
@@ -180,16 +167,6 @@ impl<'a> From<&'a mut mssql::transaction::Tx<'a>> for QueryTarget<'a> {
     }
 }
 
-#[cfg(feature = "libsql")]
-impl<'a> From<&'a libsql::transaction::Tx<'a>> for QueryTarget<'a> {
-    fn from(tx: &'a libsql::transaction::Tx<'a>) -> Self {
-        QueryTarget {
-            translation_default: false,
-            kind: QueryTargetKind::LibsqlTx(tx),
-        }
-    }
-}
-
 #[cfg(feature = "turso")]
 impl<'a> From<&'a turso::transaction::Tx<'a>> for QueryTarget<'a> {
     fn from(tx: &'a turso::transaction::Tx<'a>) -> Self {
@@ -238,8 +215,6 @@ impl QueryTarget<'_> {
             QueryTargetKind::TypedPostgres { .. } => Some(PlaceholderStyle::Postgres),
             #[cfg(feature = "postgres")]
             QueryTargetKind::TypedPostgresTx { .. } => Some(PlaceholderStyle::Postgres),
-            #[cfg(feature = "libsql")]
-            QueryTargetKind::LibsqlTx(_) => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "turso")]
             QueryTargetKind::TursoTx(_) => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "turso")]
@@ -260,8 +235,6 @@ pub(crate) fn translation_target(conn: &MiddlewarePoolConnection) -> Option<Plac
         MiddlewarePoolConnection::Postgres { .. } => Some(PlaceholderStyle::Postgres),
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => Some(PlaceholderStyle::Sqlite),
-        #[cfg(feature = "libsql")]
-        MiddlewarePoolConnection::Libsql { .. } => Some(PlaceholderStyle::Sqlite),
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso { .. } => Some(PlaceholderStyle::Sqlite),
         #[cfg(feature = "mssql")]

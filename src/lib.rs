@@ -1,11 +1,9 @@
 #![doc = include_str!("../docs.md")]
 #![forbid(unsafe_code)]
 
-// Test utilities module - only compiled with test-utils feature
+// Test utilities module
 #[path = "test_utils/test_helpers.rs"]
 pub mod test_helpers;
-#[cfg(feature = "test-utils")]
-pub mod test_utils;
 
 // Benchmark utilities module - for benchmarks
 #[cfg(feature = "benchmarks")]
@@ -39,11 +37,6 @@ pub(crate) mod results;
 pub(crate) mod types;
 
 // Private database-specific modules
-#[cfg(feature = "libsql")]
-#[deprecated(
-    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
-)]
-pub mod libsql;
 #[cfg(feature = "mssql")]
 pub mod mssql;
 #[cfg(feature = "postgres")]
@@ -58,13 +51,6 @@ pub use middleware::{
     AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
     MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder,
     QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch,
-};
-#[cfg(feature = "libsql")]
-#[deprecated(
-    note = "LibSQL support is deprecated in favor of the Turso backend and will be removed in a future release."
-)]
-pub use middleware::{
-    LibsqlOptions, LibsqlOptionsBuilder, LibsqlRemoteOptions, LibsqlRemoteOptionsBuilder,
 };
 #[cfg(feature = "mssql")]
 pub use middleware::{MssqlOptions, MssqlOptionsBuilder};

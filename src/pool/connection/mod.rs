@@ -1,4 +1,3 @@
-mod libsql;
 mod mssql;
 mod postgres;
 mod sqlite;
@@ -15,8 +14,6 @@ use super::types::MiddlewarePool;
 use crate::error::SqlMiddlewareDbError;
 #[cfg(feature = "sqlite")]
 use crate::sqlite::SqliteConnection;
-#[cfg(feature = "libsql")]
-use deadpool_libsql::Object as LibsqlObject;
 
 #[cfg(feature = "turso")]
 use ::turso::Connection as TursoConnection;
@@ -35,11 +32,6 @@ pub enum MiddlewarePoolConnection {
     #[cfg(feature = "mssql")]
     Mssql {
         conn: PooledConnection<'static, ConnectionManager>,
-        translate_placeholders: bool,
-    },
-    #[cfg(feature = "libsql")]
-    Libsql {
-        conn: LibsqlObject,
         translate_placeholders: bool,
     },
     #[cfg(feature = "turso")]
@@ -62,8 +54,6 @@ impl std::fmt::Debug for MiddlewarePoolConnection {
                 .debug_tuple("Mssql")
                 .field(&"<TiberiusConnection>")
                 .finish(),
-            #[cfg(feature = "libsql")]
-            Self::Libsql { conn, .. } => f.debug_tuple("Libsql").field(conn).finish(),
             #[cfg(feature = "turso")]
             Self::Turso { .. } => f.debug_tuple("Turso").field(&"<Connection>").finish(),
         }
@@ -92,10 +82,6 @@ impl MiddlewarePool {
             MiddlewarePool::Mssql(pool) => {
                 mssql::get_connection(pool, translate_placeholders).await
             }
-            #[cfg(feature = "libsql")]
-            MiddlewarePool::Libsql(pool) => {
-                libsql::get_connection(pool, translate_placeholders).await
-            }
             #[cfg(feature = "turso")]
             MiddlewarePool::Turso(db) => turso::get_connection(db, translate_placeholders),
             #[allow(unreachable_patterns)]
@@ -123,11 +109,6 @@ impl MiddlewarePoolConnection {
             } => *translate_placeholders,
             #[cfg(feature = "mssql")]
             MiddlewarePoolConnection::Mssql {
-                translate_placeholders,
-                ..
-            } => *translate_placeholders,
-            #[cfg(feature = "libsql")]
-            MiddlewarePoolConnection::Libsql {
                 translate_placeholders,
                 ..
             } => *translate_placeholders,

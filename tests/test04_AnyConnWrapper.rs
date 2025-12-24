@@ -90,12 +90,6 @@ fn assemble_test_cases() -> Result<Vec<TestCase>, Box<dyn std::error::Error>> {
 }
 
 async fn run_test_cases(test_cases: Vec<TestCase>) -> Result<(), Box<dyn std::error::Error>> {
-    // #[cfg(feature = "libsql")]
-    // {
-    //     test_cases.push(TestCase::Libsql(":memory:".to_string()));
-    //     test_cases.push(TestCase::Libsql("test_libsql.db".to_string()));
-    // }
-
     for test_case in test_cases {
         let (mut conn, db_type, _cleanup) = init_connection(test_case).await?;
         reset_backend(&mut conn, &db_type).await?;
@@ -222,8 +216,6 @@ enum TestCase {
     Mssql(MssqlOptions),
     #[cfg(feature = "turso")]
     Turso(String),
-    // #[cfg(feature = "libsql")]
-    // Libsql(String),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -320,15 +312,6 @@ BEGIN
 END;
 ",
         ],
-        #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => vec![
-            // Use SQLite scripts for LibSQL in test (LibSQL is SQLite-compatible)
-            include_str!("../tests/sqlite/test4/00_event.sql"),
-            include_str!("../tests/sqlite/test4/02_golfer.sql"),
-            include_str!("../tests/sqlite/test4/03_bettor.sql"),
-            include_str!("../tests/sqlite/test4/04_event_user_player.sql"),
-            include_str!("../tests/sqlite/test4/05_eup_statistic.sql"),
-        ],
         #[cfg(feature = "turso")]
         DatabaseType::Turso => vec![
             include_str!("../tests/turso/test4/00_event.sql"),
@@ -360,8 +343,6 @@ END;
     // Define the setup queries
     let setup_queries = match db_type {
         DatabaseType::Postgres | DatabaseType::Sqlite => include_str!("test04.sql"),
-        #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => include_str!("test04.sql"),
         #[cfg(feature = "turso")]
         DatabaseType::Turso => include_str!("../tests/turso/test4/setup.sql"),
         #[cfg(feature = "mssql")]
@@ -392,8 +373,6 @@ END;
         DatabaseType::Sqlite => "INSERT INTO test (id, name) VALUES (?1, ?2);",
         #[cfg(feature = "mssql")]
         DatabaseType::Mssql => "INSERT INTO test (id, name) VALUES (@p1, @p2);",
-        #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => "INSERT INTO test (id, name) VALUES (?1, ?2);",
         #[cfg(feature = "turso")]
         DatabaseType::Turso => "INSERT INTO test (id, name) VALUES (?1, ?2);",
     };
@@ -483,13 +462,6 @@ END;
         }
         #[cfg(feature = "turso")]
         DatabaseType::Turso => {
-            for param in params {
-                conn.query(parameterized_query).params(&param).dml().await?;
-            }
-        }
-        #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => {
-            // LibSQL is SQLite-compatible, use middleware connection
             for param in params {
                 conn.query(parameterized_query).params(&param).dml().await?;
             }
@@ -602,12 +574,6 @@ END;
                 conn.query(parameterized_query).params(&param).dml().await?;
             }
         }
-        #[cfg(feature = "libsql")]
-        DatabaseType::Libsql => {
-            for param in params {
-                conn.query(parameterized_query).params(&param).dml().await?;
-            }
-        }
     }
 
     let query = "select count(*) as cnt from test;";
@@ -700,19 +666,6 @@ END;
                 .await?)
         }
 
-        #[cfg(feature = "libsql")]
-        MiddlewarePoolConnection::Libsql { .. } => {
-            // For LibSQL, just execute the query using the middleware
-            conn.query(&query_and_params.query)
-                .params(&query_and_params.params)
-                .dml()
-                .await?;
-            conn.query(&query_and_params.query)
-                .params(&query_and_params.params)
-                .dml()
-                .await?;
-            Ok::<_, SqlMiddlewareDbError>(result_set)
-        }
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso { .. } => {
             conn.query(&query_and_params.query)

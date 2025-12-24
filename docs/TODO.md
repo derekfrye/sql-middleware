@@ -5,11 +5,11 @@ Targets
 - Keep functions ≤ 50 LOC where practical.
 
 Backend Duplication Hotspots
-- Repeated `ConfigAndPool::new_*` constructors across backends (`src/sqlite/config.rs`, `src/libsql/config.rs`, `src/postgres/config.rs`, `src/mssql/config.rs`, `src/turso/config.rs`) follow the same pool-init + smoke-test pattern with backend-specific wiring.
+- Repeated `ConfigAndPool::new_*` constructors across backends (`src/sqlite/config.rs`, `src/postgres/config.rs`, `src/mssql/config.rs`, `src/turso/config.rs`) follow the same pool-init + smoke-test pattern with backend-specific wiring.
 - Execution helpers (`execute_batch`, `execute_select`, `execute_dml`) share nearly identical control flow in `src/*/executor.rs`, differing mostly in adapter calls and error wording.
 - Parameter conversion layers duplicate the mapping from `RowValues` into driver-native types and timestamp formatting logic in `src/*/params.rs`.
 - Result-set builders mirror each other when walking columns/rows to populate `ResultSet` (`src/*/query.rs`).
-- Transaction wrappers for libsql-like engines (`src/libsql/transaction.rs`, `src/turso/transaction.rs`) expose the same BEGIN/COMMIT/ROLLBACK and prepared-statement surface.
+- Transaction wrappers for SQLite-like engines (`src/sqlite/transaction.rs`, `src/turso/transaction.rs`) expose the same BEGIN/COMMIT/ROLLBACK and prepared-statement surface.
 - Module scaffolding (`src/*/mod.rs`) re-exports the same API sets with only backend names changed.
 
 Proposed Next Steps
@@ -22,7 +22,6 @@ Scan Summary
 - Files > 200 LOC
   - 493 lines — `tests/test04_AnyConnWrapper.rs`
 - Near-threshold files (watch for growth)
-  - 198 lines — `src/test_utils/postgres/tests.rs`
   - 193 lines — `tests/test02_postgres.rs`
   - 192 lines — `src/benchmark/postgres.rs`
 
@@ -34,11 +33,8 @@ Scan Summary
     - 171 lines — `fn test2_postgres_cr_and_del_tbls(...)`
   - `tests/test03_sqlite.rs`
     - 142 lines — `fn sqlite_and_turso_multiple_column_test_db2(...)`
-  - `tests/test_libsql.rs`
-    - 110 lines — `fn test_libsql_basic_operations(...)`
   - `tests/test01.rs`
     - 95 lines — `fn sqlite_and_turso_core_logic(...)`
-  - `src/test_utils/postgres/embedded.rs`
     - 91 lines — `pub fn setup_postgres_embedded(...)`
   - `src/benchmark/postgres.rs`
     - 89 lines — `async fn setup_postgres_db(...)`
@@ -47,13 +43,9 @@ Scan Summary
     - 72 lines — `pub fn generate_insert_statements(...)`
   - `benches/common.rs`
     - 72 lines — mirror of the above
-  - `tests/test_libsql_simple.rs`
-    - 58 lines — `fn test_libsql_simple(...)`
   - `src/mssql/query.rs`
     - 58 lines — `pub async fn build_result_set(...)`
     - 58 lines — `fn extract_value(...)`
-  - `src/libsql/query.rs`
-    - 53 lines — `pub async fn build_result_set(...)`
 
 Notes
 - Detector may miscount trait signatures; list above filters to concrete fns.
@@ -73,25 +65,15 @@ Recommended Refactor Order (highest impact first)
      - `mssql_row_to_values(row, col_count) -> Vec<RowValues>`
    - Consider moving `extract_value` per-type mapping into a small focused module function.
 
-3) `src/libsql/query.rs`
-   - Split `build_result_set` into:
-     - `libsql_column_names(rows) -> Arc<Vec<String>>`
-     - `libsql_process_rows(rows, col_count) -> ResultSet`
-
-4) `src/test_utils/postgres/embedded.rs`
-   - Break `setup_postgres_embedded` into phases:
-     - `config_from_env()`, `start_embedded()`, `wait_ready()`, `create_db_if_missing()`, `return_handles()`.
-   - Improves reuse and test readability.
-
-5) `tests/test02_postgres.rs`
+4) `tests/test02_postgres.rs`
    - Factor monolithic test into multiple `#[test]`s or helper functions:
      - `create_tables()`, `seed_data()`, `verify_rows()`, `drop_tables()`.
 
-6) `tests/test03_sqlite.rs`, `tests/test01.rs`
+5) `tests/test03_sqlite.rs`, `tests/test01.rs`
    - Already table-driven; extract shared helpers into a small test util (e.g., `tests/util/sqlite_like.rs`):
      - `create_test_table(conn)`, `seed_from_sql(conn, &str)`, `select_and_assert(...)`.
 
-7) Bench code (`src/benchmark/common.rs`, `benches/common.rs`)
+6) Bench code (`src/benchmark/common.rs`, `benches/common.rs`)
    - Reduce `generate_*_insert_statements` length by:
      - Extract `render_row(i) -> String`, `join_statements(rows) -> String`.
 
@@ -123,7 +105,7 @@ Implemented now
 
 Test adjustments
 - For Turso, DDL is applied per-file (other backends batch join).
-- For Turso, middleware-based operations mirror LibSQL in test4 while DDL converges.
+- For Turso, middleware-based operations mirror SQLite in test4 while DDL converges.
 
 TODOs (as Turso evolves)
 - Re-enable tests/turso/test4/04_event_user_player.sql in Turso DDL list; restore FK REFERENCES and DATETIME defaults.
@@ -132,11 +114,6 @@ TODOs (as Turso evolves)
 - Expand tests/turso/test4/setup.sql to match tests/test04.sql as constraints become supported.
 - Add a dedicated Turso integration test that exercises `with_transaction` end-to-end.
 - Clean up `unused mut` warning in `src/turso/transaction.rs`.
-
-LibSQL prepared (wrapper) note
-- Our current `libsql::Prepared` is a thin wrapper around the SQL string and executes via the pooled connection.
-- If/when a real async `prepare` is exposed by `deadpool-libsql`/`libsql`, we can switch `Prepared` to hold a real Statement under the hood without changing the public API.
-- Plan: replace `Prepared { sql: String }` with `Prepared { stmt, cols }` + keep the same `Tx::prepare/execute_prepared/query_prepared` signatures.
 
 - ✅ Added `MiddlewarePoolConnection::with_blocking_sqlite` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
 - ✅ Introduced `prepare_sqlite_statement` + `SqlitePreparedStatement` for explicit prepared-statement reuse via the worker queue.

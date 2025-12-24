@@ -15,19 +15,19 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER, name TEXT);")
             .await?;
 
-        // same pattern as LibSQL (test5b) for starting a transaction via helper
+        // Same pattern as SQLite for starting a transaction via helper
         let MiddlewarePoolConnection::Turso {
             conn: turso_conn, ..
         } = &conn
         else {
             panic!("Expected Turso connection");
         };
-        // Begin a transaction via Turso helper (mirrors LibSQL's helper-based begin)
+        // Begin a transaction via Turso helper
         let tx = sql_middleware::turso::begin_transaction(turso_conn).await?;
 
-        // Turso vs 5b (LibSQL): prepared execution requires `&mut Prepared` since the
+        // Prepared execution requires `&mut Prepared` since the
         // underlying turso::Statement has mutable query/execute methods.
-        // Placeholders are SQLite-style (?1, ?2), same as LibSQL.
+        // Placeholders are SQLite-style (?1, ?2), same as SQLite.
         let mut stmt = tx
             .prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")
             .await?;
@@ -39,7 +39,7 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         tx.commit().await?;
 
-        // Same SELECT placeholder style as LibSQL/SQLite
+        // Same SELECT placeholder style as SQLite
         let rs = conn
             .query("SELECT name FROM t WHERE id = ?1")
             .params(&[RowValues::Int(1)])

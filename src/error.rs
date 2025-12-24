@@ -6,8 +6,6 @@ use bb8;
 #[cfg(feature = "mssql")]
 use bb8_tiberius::Error as Bb8TiberiusError;
 
-#[cfg(feature = "libsql")]
-use deadpool_libsql;
 #[cfg(feature = "sqlite")]
 use rusqlite;
 #[cfg(feature = "mssql")]
@@ -38,14 +36,6 @@ pub enum SqlMiddlewareDbError {
     #[cfg(feature = "mssql")]
     #[error(transparent)]
     PoolErrorMssql(#[from] bb8::RunError<Bb8TiberiusError>),
-
-    #[cfg(feature = "libsql")]
-    #[error(transparent)]
-    LibsqlError(#[from] deadpool_libsql::libsql::Error),
-
-    #[cfg(feature = "libsql")]
-    #[error(transparent)]
-    PoolErrorLibsql(#[from] deadpool_libsql::PoolError),
 
     #[cfg(feature = "turso")]
     #[error(transparent)]

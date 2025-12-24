@@ -125,9 +125,6 @@ pub enum DatabaseType {
     /// SQL Server database
     #[cfg(feature = "mssql")]
     Mssql,
-    /// `LibSQL` database
-    #[cfg(feature = "libsql")]
-    Libsql,
     /// Turso (SQLite-compatible, in-process) database
     #[cfg(feature = "turso")]
     Turso,

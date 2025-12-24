@@ -10,8 +10,7 @@ fn row_value_to_turso_value(value: &RowValues, _for_execute: bool) -> turso::Val
         RowValues::Text(s) => turso::Value::Text(s.clone()),
         RowValues::Bool(b) => turso::Value::Integer(i64::from(*b)),
         //   - Turso’s Value enum supports: Null, Integer, Real, Text, Blob — no datetime/timestamp.
-        //   - SQLite’s storage model treats date/time as TEXT/REAL/INTEGER. In our SQLite converter we already serialize RowValues::Timestamp to TEXT; libsql params do
-        //   the same. Turso follows that convention for parity across “SQLite-compatible” backends.
+        //   - SQLite’s storage model treats date/time as TEXT/REAL/INTEGER. We serialize RowValues::Timestamp to TEXT for parity across “SQLite-compatible” backends.
         //   - Using %F %T%.f (e.g., “YYYY-MM-DD HH:MM:SS.sss”) yields:
         //       - Stable, human-readable values.
         //       - Correct lexicographic ordering for chronological sorts.

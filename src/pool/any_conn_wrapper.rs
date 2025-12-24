@@ -12,7 +12,7 @@ use rusqlite::Connection as SqliteConnectionType;
 
 /// Wrapper around a database connection for generic code.
 ///
-/// This enum allows code to handle `PostgreSQL`, `SQLite`, SQL Server, or `LibSQL`
+/// This enum allows code to handle `PostgreSQL`, `SQLite`, or SQL Server
 /// connections in a generic way. It is primarily used by the `interact_*` helpers
 /// to hand raw driver connections to user closures without exposing pool internals.
 pub enum AnyConnWrapper<'a> {
@@ -25,9 +25,6 @@ pub enum AnyConnWrapper<'a> {
     /// SQL Server client connection
     #[cfg(feature = "mssql")]
     Mssql(&'a mut TiberiusClient<Compat<TcpStream>>),
-    /// `LibSQL` database connection
-    #[cfg(feature = "libsql")]
-    Libsql(&'a deadpool_libsql::Object),
     /// Turso database connection
     #[cfg(feature = "turso")]
     Turso(&'a turso::Connection),

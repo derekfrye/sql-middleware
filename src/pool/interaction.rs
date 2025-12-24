@@ -35,10 +35,6 @@ impl MiddlewarePoolConnection {
                 let client = &mut **mssql_obj;
                 Ok(func(AnyConnWrapper::Mssql(client)).await)
             }
-            #[cfg(feature = "libsql")]
-            MiddlewarePoolConnection::Libsql {
-                conn: libsql_obj, ..
-            } => Ok(func(AnyConnWrapper::Libsql(libsql_obj)).await),
             #[cfg(feature = "sqlite")]
             MiddlewarePoolConnection::Sqlite { .. } => Err(SqlMiddlewareDbError::Unimplemented(
                 "interact_async is not supported for SQLite; use interact_sync instead".to_string(),

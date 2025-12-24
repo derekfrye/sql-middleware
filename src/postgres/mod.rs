@@ -1,6 +1,6 @@
 //! `PostgreSQL` backend glue.
 //!
-//! Submodules mirror the SQLite/Turso/LibSQL structure for consistency:
+//! Submodules mirror the SQLite/Turso structure for consistency:
 //! - `config`: connection configuration and pool setup
 //! - `params`: parameter conversion between middleware and `PostgreSQL` types
 //! - `query`: result extraction and building

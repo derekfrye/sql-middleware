@@ -1,27 +1,24 @@
-#![cfg(feature = "test-utils")]
+#![cfg(feature = "postgres")]
 
 use sql_middleware::convert_sql_params;
 use sql_middleware::postgres::Params as PostgresParams;
 use sql_middleware::prelude::*;
-use sql_middleware::test_utils::testing_postgres::{
-    setup_postgres_container, stop_postgres_container,
-};
 #[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
+use std::env;
 
 #[test]
 fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     let mut cfg = PgConfig::new();
-    cfg.dbname = Some("test_db".to_string());
-    cfg.host = Some("localhost".to_string());
-
-    let pg = setup_postgres_container(&cfg)?;
-    // Use the fully populated config returned by the embedded helper (has correct user/pass/port)
-    let real_cfg = pg.config.clone();
+    cfg.dbname = Some("testing".to_string());
+    cfg.host = Some("10.3.0.201".to_string());
+    cfg.port = Some(5432);
+    cfg.user = Some("testuser".to_string());
+    cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(real_cfg.clone())).await?;
+        let cap = ConfigAndPool::new_postgres(PostgresOptions::new(cfg.clone())).await?;
         let mut conn = cap.get_connection().await?;
 
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")
@@ -56,7 +53,7 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         #[cfg(feature = "postgres")]
         {
             // Exercise the typestate API against the same backend using a separate table.
-            let pg_cfg = real_cfg.to_tokio_config();
+            let pg_cfg = cfg.to_tokio_config();
 
             let pool = PgManager::new(pg_cfg).build_pool().await?;
             let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
@@ -81,6 +78,5 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
 
-    stop_postgres_container(pg);
     Ok(())
 }

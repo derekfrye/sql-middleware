@@ -8,8 +8,8 @@ Prioritized, deduplicated actions to reduce DRY issues across backends and typed
    - Low risk; unit-test column name extraction for one backend to cover the helper.
 
 2. **Standardize affected-rows conversion**
-   - Backends: postgres, libsql, mssql.
-   - Introduce backend-local `convert_affected_rows()` helpers (e.g., in `postgres/query.rs`, `libsql/executor.rs`, `mssql/query.rs`) for `u64 -> usize` handling.
+   - Backends: postgres, mssql.
+   - Introduce backend-local `convert_affected_rows()` helpers (e.g., in `postgres/query.rs`, `mssql/query.rs`) for `u64 -> usize` handling.
    - Validate with existing affected-rows assertions; minimal change surface.
 
 3. **Consolidate Turso prepare/execute select**
@@ -23,7 +23,7 @@ Prioritized, deduplicated actions to reduce DRY issues across backends and typed
    - Run SQLite integration tests to confirm identical behavior.
 
 5. **Macro for typed backend impls**
-   - Backends: all typed backends (sqlite, postgres, libsql, mssql, turso).
+   - Backends: all typed backends (sqlite, postgres, mssql, turso).
    - Generate repeated trait impls in `src/typed/impl_*` via a `macro_rules!` template (Queryable, TypedConnOps, BeginTx, TxConn).
    - Guard invocations with `#[cfg(feature = ...)]`; add unit tests for one backend to ensure generated impls behave as before.
 
@@ -33,7 +33,7 @@ Prioritized, deduplicated actions to reduce DRY issues across backends and typed
    - Rely on clippy/tests to confirm no regressions; consider `async_trait` only if signatures allow.
 
 7. **Dispatch arm consolidation**
-   - Backends: all enum-dispatch sites (respect feature flags for postgres, sqlite, libsql, mssql, turso).
+   - Backends: all enum-dispatch sites (respect feature flags for postgres, sqlite, mssql, turso).
    - Add macro/helper for enum dispatch match arms that only differ by backend call, preserving `#[cfg]` guards.
    - Smoke-test across enabled backends; ensure compile-gates are respected.
 
@@ -53,7 +53,7 @@ Prioritized, deduplicated actions to reduce DRY issues across backends and typed
     - Re-run backend-specific integration tests to confirm no behavioral drift.
 
 11. **Transaction wrapper shape extraction**
-    - Backends: all (Tx/Prepared shapes across postgres, sqlite, libsql, mssql, turso).
+    - Backends: all (Tx/Prepared shapes across postgres, sqlite, mssql, turso).
     - Define a small trait/template capturing Tx/Prepared/execute/query shape; implement backend-specific internals.
     - Higher risk: ensure transactional semantics/tests stay intact across backends.
 
@@ -68,5 +68,5 @@ Prioritized, deduplicated actions to reduce DRY issues across backends and typed
     - If adopted, add integration coverage for auto-commit flows per backend.
 
 Testing guidance
-- Run `cargo test` with relevant features (`sqlite,postgres,libsql,turso,mssql`) after each clustered change.
+- Run `cargo test` with relevant features (`sqlite,postgres,turso,mssql`) after each clustered change.
 - Prefer small unit tests alongside helpers; keep integration tests for behavioral parity.

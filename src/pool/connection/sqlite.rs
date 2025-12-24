@@ -101,7 +101,7 @@ impl MiddlewarePoolConnection {
                     "SQLite connection already taken from pool wrapper".into(),
                 )
             }),
-            #[cfg(any(feature = "postgres", feature = "mssql", feature = "libsql", feature = "turso"))]
+            #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "SQLite helper called on non-sqlite connection".into(),
             )),
@@ -125,7 +125,7 @@ impl MiddlewarePoolConnection {
                         "SQLite connection already taken from pool wrapper".into(),
                     )
                 }),
-            #[cfg(any(feature = "postgres", feature = "mssql", feature = "libsql", feature = "turso"))]
+            #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "into_sqlite is only available for SQLite connections".to_string(),
             )),

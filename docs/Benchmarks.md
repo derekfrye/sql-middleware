@@ -9,7 +9,7 @@ The project ships a small set of Criterion benchmarks that target three compleme
 Use this guide to see how each target is wired, which parts of the stack they exercise, and the adjustments available when running `cargo bench`.
 
 ## Benchmark targets
-- `database_benchmark` – runs the traditional bulk insert groups for SQLite and PostgreSQL (LibSQL remains opt-in behind the `libsql` feature).
+- `database_benchmark` – runs the traditional bulk insert groups for SQLite and PostgreSQL.
 - `bench_rusqlite_single_row_lookup` – measures repeated `SELECT ... WHERE id = ?` calls through raw rusqlite and the middleware abstraction (sqlite and turso).
 - `bench_rusqlite_multithread_pool_checkout` – fans out the same lookup workload across multiple async workers to isolate connection checkout overheads.
 - `bench_turso_single_row_lookup` – covers the Turso deployment path for the single-row lookup scenario.
@@ -95,11 +95,11 @@ SQLx mirrors live in `bench-harnesses/sqlx_lookup/benches/bench_sqlx_multithread
 
 ## Bulk insert benchmark flow (`benches/database_benchmark.rs`)
 The insert-oriented groups follow the same high-level pattern:
-1. Lazily create and cache a `ConfigAndPool` plus any supporting state (embedded Postgres, on-disk SQLite file, etc.).
+1. Lazily create and cache a `ConfigAndPool` plus any supporting state (external Postgres, on-disk SQLite file, etc.).
 2. Generate a deterministic batch of `INSERT` statements with synthetic payloads.
 3. For each timed iteration: drop/recreate the `test` table, borrow a concrete connection from the pool, execute the entire batch inside one transaction, and accumulate the elapsed time.
 
-Because the timed section delegates directly to the backend driver (rusqlite, tokio-postgres, libsql), the results mostly reflect the engine’s raw insert throughput along with driver transaction cost. Middleware code is involved only in connection acquisition and dispatch.
+Because the timed section delegates directly to the backend driver (rusqlite, tokio-postgres), the results mostly reflect the engine’s raw insert throughput along with driver transaction cost. Middleware code is involved only in connection acquisition and dispatch.
 
 ### SQLite (`src/benchmark/sqlite.rs`)
 - Uses a shared on-disk database (`benchmark_sqlite_global.db`) that is created once per benchmark run and removed during cleanup.
@@ -107,14 +107,9 @@ Because the timed section delegates directly to the backend driver (rusqlite, to
 - The middleware contributes only pool acquisition and the routing that exposes the underlying `rusqlite` connection.
 
 ### PostgreSQL (`src/benchmark/postgres.rs`)
-- Spins up an embedded PostgreSQL instance on first use, creates the schema, and caches both the instance and the associated connection pool.
+- Connects to the configured PostgreSQL instance on first use, creates the schema, and caches the associated connection pool.
 - Each iteration recreates the `test` table, then runs the SQL batch inside a single `tokio_postgres` transaction before committing.
-- Timings therefore capture embedded Postgres performance and driver costs; middleware code runs only up to yielding the `tokio_postgres::Client`.
-
-### LibSQL (`src/benchmark/libsql.rs`)
-- Mirrors the SQLite flow but targets LibSQL, optionally using an on-disk file or an in-memory database (`:memory:` by default).
-- Invokes `crate::libsql::execute_batch` on the direct LibSQL connection during the timed section.
-- Currently excluded from the default `criterion_main!`, so it runs only when you enable the `libsql` feature and rewire the benchmark entry point.
+- Timings therefore capture Postgres performance and driver costs; middleware code runs only up to yielding the `tokio_postgres::Client`.
 
 ## Interpreting results
 - Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
