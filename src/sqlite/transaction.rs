@@ -41,15 +41,14 @@ pub struct Prepared {
 pub async fn begin_transaction(
     conn_slot: &mut MiddlewarePoolConnection,
 ) -> Result<Tx<'_>, SqlMiddlewareDbError> {
-    let conn = match conn_slot {
-        MiddlewarePoolConnection::Sqlite { conn, .. } => conn,
-        #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
-        _ => {
-            return Err(SqlMiddlewareDbError::Unimplemented(
-                "begin_transaction is only available for SQLite connections".into(),
-            ));
-        }
+    #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
+    let MiddlewarePoolConnection::Sqlite { conn, .. } = conn_slot else {
+        return Err(SqlMiddlewareDbError::Unimplemented(
+            "begin_transaction is only available for SQLite connections".into(),
+        ));
     };
+    #[cfg(not(any(feature = "postgres", feature = "mssql", feature = "turso")))]
+    let MiddlewarePoolConnection::Sqlite { conn, .. } = conn_slot;
 
     let mut conn = conn.take().ok_or_else(|| {
         SqlMiddlewareDbError::ExecutionError(
@@ -146,15 +145,12 @@ impl Tx<'_> {
             Err(err) => {
                 let handle = conn.conn_handle();
                 let rollback_result =
-                    super::connection::rollback_with_busy_retries(handle.clone());
-                if rollback_result.is_ok() {
+                    super::connection::rollback_with_busy_retries(&handle).await;
+                if rollback_result.is_ok() || rewrap_on_rollback_failure_for_tests() {
                     conn.in_transaction = false;
                     self.rewrap(conn);
-                } else if rewrap_on_rollback_failure_for_tests() {
-                    conn.in_transaction = false;
-                    self.rewrap(conn);
-                    return Err(err);
-                } else {
+                }
+                if rollback_result.is_err() && !rewrap_on_rollback_failure_for_tests() {
                     handle.mark_broken();
                 }
                 Err(err)
@@ -171,7 +167,7 @@ impl Tx<'_> {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
         })?;
         let handle = conn.conn_handle();
-        match super::connection::rollback_with_busy_retries(handle.clone()) {
+        match super::connection::rollback_with_busy_retries(&handle).await {
             Ok(()) => {
                 conn.in_transaction = false;
                 self.rewrap(conn);
@@ -181,21 +177,22 @@ impl Tx<'_> {
                 if rewrap_on_rollback_failure_for_tests() {
                     conn.in_transaction = false;
                     self.rewrap(conn);
-                    return Err(err);
-                } else {
-                    handle.mark_broken();
-                    Err(err)
                 }
+                if !rewrap_on_rollback_failure_for_tests() {
+                    handle.mark_broken();
+                }
+                Err(err)
             }
         }
     }
 
     fn rewrap(&mut self, conn: SqliteConnection) {
-        let slot = match self.conn_slot {
-            MiddlewarePoolConnection::Sqlite { conn: slot, .. } => slot,
-            #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
-            _ => return,
+        #[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
+        let MiddlewarePoolConnection::Sqlite { conn: slot, .. } = self.conn_slot else {
+            return;
         };
+        #[cfg(not(any(feature = "postgres", feature = "mssql", feature = "turso")))]
+        let MiddlewarePoolConnection::Sqlite { conn: slot, .. } = self.conn_slot;
         debug_assert!(slot.is_none(), "sqlite conn slot should be empty during tx");
         *slot = Some(conn);
     }
@@ -203,17 +200,15 @@ impl Tx<'_> {
 
 impl Drop for Tx<'_> {
     /// Rolls back on drop to avoid leaking open transactions; the rollback is best-effort and
-    /// SQLite may report "no transaction is active" if the transaction was already completed
+    /// `SQLite` may report "no transaction is active" if the transaction was already completed
     /// by user code (e.g., via `execute_batch_in_tx`). Such errors are ignored because the goal
     /// is simply to leave the connection in a clean state before returning it to the pool.
     fn drop(&mut self) {
         if let Some(mut conn) = self.conn.take() {
             let handle = conn.conn_handle();
-            let rollback_result = super::connection::rollback_with_busy_retries(handle.clone());
-            if rollback_result.is_ok() {
-                conn.in_transaction = false;
-                self.rewrap(conn);
-            } else if rewrap_on_rollback_failure_for_tests() {
+            let rollback_result =
+                super::connection::rollback_with_busy_retries_blocking(&handle);
+            if rollback_result.is_ok() || rewrap_on_rollback_failure_for_tests() {
                 conn.in_transaction = false;
                 self.rewrap(conn);
             } else {

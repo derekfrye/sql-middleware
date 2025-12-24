@@ -55,7 +55,7 @@ pub async fn clean_postgres_tables(
     Ok(())
 }
 
-/// Connect to PostgreSQL and return a ready-to-use pool.
+/// Connect to `PostgreSQL` and return a ready-to-use pool.
 ///
 /// # Errors
 /// Propagates any error that occurs while connecting to the database or

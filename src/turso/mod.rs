@@ -1,6 +1,6 @@
 //! Turso backend glue (SQLite-compatible, in-process).
 //!
-//! Mirrors the SQLite module layout:
+//! Mirrors the `SQLite` module layout:
 //! - `config`: connection configuration and pool setup
 //! - `params`: parameter conversion between middleware and Turso types
 //! - `query`: result extraction and building

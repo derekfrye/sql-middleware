@@ -8,7 +8,7 @@ use crate::middleware::SqlMiddlewareDbError;
 
 use super::SqliteTypedConnection;
 use super::core::{SKIP_DROP_ROLLBACK, begin_from_conn, run_blocking};
-use crate::sqlite::connection::rollback_with_busy_retries;
+use crate::sqlite::connection::{rollback_with_busy_retries, rollback_with_busy_retries_blocking};
 use crate::sqlite::config::SharedSqliteConnection;
 
 impl SqliteTypedConnection<super::core::Idle> {
@@ -50,7 +50,7 @@ impl SqliteTypedConnection<super::core::InTx> {
             }
             Err(err) => {
                 // Best-effort rollback; keep needs_rollback = true so Drop can retry if needed.
-                if rollback_with_busy_retries(Arc::clone(&conn_handle)).is_err() {
+                if rollback_with_busy_retries(&conn_handle).await.is_err() {
                     conn_handle.mark_broken();
                 }
                 Err(err)
@@ -66,7 +66,7 @@ impl SqliteTypedConnection<super::core::InTx> {
         mut self,
     ) -> Result<SqliteTypedConnection<super::core::Idle>, SqlMiddlewareDbError> {
         let conn_handle = self.conn_handle()?;
-        let rollback_result = rollback_with_busy_retries(Arc::clone(&conn_handle));
+        let rollback_result = rollback_with_busy_retries(&conn_handle).await;
 
         match rollback_result {
             Ok(()) => {
@@ -96,7 +96,7 @@ impl<State> Drop for SqliteTypedConnection<State> {
             // Rollback synchronously so the connection is clean before it
             // goes back into the pool. Avoid async fire-and-forget, which
             // could race with the next checkout.
-            let rollback = || rollback_with_busy_retries(Arc::clone(&conn_handle));
+            let rollback = || rollback_with_busy_retries_blocking(&conn_handle);
             let result = if Handle::try_current().is_ok() {
                 block_in_place(rollback)
             } else {

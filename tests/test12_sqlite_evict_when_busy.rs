@@ -7,7 +7,7 @@ use sql_middleware::sqlite::transaction::{
 };
 use sql_middleware::SqlMiddlewareDbError;
 
-/// When rollback fails with SQLITE_BUSY, we should evict instead of rewrapping the connection.
+/// When rollback fails with `SQLITE_BUSY`, we should evict instead of rewrapping the connection.
 /// This test forces a busy error via a test hook and verifies both the new behavior (evict)
 /// and the legacy behavior (rewrap) by toggling another test-only flag.
 #[tokio::test(flavor = "current_thread")]
