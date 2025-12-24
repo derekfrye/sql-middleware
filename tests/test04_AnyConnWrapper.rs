@@ -350,7 +350,13 @@ END;
     };
     conn.execute_batch(setup_queries).await?;
 
-    let test_table = "test04_anyconn_test";
+    let test_table = format!(
+        "test04_anyconn_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
     let test_tbl_query = match db_type {
         #[cfg(feature = "mssql")]
         DatabaseType::Mssql => {
@@ -379,6 +385,7 @@ END;
         #[cfg(feature = "turso")]
         DatabaseType::Turso => format!("INSERT INTO {test_table} (id, name) VALUES (?1, ?2);"),
     };
+    let count_query = format!("select count(*) as cnt from {test_table};");
 
     // generate 100 params
     let params: Vec<Vec<RowValues>> = (0..100)
@@ -394,8 +401,7 @@ END;
         conn.query(&parameterized_query).params(&param).dml().await?;
     }
 
-    let query = format!("select count(*) as cnt from {test_table};");
-    let result_set = conn.query(&query).select().await?;
+    let result_set = conn.query(&count_query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         100
@@ -471,8 +477,7 @@ END;
         }
     }
 
-    let query = format!("select count(*) as cnt from {test_table};");
-    let result_set = conn.query(&query).select().await?;
+    let result_set = conn.query(&count_query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         200
@@ -505,9 +510,11 @@ END;
             }
         }
         DatabaseType::Sqlite => {
+            let count_query_for_tx2 = count_query.clone();
             let res = conn
                 .interact_sync({
                     let parameterized_query = parameterized_query.clone();
+                    let count_query = count_query_for_tx2;
                     let params = params.clone();
                     move |wrapper| {
                         match wrapper {
@@ -516,9 +523,7 @@ END;
                                     SqlMiddlewareDbError::Other(format!("sqlite tx2 start: {e}"))
                                 })?;
                                 {
-                                    let query = format!("select count(*) as cnt from {test_table};");
-
-                                    let mut stmt = tx.prepare(&query)?;
+                                    let mut stmt = tx.prepare(&count_query)?;
                                     let mut res = stmt.query(rusqlite::params![])?;
                                     // let cnt: i64 = res.next().unwrap().get(0)?;
                                     let x: i32 = if let Some(row) = res.next()? {
@@ -540,9 +545,7 @@ END;
                                     }
                                 }
                                 {
-                                    let query = format!("select count(*) as cnt from {test_table};");
-
-                                    let mut stmt = tx.prepare(&query)?;
+                                    let mut stmt = tx.prepare(&count_query)?;
                                     let mut res = stmt.query(rusqlite::params![])?;
                                     // let cnt: i64 = res.next().unwrap().get(0)?;
                                     let x: i32 = if let Some(row) = res.next()? {
@@ -579,8 +582,7 @@ END;
         }
     }
 
-    let query = format!("select count(*) as cnt from {test_table};");
-    let result_set = conn.query(&query).select().await?;
+    let result_set = conn.query(&count_query).select().await?;
     assert_eq!(
         *result_set.results[0].get("cnt").unwrap().as_int().unwrap(),
         400
@@ -639,7 +641,7 @@ END;
                     // should be able to read that val even tho we're not done w tx
                     {
                         let query_and_params_vec = QueryAndParams {
-                            query: format!("select count(*) as cnt from {test_table};"),
+                            query: count_query.clone(),
                             params: vec![],
                         };
                         let converted_params = convert_sql_params::<SqliteParams>(
