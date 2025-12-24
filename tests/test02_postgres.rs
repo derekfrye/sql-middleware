@@ -38,21 +38,25 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
         // env::var("DB_USER") = Ok("postgres".to_string());
+        let test_table = "test02_postgres_test";
+        let test_table_2 = "test02_postgres_test_2";
 
-        let stmt = "CREATE TABLE IF NOT EXISTS -- drop table event cascade
-                    test (
+        let stmt = format!(
+            "CREATE TABLE IF NOT EXISTS -- drop table event cascade
+                    {test_table} (
                     event_id BIGSERIAL NOT NULL PRIMARY KEY,
                     espn_id BIGINT NOT NULL,
                     name TEXT NOT NULL,
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
                     );
                 CREATE TABLE IF NOT EXISTS -- drop table event cascade
-                    test_2 (
+                    {test_table_2} (
                     event_id BIGSERIAL NOT NULL PRIMARY KEY,
                     espn_id BIGINT NOT NULL,
                     name TEXT NOT NULL,
                     ins_ts TIMESTAMP NOT NULL DEFAULT now()
-                    );";
+                    );"
+        );
 
         #[cfg(feature = "postgres")]
         let typed_pg_cfg = build_typed_pg_config(&cfg);
@@ -75,24 +79,26 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         ({
             let tx = pgconn.transaction().await?;
             {
-                tx.batch_execute(stmt).await?;
+                tx.batch_execute(&stmt).await?;
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(())
         })?;
 
-        let query = "DELETE FROM test;";
+        let query = format!("DELETE FROM {test_table};");
         ({
             let tx = pgconn.transaction().await?;
             {
-                tx.batch_execute(query).await?;
+                tx.batch_execute(&query).await?;
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(())
         })?;
 
         let query_and_params = QueryAndParams {
-            query: "INSERT INTO test (espn_id, name, ins_ts) VALUES ($1, $2, $3)".to_string(),
+            query: format!(
+                "INSERT INTO {test_table} (espn_id, name, ins_ts) VALUES ($1, $2, $3)"
+            ),
             params: vec![
                 RowValues::Int(123_456),
                 RowValues::Text("test name".to_string()),
@@ -114,10 +120,10 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         tx.commit().await?;
 
-        let query = "select * FROM test;";
+        let query = format!("select * FROM {test_table};");
         let result = ({
             let tx = pgconn.transaction().await?;
-            let stmt = tx.prepare(query).await?;
+            let stmt = tx.prepare(&query).await?;
             let result_set = { postgres_build_result_set(&stmt, &[], &tx).await? };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(result_set)
@@ -169,13 +175,16 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             let pool = PgManager::new(typed_pg_cfg).build_pool().await?;
             let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
 
-            typed_conn.execute_batch("TRUNCATE test_2;").await?;
+            let typed_truncate = format!("TRUNCATE {test_table_2};");
+            typed_conn.execute_batch(&typed_truncate).await?;
             let typed_ts =
                 NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?;
             let mut tx = typed_conn.begin().await?;
             let inserted = tx
                 .dml(
-                    "INSERT INTO test_2 (espn_id, name, ins_ts) VALUES ($1, $2, $3)",
+                    &format!(
+                        "INSERT INTO {test_table_2} (espn_id, name, ins_ts) VALUES ($1, $2, $3)"
+                    ),
                     &[
                         RowValues::Int(123_456),
                         RowValues::Text("test name".to_string()),
@@ -187,7 +196,9 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
             let rs = tx
                 .select(
-                    "SELECT espn_id, name, ins_ts FROM test_2 WHERE espn_id = $1",
+                    &format!(
+                        "SELECT espn_id, name, ins_ts FROM {test_table_2} WHERE espn_id = $1"
+                    ),
                     &[RowValues::Int(123_456)],
                 )
                 .await?;
@@ -199,12 +210,12 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             assert_eq!(row.get("ins_ts").unwrap().as_timestamp().unwrap(), typed_ts);
         }
 
-        let query = "DROP TABLE test;
-        DROP TABLE test_2;";
+        let query = format!("DROP TABLE {test_table};
+        DROP TABLE {test_table_2};");
         ({
             let tx = pgconn.transaction().await?;
             {
-                tx.batch_execute(query).await?;
+                tx.batch_execute(&query).await?;
             };
             tx.commit().await?;
             Ok::<_, SqlMiddlewareDbError>(())
