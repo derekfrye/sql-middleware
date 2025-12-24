@@ -11,6 +11,10 @@ homepage = "https://github.com/derekfrye/sql-middleware"
 keywords = ["sql", "sqlite", "postgresql", "turso", "mssql"]
 documentation = "https://docs.rs/sql-middleware"
 
+[workspace]
+members = ["simulator"]
+resolver = "2"
+
 [lints.rust]
 unsafe_code = "deny"
 

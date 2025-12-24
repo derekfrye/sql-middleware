@@ -41,10 +41,14 @@ pub struct Prepared {
 pub async fn begin_transaction(
     conn_slot: &mut MiddlewarePoolConnection,
 ) -> Result<Tx<'_>, SqlMiddlewareDbError> {
-    let MiddlewarePoolConnection::Sqlite { conn, .. } = conn_slot else {
-        return Err(SqlMiddlewareDbError::Unimplemented(
-            "begin_transaction is only available for SQLite connections".into(),
-        ));
+    let conn = match conn_slot {
+        MiddlewarePoolConnection::Sqlite { conn, .. } => conn,
+        #[cfg(any(feature = "postgres", feature = "mssql", feature = "libsql", feature = "turso"))]
+        _ => {
+            return Err(SqlMiddlewareDbError::Unimplemented(
+                "begin_transaction is only available for SQLite connections".into(),
+            ));
+        }
     };
 
     let mut conn = conn.take().ok_or_else(|| {
@@ -187,8 +191,10 @@ impl Tx<'_> {
     }
 
     fn rewrap(&mut self, conn: SqliteConnection) {
-        let MiddlewarePoolConnection::Sqlite { conn: slot, .. } = self.conn_slot else {
-            return;
+        let slot = match self.conn_slot {
+            MiddlewarePoolConnection::Sqlite { conn: slot, .. } => slot,
+            #[cfg(any(feature = "postgres", feature = "mssql", feature = "libsql", feature = "turso"))]
+            _ => return,
         };
         debug_assert!(slot.is_none(), "sqlite conn slot should be empty during tx");
         *slot = Some(conn);

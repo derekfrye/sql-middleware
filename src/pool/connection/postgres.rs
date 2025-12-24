@@ -6,6 +6,7 @@ use crate::error::SqlMiddlewareDbError;
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::PgManager;
 
+#[cfg(feature = "postgres")]
 use super::MiddlewarePoolConnection;
 
 #[cfg(feature = "postgres")]
