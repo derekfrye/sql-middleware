@@ -18,7 +18,7 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         // Same pattern as SQLite for starting a transaction via helper
         let MiddlewarePoolConnection::Turso {
             conn: turso_conn, ..
-        } = &conn
+        } = &mut conn
         else {
             panic!("Expected Turso connection");
         };

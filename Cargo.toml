@@ -1,6 +1,6 @@
 [package]
 name = "sql-middleware"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
@@ -13,7 +13,7 @@ documentation = "https://docs.rs/sql-middleware"
 
 [workspace]
 members = ["simulator"]
-resolver = "2"
+resolver = "3"
 
 [lints.rust]
 unsafe_code = "deny"
@@ -54,7 +54,7 @@ criterion = { version = "0", features = ["async_tokio"], optional = true }
 rand = { version = ">=0.9.2", optional = true }
 rand_chacha = { version = ">=0.9.0", optional = true }
 # turso deps
-turso = { version = "0.3.2", optional = true }
+turso = { version = "0.4", optional = true }
 bb8 = { version = "0", optional = true }
 rusqlite = { version = "0", optional = true }
 tracing = "0"

@@ -8,16 +8,10 @@ use crate::tx_outcome::TxOutcome;
 
 /// Lightweight transaction wrapper for Turso.
 ///
-/// This wrapper issues explicit `BEGIN`, `COMMIT`, and `ROLLBACK` statements on the
-/// provided `turso::Connection` and exposes helpers to run queries within that
-/// transaction. It does not depend on a dedicated `turso::Transaction` type, keeping
-/// the API stable and avoiding additional type leakage.
-///
-/// There is no drop guard here—call [`commit`](Tx::commit) or [`rollback`](Tx::rollback)
-/// before letting the handle go out of scope to avoid leaving the connection in an open
-/// transaction.
+/// Wraps a `turso::transaction::Transaction` to keep the public API stable while
+/// benefiting from Turso's transaction-scoped helpers (including prepare).
 pub struct Tx<'a> {
-    pub(crate) conn: &'a turso::Connection,
+    pub(crate) tx: turso::transaction::Transaction<'a>,
 }
 
 /// Prepared statement wrapper for Turso.
@@ -34,7 +28,7 @@ impl Tx<'_> {
     ///
     /// Returns `SqlMiddlewareDbError` when the underlying Turso prepare call fails.
     pub async fn prepare(&self, sql: &str) -> Result<Prepared, SqlMiddlewareDbError> {
-        let stmt = self.conn.prepare(sql).await.map_err(|e| {
+        let stmt = self.tx.prepare(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
         })?;
 
@@ -56,7 +50,7 @@ impl Tx<'_> {
     ///
     /// Returns `SqlMiddlewareDbError` when the Turso batch execution fails.
     pub async fn execute_batch(&self, sql: &str) -> Result<(), SqlMiddlewareDbError> {
-        self.conn.execute_batch(sql).await.map_err(|e| {
+        self.tx.execute_batch(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute_batch error: {e}"))
         })
     }
@@ -74,7 +68,7 @@ impl Tx<'_> {
     ) -> Result<usize, SqlMiddlewareDbError> {
         let converted =
             <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
-        let affected = self.conn.execute(query, converted.0).await.map_err(|e| {
+        let affected = self.tx.execute(query, converted.0).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso tx execute error: {e}"))
         })?;
         usize::try_from(affected).map_err(|e| {
@@ -122,7 +116,7 @@ impl Tx<'_> {
             <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
 
         // Prepare to fetch column names, then run using same statement to avoid double-prepare.
-        let mut stmt = self.conn.prepare(query).await.map_err(|e| {
+        let mut stmt = self.tx.prepare(query).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso tx prepare error: {e}"))
         })?;
 
@@ -164,9 +158,9 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` when issuing the COMMIT statement fails.
-    pub async fn commit(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
-        self.conn
-            .execute_batch("COMMIT")
+    pub async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
+        self.tx
+            .commit()
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso commit error: {e}")))
             .map(|()| TxOutcome::without_restored_connection())
@@ -177,9 +171,9 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` when issuing the ROLLBACK statement fails.
-    pub async fn rollback(&self) -> Result<TxOutcome, SqlMiddlewareDbError> {
-        self.conn
-            .execute_batch("ROLLBACK")
+    pub async fn rollback(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
+        self.tx
+            .rollback()
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso rollback error: {e}")))
             .map(|()| TxOutcome::without_restored_connection())
@@ -191,9 +185,11 @@ impl Tx<'_> {
 /// # Errors
 ///
 /// Returns `SqlMiddlewareDbError` when issuing the BEGIN statement fails.
-pub async fn begin_transaction(conn: &turso::Connection) -> Result<Tx<'_>, SqlMiddlewareDbError> {
-    conn.execute_batch("BEGIN").await.map_err(|e| {
+pub async fn begin_transaction(
+    conn: &mut turso::Connection,
+) -> Result<Tx<'_>, SqlMiddlewareDbError> {
+    let tx = conn.transaction().await.map_err(|e| {
         SqlMiddlewareDbError::ExecutionError(format!("Turso begin transaction error: {e}"))
     })?;
-    Ok(Tx { conn })
+    Ok(Tx { tx })
 }

@@ -317,7 +317,7 @@ fn benchmark_turso_raw(
                             .expect("drain remaining raw Turso rows")
                             .is_some()
                         {}
-                        stmt.reset();
+                        stmt.reset().expect("reset raw Turso statement");
                     }
                     total += start.elapsed();
                 }

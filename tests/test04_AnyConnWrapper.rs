@@ -593,7 +593,7 @@ END;
     let params: Vec<RowValues> = vec![RowValues::Int(990), RowValues::Text("name_990".to_string())];
 
     let query_and_params = QueryAndParams {
-        query: parameterized_query.to_string(),
+        query: parameterized_query.clone(),
         params,
     };
 

@@ -81,7 +81,7 @@ impl TursoNonTxPreparedStatement {
 
         let result = crate::turso::query::build_result_set(rows, Some(self.columns.clone())).await;
 
-        self.reset().await;
+        self.reset().await?;
         result
     }
 
@@ -99,7 +99,9 @@ impl TursoNonTxPreparedStatement {
             let affected = stmt.execute(converted.0).await.map_err(|e| {
                 SqlMiddlewareDbError::ExecutionError(format!("Turso prepared execute error: {e}"))
             })?;
-            stmt.reset();
+            stmt.reset().map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("Turso reset error: {e}"))
+            })?;
             affected
         };
 
@@ -116,8 +118,10 @@ impl TursoNonTxPreparedStatement {
         self.sql.as_str()
     }
 
-    async fn reset(&self) {
+    async fn reset(&self) -> Result<(), SqlMiddlewareDbError> {
         let stmt = self.statement.lock().await;
-        stmt.reset();
+        stmt.reset().map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso reset error: {e}"))
+        })
     }
 }

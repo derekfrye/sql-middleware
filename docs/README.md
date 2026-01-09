@@ -199,7 +199,7 @@ async fn list_users(pool: &ConfigAndPool) -> Result<ResultSet, SqlMiddlewareDbEr
 
 ### Custom logic in between transactions
 
-Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block across backends. `commit()`/`rollback()` return a `TxOutcome`; for SQLite the connection is rewrapped automatically by the transaction handle so you can keep using the same `MiddlewarePoolConnection` afterward.
+Here, because the underlying libraries are different, the snippets can get chatty. You can still tuck the commit/rollback and dispatch logic behind a couple helpers to avoid repeating the same block across backends. `commit()`/`rollback()` return a `TxOutcome`; for SQLite the connection is rewrapped automatically by the transaction handle so you can keep using the same `MiddlewarePoolConnection` afterward. For Turso, `begin_transaction` takes `&mut turso::Connection` to enforce compile-time prevention of nested transactions.
 
 ```rust
 use sql_middleware::prelude::*;
