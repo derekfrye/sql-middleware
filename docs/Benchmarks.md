@@ -111,6 +111,19 @@ Because the timed section delegates directly to the backend driver (rusqlite, to
 - Each iteration recreates the `test` table, then runs the SQL batch inside a single `tokio_postgres` transaction before committing.
 - Timings therefore capture Postgres performance and driver costs; middleware code runs only up to yielding the `tokio_postgres::Client`.
 
+## Turso (`benches/bench_turso_single_row_lookup.rs`)
+- Runs the single-row lookup suite against a local Turso database (`benchmark_turso_single_lookup.db`), reusing the same dataset across variants.
+- Exercises raw Turso queries, middleware prepared statements, pool checkout, and the same micro-benchmarks used to isolate decode/marshalling/param conversion overhead in the SQLite flow.
+
+### Latest results
+Checked-in change notes vs last check-in of turso bench results show a regression across the Turso suite. This appears to be driven exclusively by turso 0.3.2 v 0.4.0 (as code paths in this proj are essentially unchanged for turso).
+- `turso_raw`: +11.2% mean.
+- `middleware`: +11.4% mean.
+- `middleware_interact`: +17.3% mean.
+- `middleware_marshalling`: +18.0% mean.
+- `middleware_prepare`: +22.7% mean.
+- `pool_acquire`: +106% mean (about 2.06x).
+
 ## Interpreting results
 - Treat `database_benchmark` output as a proxy for raw insert bandwidth of each backend/driver pair; it does not capture higher-level middleware helpers such as `QueryAndParams` or cross-backend abstractions.
 - Treat `bench_rusqlite_single_row_lookup` output as the relative overhead of routing a point lookup through the middleware versus calling rusqlite directly. Both flows share the same on-disk dataset and decoding logic, so the difference primarily reflects connection dispatch, parameter conversion, and result materialisation cost. Treat the SQLx harness output as a parallel data point for the same workload; compare its metrics with `rusqlite`/middleware results.
