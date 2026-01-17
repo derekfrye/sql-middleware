@@ -81,6 +81,7 @@ Priority criteria (in order of weight):
 12. **Transaction wrapper shape extraction**
    - Backends: all (Tx/Prepared shapes across postgres, sqlite, mssql, turso).
    - Estimated LOC change: ~90-180.
+   - **Risk note:** Prefer a centralized shared module with all backends delegating to one Tx/Prepared abstraction for consistency, but this is high risk. It can flatten backend-specific semantics (prepare strategy, row-count conversions, error labeling), complicate lifetimes/ownership (e.g., Turso prepared statement handles, SQLite prepare_cached, MSSQL’s faux-prepared wrapper), and increase feature-gate complexity. It also likely alters public API shapes. Consider a phased approach if pursued.
    - Define a small trait/template capturing Tx/Prepared/execute/query shape; implement backend-specific internals.
    - Higher risk: ensure transactional semantics/tests stay intact across backends.
 
