@@ -6,7 +6,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `conversion::convert_sql_params` (module + root/prelude export)
   - **Coverage:** Used in `tests/test02_postgres.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05a_postgres.rs`, `tests/test05c_sqlite.rs`.
   - **Purpose:** Convert `RowValues` into backend-specific parameter types through `ParamConverter`; exposed both at `conversion::` and the crate root/prelude for convenience.
-- `middleware` re-exports (`AnyConnWrapper`, `BatchTarget`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `QueryAndParams`, `QueryBuilder`, `QueryTarget`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `TxOutcome`, `execute_batch`, `query`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
+- `middleware` re-exports (`AnyConnWrapper`, `BatchTarget`, `ConfigAndPool`, `ConversionMode`, `CustomDbRow`, `DatabaseType`, `MiddlewarePool`, `MiddlewarePoolConnection`, `ParamConverter`, `PrepareMode`, `QueryAndParams`, `QueryBuilder`, `QueryTarget`, `ResultSet`, `RowValues`, `SqlMiddlewareDbError`, `TxOutcome`, `execute_batch`, `query`, `translate_placeholders`, `PlaceholderStyle`, `QueryOptions`, `TranslationMode`)
   - **Coverage:** See per-item below.
   - **Purpose:** Single import path via `prelude`.
 - `middleware::SqlMiddlewareDbError`
@@ -24,6 +24,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `translation::QueryOptions::with_translation`
   - **Coverage:** **Not covered**.
   - **Purpose:** Fluent builder for `QueryOptions`; public for ergonomic options construction.
+- `translation::QueryOptions::with_prepare`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Fluent builder for `QueryOptions`; public to set per-call prepared execution mode.
+- `translation::PrepareMode`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Per-call switch between direct execution and prepared statements.
 - `translation::TranslationMode`
   - **Coverage:** Used via `QueryBuilder::translation` in `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Per-call toggle relative to pool default; public to let callers force on/off.
@@ -33,7 +39,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `translation::translate_placeholders`
   - **Coverage:** Only unit tests in `src/translation.rs`.
   - **Purpose:** Rewrite `$n`/`?n` placeholders; public so callers can opt into manual translation.
-- `translation::{translate_placeholders, PlaceholderStyle, QueryOptions, TranslationMode}` (re-export)
+- `translation::{translate_placeholders, PlaceholderStyle, PrepareMode, QueryOptions, TranslationMode}` (re-export)
   - **Coverage:** As above.
   - **Purpose:** Convenience from root/prelude.
 - `typed` module and alias `typed_api` (re-exported from root)
@@ -167,6 +173,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `QueryBuilder::translation`
   - **Coverage:** `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Set translation mode; public ergonomic toggle.
+- `QueryBuilder::prepare`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Hint to prepare the statement before execution; public for per-call prepared execution.
 
 ## Query and parameter helpers
 - `AnyConnWrapper`
@@ -242,6 +251,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** **Not covered**.
   - **Purpose:** Explicit SQL Server transaction + prepared helpers to mirror other backends.
+- `transaction::Tx::execute_dml`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Execute non-prepared DML within a SQL Server transaction; public for parity with other backends.
+- `transaction::Tx::query`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Execute non-prepared SELECT within a SQL Server transaction; public for parity with other backends.
 - `prepared::MssqlNonTxPreparedStatement`
   - **Coverage:** **Not covered**.
   - **Purpose:** Non-transaction prepared handle for reuse on a dedicated SQL Server connection.
@@ -259,12 +274,27 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `build_result_set_from_rows`
   - **Coverage:** **Not covered**.
   - **Purpose:** Helper to convert a `Vec<tokio_postgres::Row>` into a `ResultSet`; public for callers executing their own Postgres queries.
+- `build_result_set_from_statement`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Helper to convert rows using prepared statement metadata for column names; public for callers using prepared statements.
 - `postgres_extract_value`
   - **Coverage:** **Not covered**.
   - **Purpose:** Extract a `RowValues` from a single Postgres row/column; public helper for custom result processing.
+- `execute_query_prepared_on_client`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Prepared query execution on a raw Postgres client; public for advanced callers bypassing pools.
+- `execute_dml_prepared_on_client`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Prepared DML execution on a raw Postgres client; public for advanced callers bypassing pools.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** **Not covered** directly (tests use client-level transactions instead).
   - **Purpose:** Prepared/transaction helpers; public for explicit transaction control.
+- `transaction::Tx::execute_dml`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Execute non-prepared DML within a Postgres transaction; public for parity with other backends.
+- `transaction::Tx::query`
+  - **Coverage:** **Not covered**.
+  - **Purpose:** Execute non-prepared SELECT within a Postgres transaction; public for parity with other backends.
 
 ### SQLite
 - `execute_batch`, `execute_dml`, `execute_select`

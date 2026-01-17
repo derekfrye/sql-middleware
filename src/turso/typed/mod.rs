@@ -1,4 +1,4 @@
-//! Experimental bb8-backed Turso typestate API.
+//! Bb8-backed Turso typestate API.
 //! Provides `TursoConnection<Idle>` / `TursoConnection<InTx>` using an owned Turso connection
 //! with explicit BEGIN/COMMIT/ROLLBACK.
 

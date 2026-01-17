@@ -1,4 +1,4 @@
-//! Experimental bb8-backed `SQLite` typestate API.
+//! Bb8-backed `SQLite` typestate API.
 //! Provides `SqliteTypedConnection<Idle>` / `SqliteTypedConnection<InTx>` using an owned
 //! pooled `SQLite` connection with explicit BEGIN/COMMIT/ROLLBACK.
 

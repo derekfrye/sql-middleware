@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::executor::QueryTarget;
 use crate::pool::MiddlewarePoolConnection;
-use crate::translation::{QueryOptions, TranslationMode, translate_placeholders};
+use crate::translation::{PrepareMode, QueryOptions, TranslationMode, translate_placeholders};
 use crate::types::RowValues;
 
 mod dml;
@@ -74,6 +74,13 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     #[must_use]
     pub fn translation(mut self, translation: TranslationMode) -> Self {
         self.options.translation = translation;
+        self
+    }
+
+    /// Hint to prepare the statement before execution.
+    #[must_use]
+    pub fn prepare(mut self) -> Self {
+        self.options.prepare = PrepareMode::Prepared;
         self
     }
 }

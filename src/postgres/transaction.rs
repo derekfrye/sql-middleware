@@ -8,6 +8,7 @@ use crate::middleware::{
 use crate::tx_outcome::TxOutcome;
 
 use super::{Params, build_result_set};
+use crate::postgres::query::build_result_set_from_rows;
 
 /// Lightweight transaction wrapper for Postgres.
 pub struct Tx<'a> {
@@ -60,6 +61,23 @@ impl Tx<'_> {
         })
     }
 
+    /// Execute a parameterized DML statement without preparing and return affected rows.
+    ///
+    /// # Errors
+    /// Returns an error if parameter conversion, execution, or row-count conversion fails.
+    pub async fn execute_dml(
+        &self,
+        query: &str,
+        params: &[RowValues],
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        let converted =
+            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let rows = self.tx.execute(query, converted.as_refs()).await?;
+        usize::try_from(rows).map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
+        })
+    }
+
     /// Execute a parameterized SELECT and return a `ResultSet`.
     ///
     /// # Errors
@@ -72,6 +90,21 @@ impl Tx<'_> {
         let converted =
             <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
         build_result_set(&prepared.stmt, converted.as_refs(), &self.tx).await
+    }
+
+    /// Execute a parameterized SELECT without preparing and return a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns an error if parameter conversion or query execution fails.
+    pub async fn query(
+        &self,
+        query: &str,
+        params: &[RowValues],
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        let converted =
+            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let rows = self.tx.query(query, converted.as_refs()).await?;
+        build_result_set_from_rows(&rows)
     }
 
     /// Execute a batch of SQL statements inside the transaction.

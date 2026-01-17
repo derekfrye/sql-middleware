@@ -3,6 +3,7 @@ use bb8::PooledConnection;
 use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::postgres::query::execute_query_on_client;
+use crate::postgres::query::execute_query_prepared_on_client;
 use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
 
@@ -59,4 +60,16 @@ pub async fn select(
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     execute_query_on_client(conn, query, params).await
+}
+
+/// Adapter for query builder select using prepared statements (typed-postgres target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if preparing or executing the query fails.
+pub async fn select_prepared(
+    conn: &mut PooledConnection<'_, PgManager>,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    execute_query_prepared_on_client(conn, query, params).await
 }

@@ -17,7 +17,7 @@ pub use crate::postgres::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
 #[cfg(feature = "sqlite")]
 pub use crate::sqlite::{SqliteOptions, SqliteOptionsBuilder};
 pub use crate::translation::{
-    PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
+    PlaceholderStyle, PrepareMode, QueryOptions, TranslationMode, translate_placeholders,
 };
 #[cfg(feature = "turso")]
 pub use crate::turso::{TursoOptions, TursoOptionsBuilder};

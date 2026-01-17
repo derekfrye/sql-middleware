@@ -127,6 +127,35 @@ pub fn build_result_set_from_rows(
     Ok(result_set)
 }
 
+/// Build a result set using statement metadata for column names.
+///
+/// # Errors
+/// Returns errors from row value extraction.
+pub fn build_result_set_from_statement(
+    stmt: &Statement,
+    rows: &[tokio_postgres::Row],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let column_names: Vec<String> = stmt
+        .columns()
+        .iter()
+        .map(|col| col.name().to_string())
+        .collect();
+    let column_count = column_names.len();
+
+    let mut result_set = ResultSet::with_capacity(rows.len());
+    result_set.set_column_names(std::sync::Arc::new(column_names));
+
+    for row in rows {
+        let mut row_values = Vec::with_capacity(column_count);
+        for idx in 0..column_count {
+            row_values.push(postgres_extract_value(row, idx)?);
+        }
+        result_set.add_row_values(row_values);
+    }
+
+    Ok(result_set)
+}
+
 /// Execute a SELECT query on a client without managing transactions
 ///
 /// # Errors
@@ -144,6 +173,28 @@ pub async fn execute_query_on_client(
     build_result_set_from_rows(&rows)
 }
 
+/// Execute a prepared SELECT query on a client without managing transactions.
+///
+/// # Errors
+/// Returns errors from parameter conversion, preparation, or query execution.
+pub async fn execute_query_prepared_on_client(
+    client: &Client,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let stmt = client.prepare(query).await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("postgres prepare error: {e}"))
+    })?;
+    let converted = PgParams::convert_sql_params(params, ConversionMode::Query)?;
+    let rows = client
+        .query(&stmt, converted.as_refs())
+        .await
+        .map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres select error: {e}"))
+        })?;
+    build_result_set_from_statement(&stmt, &rows)
+}
+
 /// Execute a DML query on a client without managing transactions
 ///
 /// # Errors
@@ -159,6 +210,32 @@ pub async fn execute_dml_on_client(
         .execute(query, converted.as_refs())
         .await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("{err_label}: {e}")))?;
+    usize::try_from(rows).map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!(
+            "postgres affected rows conversion error: {e}"
+        ))
+    })
+}
+
+/// Execute a prepared DML query on a client without managing transactions.
+///
+/// # Errors
+/// Returns errors from parameter conversion, preparation, or query execution.
+pub async fn execute_dml_prepared_on_client(
+    client: &Client,
+    query: &str,
+    params: &[RowValues],
+) -> Result<usize, SqlMiddlewareDbError> {
+    let stmt = client.prepare(query).await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("postgres prepare error: {e}"))
+    })?;
+    let converted = PgParams::convert_sql_params(params, ConversionMode::Execute)?;
+    let rows = client
+        .execute(&stmt, converted.as_refs())
+        .await
+        .map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("postgres execute error: {e}"))
+        })?;
     usize::try_from(rows).map_err(|e| {
         SqlMiddlewareDbError::ExecutionError(format!(
             "postgres affected rows conversion error: {e}"

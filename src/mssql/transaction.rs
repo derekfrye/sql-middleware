@@ -61,6 +61,26 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Execute a DML statement inside the transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails or the affected row count cannot be converted.
+    pub async fn execute_dml(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        let query_builder = super::query::bind_query_params(query, params);
+        let exec_result = query_builder.execute(self.client).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("MSSQL tx execute error: {e}"))
+        })?;
+
+        let rows_affected: u64 = exec_result.rows_affected().iter().sum();
+        usize::try_from(rows_affected).map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
+        })
+    }
+
     /// Execute a prepared DML statement and return affected rows.
     ///
     /// # Errors
@@ -93,6 +113,18 @@ impl Tx<'_> {
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
         build_result_set(self.client, &prepared.sql, params).await
+    }
+
+    /// Execute a SELECT inside the transaction.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
+    pub async fn query(
+        &mut self,
+        query: &str,
+        params: &[RowValues],
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        build_result_set(self.client, query, params).await
     }
 
     /// Commit the transaction.

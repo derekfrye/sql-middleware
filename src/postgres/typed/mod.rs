@@ -1,4 +1,4 @@
-//! Experimental bb8-backed Postgres typestate API.
+//! Bb8-backed Postgres typestate API.
 //! Provides `PgConnection<Idle>` / `PgConnection<InTx>` using an owned client
 //! and explicit BEGIN/COMMIT/ROLLBACK.
 
@@ -9,6 +9,6 @@ mod select;
 mod tx;
 
 pub use core::{Idle, InTx, PgConnection, PgManager};
-pub use dml::dml;
-pub use select::select;
+pub use dml::{dml, dml_prepared};
+pub use select::{select, select_prepared};
 pub use tx::set_skip_drop_rollback_for_tests;

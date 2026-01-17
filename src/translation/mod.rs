@@ -49,16 +49,28 @@ impl TranslationMode {
     }
 }
 
+/// How to resolve prepared execution for a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrepareMode {
+    /// Execute without preparing.
+    #[default]
+    Direct,
+    /// Prepare the statement before execution.
+    Prepared,
+}
+
 /// Per-call options for query/execute paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueryOptions {
     pub translation: TranslationMode,
+    pub prepare: PrepareMode,
 }
 
 impl Default for QueryOptions {
     fn default() -> Self {
         Self {
             translation: TranslationMode::PoolDefault,
+            prepare: PrepareMode::default(),
         }
     }
 }
@@ -67,6 +79,12 @@ impl QueryOptions {
     #[must_use]
     pub fn with_translation(mut self, translation: TranslationMode) -> Self {
         self.translation = translation;
+        self
+    }
+
+    #[must_use]
+    pub fn with_prepare(mut self, prepare: PrepareMode) -> Self {
+        self.prepare = prepare;
         self
     }
 }

@@ -1,7 +1,7 @@
 use bb8::PooledConnection;
 
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
-use crate::postgres::query::execute_dml_on_client;
+use crate::postgres::query::{execute_dml_on_client, execute_dml_prepared_on_client};
 
 use super::{PgConnection, PgManager};
 
@@ -61,4 +61,16 @@ pub async fn dml(
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
     execute_dml_on_client(conn, query, params, "postgres dml error").await
+}
+
+/// Adapter for query builder dml using prepared statements (typed-postgres target).
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if preparing or executing the DML fails.
+pub async fn dml_prepared(
+    conn: &mut PooledConnection<'_, PgManager>,
+    query: &str,
+    params: &[RowValues],
+) -> Result<usize, SqlMiddlewareDbError> {
+    execute_dml_prepared_on_client(conn, query, params).await
 }

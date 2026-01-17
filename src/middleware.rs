@@ -6,7 +6,7 @@ pub use crate::query::QueryAndParams;
 pub use crate::query_builder::QueryBuilder;
 pub use crate::results::{CustomDbRow, ResultSet};
 pub use crate::translation::{
-    PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders,
+    PlaceholderStyle, PrepareMode, QueryOptions, TranslationMode, translate_placeholders,
 };
 pub use crate::tx_outcome::TxOutcome;
 pub use crate::types::{ConversionMode, DatabaseType, ParamConverter, RowValues};

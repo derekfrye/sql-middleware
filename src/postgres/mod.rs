@@ -18,7 +18,9 @@ pub use config::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
 pub use executor::{execute_batch, execute_dml, execute_select};
 pub use params::Params;
 pub use query::{
-    build_result_set, build_result_set_from_rows, execute_dml_on_client, execute_query_on_client,
+    build_result_set, build_result_set_from_rows, build_result_set_from_statement,
+    execute_dml_on_client, execute_dml_prepared_on_client, execute_query_on_client,
+    execute_query_prepared_on_client,
 };
 pub use transaction::{Prepared, Tx, begin_transaction};
 pub use typed::{

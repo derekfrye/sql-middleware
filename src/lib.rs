@@ -63,4 +63,6 @@ pub use middleware::{TursoOptions, TursoOptionsBuilder};
 
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;
-pub use translation::{PlaceholderStyle, QueryOptions, TranslationMode, translate_placeholders};
+pub use translation::{
+    PlaceholderStyle, PrepareMode, QueryOptions, TranslationMode, translate_placeholders,
+};
