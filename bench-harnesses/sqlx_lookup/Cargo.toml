@@ -19,7 +19,3 @@ harness = false
 [[bench]]
 name = "bench_sqlx_multithread_pool_checkout"
 harness = false
-
-[profile.bench]
-debug = true
-opt-level = 0

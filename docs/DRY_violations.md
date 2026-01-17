@@ -44,6 +44,7 @@ Priority criteria (in order of weight):
 6. **Macro for typed backend impls**
    - Backends: all typed backends (sqlite, postgres, mssql, turso).
    - Estimated LOC change: ~80-150.
+   - **Addressed:** Added `typed::macros::impl_typed_backend` and replaced Postgres/SQLite/Turso impl blocks with macro invocations.
    - Generate repeated trait impls in `src/typed/impl_*` via a `macro_rules!` template (Queryable, TypedConnOps, BeginTx, TxConn).
    - Guard invocations with `#[cfg(feature = ...)]`; add unit tests for one backend to ensure generated impls behave as before.
 
