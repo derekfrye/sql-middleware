@@ -1,5 +1,5 @@
 use super::config::MssqlClient;
-use super::query::{bind_query_params, build_result_set};
+use super::query::{bind_query_params, build_result_set, convert_affected_rows};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Execute a batch of SQL statements for SQL Server.
@@ -57,8 +57,5 @@ pub async fn execute_dml(
 
     // Get rows affected
     let rows_affected: u64 = exec_result.rows_affected().iter().sum();
-
-    usize::try_from(rows_affected).map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
-    })
+    convert_affected_rows(rows_affected)
 }

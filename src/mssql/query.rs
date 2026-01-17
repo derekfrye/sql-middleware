@@ -3,6 +3,7 @@ use futures_util::TryStreamExt;
 use tiberius::Query;
 
 use super::config::MssqlClient;
+use crate::query_utils::extract_column_names;
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
 /// Build a result set from a SQL Server query execution
@@ -31,7 +32,7 @@ pub async fn build_result_set(
         SqlMiddlewareDbError::ExecutionError("No columns returned from query".to_string())
     })?;
 
-    let column_names: Vec<String> = columns.iter().map(|col| col.name().to_string()).collect();
+    let column_names = extract_column_names(columns.iter(), |col| col.name());
 
     // Preallocate capacity if we can estimate the number of rows
     let mut result_set = ResultSet::with_capacity(10);
@@ -155,4 +156,9 @@ pub fn bind_query_params<'a>(query: &'a str, params: &[RowValues]) -> Query<'a> 
     }
 
     query_builder
+}
+
+pub(crate) fn convert_affected_rows(rows: u64) -> Result<usize, SqlMiddlewareDbError> {
+    usize::try_from(rows)
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}")))
 }

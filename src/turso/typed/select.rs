@@ -2,6 +2,7 @@ use bb8::PooledConnection;
 
 use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
+use crate::query_utils::extract_column_names;
 use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
 use crate::turso::params::Params as TursoParams;
@@ -75,11 +76,7 @@ async fn select_rows(
         .await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso prepare error: {e}")))?;
 
-    let cols = stmt
-        .columns()
-        .into_iter()
-        .map(|c| c.name().to_string())
-        .collect::<Vec<_>>();
+    let cols = extract_column_names(stmt.columns().iter(), |col| col.name());
     let cols_arc = std::sync::Arc::new(cols);
 
     let rows = stmt

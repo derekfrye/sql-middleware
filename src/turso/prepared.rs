@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use crate::middleware::{
     ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
 };
+use crate::query_utils::extract_column_names;
 
 use super::params::Params as TursoParams;
 
@@ -49,11 +50,7 @@ impl TursoNonTxPreparedStatement {
             SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
         })?;
 
-        let columns = statement
-            .columns()
-            .into_iter()
-            .map(|c| c.name().to_string())
-            .collect::<Vec<_>>();
+        let columns = extract_column_names(statement.columns().iter(), |col| col.name());
 
         Ok(Self {
             _connection: connection,

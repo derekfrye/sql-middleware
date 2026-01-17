@@ -33,6 +33,7 @@ pub mod query;
 
 // Internal modules (types are re-exported; modules stay private)
 pub(crate) mod query_builder;
+pub(crate) mod query_utils;
 pub(crate) mod results;
 pub(crate) mod types;
 

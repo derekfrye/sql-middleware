@@ -11,18 +11,21 @@ Priority criteria (in order of weight):
 1. **Extract column-name helper**
    - Backends: all (shared query utilities used across variants).
    - Estimated LOC change: ~20-40.
+   - **Addressed:** Implemented `query_utils::extract_column_names` and updated Postgres/MSSQL/SQLite/Turso call sites to use it.
    - Add `extract_column_names()` (or similar) to shared query utilities to replace repeated `.map(|c| c.name().to_string())`.
    - Low risk; unit-test column name extraction for one backend to cover the helper.
 
 2. **Standardize affected-rows conversion**
    - Backends: postgres, mssql.
    - Estimated LOC change: ~15-30.
+   - **Addressed:** Added `convert_affected_rows` helpers in `postgres/query.rs` and `mssql/query.rs`, reused in executor/transaction paths.
    - Introduce backend-local `convert_affected_rows()` helpers (e.g., in `postgres/query.rs`, `mssql/query.rs`) for `u64 -> usize` handling.
    - Validate with existing affected-rows assertions; minimal change surface.
 
 3. **Consolidate Postgres prepared vs direct helpers**
    - Backends: postgres.
    - Estimated LOC change: ~30-60.
+   - **Addressed:** Added shared internal `execute_query_rows`/`execute_dml_rows` helpers in `postgres/query.rs` and reused in prepared/direct variants.
    - Factor shared logic between `execute_query_on_client` and `execute_query_prepared_on_client`, plus `execute_dml_on_client` and `execute_dml_prepared_on_client`.
    - Keep error messages and `build_result_set` usage identical; add a unit test if behavior changes.
 

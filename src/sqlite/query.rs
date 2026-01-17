@@ -2,6 +2,7 @@ use rusqlite::types::Value;
 use rusqlite::{Statement, ToSql};
 
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::query_utils::extract_column_names;
 
 /// Extract a `RowValues` from a `SQLite` row.
 ///
@@ -33,11 +34,7 @@ pub fn build_result_set(
     params: &[Value],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
-    let column_names: Vec<String> = stmt
-        .column_names()
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect();
+    let column_names = extract_column_names(stmt.column_names().iter(), |name| *name);
 
     // Store column names once in the result set
     let column_names_rc = std::sync::Arc::new(column_names);

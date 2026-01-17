@@ -8,7 +8,7 @@ use crate::middleware::{
 use crate::tx_outcome::TxOutcome;
 
 use super::{Params, build_result_set};
-use crate::postgres::query::build_result_set_from_rows;
+use crate::postgres::query::{build_result_set_from_rows, convert_affected_rows};
 
 /// Lightweight transaction wrapper for Postgres.
 pub struct Tx<'a> {
@@ -56,9 +56,7 @@ impl Tx<'_> {
 
         let rows = self.tx.execute(&prepared.stmt, converted.as_refs()).await?;
 
-        usize::try_from(rows).map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
-        })
+        convert_affected_rows(rows, "Invalid rows affected count")
     }
 
     /// Execute a parameterized DML statement without preparing and return affected rows.
@@ -73,9 +71,7 @@ impl Tx<'_> {
         let converted =
             <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
         let rows = self.tx.execute(query, converted.as_refs()).await?;
-        usize::try_from(rows).map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
-        })
+        convert_affected_rows(rows, "Invalid rows affected count")
     }
 
     /// Execute a parameterized SELECT and return a `ResultSet`.

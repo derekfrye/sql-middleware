@@ -3,7 +3,8 @@ use tiberius::Query;
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::tx_outcome::TxOutcome;
 
-use super::{config::MssqlClient, query::build_result_set};
+use super::config::MssqlClient;
+use super::query::{build_result_set, convert_affected_rows};
 
 /// Lightweight transaction wrapper for SQL Server.
 ///
@@ -76,9 +77,7 @@ impl Tx<'_> {
         })?;
 
         let rows_affected: u64 = exec_result.rows_affected().iter().sum();
-        usize::try_from(rows_affected).map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
-        })
+        convert_affected_rows(rows_affected)
     }
 
     /// Execute a prepared DML statement and return affected rows.
@@ -97,9 +96,7 @@ impl Tx<'_> {
         })?;
 
         let rows_affected: u64 = exec_result.rows_affected().iter().sum();
-        usize::try_from(rows_affected).map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
-        })
+        convert_affected_rows(rows_affected)
     }
 
     /// Execute a prepared SELECT and return a `ResultSet`.
