@@ -13,6 +13,8 @@ pub(crate) enum BackendKind {
 pub(crate) struct Args {
     #[arg(long, value_enum, default_value = "sqlite")]
     pub(crate) backend: BackendKind,
+    #[arg(long)]
+    pub(crate) plan: Option<PathBuf>,
     #[arg(long, value_parser = humantime::parse_duration)]
     pub(crate) duration: Option<Duration>,
     #[arg(long)]
@@ -44,6 +46,7 @@ pub(crate) struct Args {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SimConfig {
     pub(crate) backend: BackendKind,
+    pub(crate) plan: Option<PathBuf>,
     pub(crate) duration_ms: Option<u64>,
     pub(crate) iterations: Option<u64>,
     pub(crate) seed: u64,
@@ -64,6 +67,7 @@ impl SimConfig {
     pub(crate) fn from_args(args: Args) -> Self {
         let mut config = SimConfig {
             backend: args.backend,
+            plan: args.plan,
             duration_ms: args.duration.map(|d| d.as_millis() as u64),
             iterations: args.iterations,
             seed: args.seed.unwrap_or_else(random_seed),

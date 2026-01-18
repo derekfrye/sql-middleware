@@ -158,7 +158,12 @@ Delete the existing crate (its in .git so we can always backtrack later if neede
 
 ## Immediate Next Milestone (Practical First Step)
 Focus on a minimal vertical slice that proves the new design:
-1) Plan type + runner that can execute against a single backend (SQLite).
+1) Plan type + runner that can execute against a single backend (SQLite). **Implemented** in `simulator/src/plan.rs`, `simulator/src/runner/mod.rs`, and `simulator/src/backends/sqlite.rs`, with a sample plan at `simulator/plans/first.json`.
+   - Run example: `cargo run -p simulator -- --plan simulator/plans/first.json`
+   - Choices/tradeoffs:
+     - Uses a real `sql-middleware` SQLite pool (`bb8` + `SqliteManager`) instead of the legacy model to validate actual middleware behavior, but introduces async runtime requirements.
+     - Plan execution is single-threaded and sequential per interaction; no concurrent scheduling yet, so it does not exercise interleavings until a scheduler layer is added.
+     - The runner uses a minimal action set (`checkout`, `return`, `begin`, `commit`, `rollback`, `execute`, `query`, `sleep`) and logs row/column counts only; assertions and richer result comparison are deferred.
 2) Two properties: `PoolCheckoutReturn` and `TxCommitVisible`.
 3) JSON plan dump on failure.
 4) CLI option to run a fixed seed and reminder to replay.

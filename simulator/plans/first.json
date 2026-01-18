@@ -1,0 +1,9 @@
+{
+  "interactions": [
+    { "task": 0, "action": { "type": "checkout" } },
+    { "task": 0, "action": { "type": "execute", "sql": "CREATE TABLE t (id INTEGER);" } },
+    { "task": 0, "action": { "type": "execute", "sql": "INSERT INTO t (id) VALUES (1);" } },
+    { "task": 0, "action": { "type": "query", "sql": "SELECT id FROM t;" } },
+    { "task": 0, "action": { "type": "return" } }
+  ]
+}
