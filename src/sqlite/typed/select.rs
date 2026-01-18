@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use crate::adapters::params::convert_params;
 use crate::executor::QueryTarget;
-use crate::middleware::{RowValues, SqlMiddlewareDbError};
+use crate::middleware::{ConversionMode, RowValues, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
 
@@ -44,7 +45,7 @@ impl SqliteTypedConnection<super::core::InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted = Params::convert(params)?.0;
+        let converted = convert_params::<Params>(params, ConversionMode::Query)?.0;
         let sql_owned = query.to_owned();
         super::core::run_blocking(self.conn_handle()?, move |guard| {
             let mut stmt = guard
@@ -70,7 +71,7 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let converted = Params::convert(params)?.0;
+    let converted = convert_params::<Params>(params, ConversionMode::Query)?.0;
     let sql_owned = query.to_owned();
     let handle = Arc::clone(&**conn);
     super::core::run_blocking(handle, move |guard| {

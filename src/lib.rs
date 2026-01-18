@@ -25,6 +25,7 @@ pub mod typed_sqlite;
 pub mod typed_turso;
 
 // Core modules (public for docs/advanced use)
+pub(crate) mod adapters;
 pub mod error;
 pub(crate) mod executor;
 pub mod middleware;

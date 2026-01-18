@@ -1,6 +1,7 @@
 use rusqlite::types::Value;
 use rusqlite::{Statement, ToSql};
 
+use crate::adapters::result_set::{column_count, init_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::query_utils::extract_column_names;
 
@@ -36,23 +37,14 @@ pub fn build_result_set(
     let param_refs: Vec<&dyn ToSql> = params.iter().map(|v| v as &dyn ToSql).collect();
     let column_names = extract_column_names(stmt.column_names().iter(), |name| *name);
 
-    // Store column names once in the result set
-    let column_names_rc = std::sync::Arc::new(column_names);
-
     let mut rows_iter = stmt.query(&param_refs[..])?;
     // Create result set with default capacity
-    let mut result_set = ResultSet::with_capacity(10);
-    result_set.set_column_names(column_names_rc);
+    let mut result_set = init_result_set(column_names, 10);
 
     while let Some(row) = rows_iter.next()? {
         let mut row_values = Vec::new();
 
-        let col_count = result_set
-            .get_column_names()
-            .ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError("No column names available".to_string())
-            })?
-            .len();
+        let col_count = column_count(&result_set)?;
 
         for i in 0..col_count {
             let value = sqlite_extract_value_sync(row, i)?;

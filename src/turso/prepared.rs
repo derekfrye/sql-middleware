@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::middleware::{
-    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
-};
+use crate::adapters::params::convert_params;
+use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::query_utils::extract_column_names;
 
 use super::params::Params as TursoParams;
@@ -66,8 +65,7 @@ impl TursoNonTxPreparedStatement {
     /// Returns [`SqlMiddlewareDbError`] if parameter conversion fails, the Turso client reports an
     /// execution error, or result decoding cannot be completed.
     pub async fn query(&self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted =
-            <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
 
         let rows = {
             let mut stmt = self.statement.lock().await;
@@ -88,8 +86,7 @@ impl TursoNonTxPreparedStatement {
     /// Returns [`SqlMiddlewareDbError`] if parameter conversion fails, Turso returns an execution
     /// error, or the affected-row count cannot be converted into `usize`.
     pub async fn execute(&self, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
-        let converted =
-            <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let converted = convert_params::<TursoParams>(params, ConversionMode::Execute)?;
 
         let affected = {
             let mut stmt = self.statement.lock().await;

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use crate::middleware::{
-    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
-};
+use crate::adapters::params::convert_params;
+use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::pool::MiddlewarePoolConnection;
 use crate::tx_outcome::TxOutcome;
 
@@ -93,8 +92,7 @@ impl Tx<'_> {
         prepared: &Prepared,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted =
-            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let converted = convert_params::<Params>(params, ConversionMode::Execute)?;
         let conn = self.conn_mut()?;
         conn.execute_dml_in_tx(prepared.sql.as_ref(), &converted.0)
             .await
@@ -109,8 +107,7 @@ impl Tx<'_> {
         prepared: &Prepared,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted =
-            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let converted = convert_params::<Params>(params, ConversionMode::Query)?;
         let conn = self.conn_mut()?;
         conn.execute_select_in_tx(
             prepared.sql.as_ref(),

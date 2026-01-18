@@ -1,6 +1,5 @@
-use crate::middleware::{
-    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
-};
+use crate::adapters::params::convert_params;
+use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::query_utils::extract_column_names;
 use crate::turso::params::Params as TursoParams;
 
@@ -30,8 +29,7 @@ pub async fn execute_select(
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     // Convert params
-    let converted =
-        <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+    let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
 
     // Prepare to fetch column names
     let mut stmt = turso_conn
@@ -62,8 +60,7 @@ pub async fn execute_dml(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
-    let converted =
-        <TursoParams as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+    let converted = convert_params::<TursoParams>(params, ConversionMode::Execute)?;
     let affected = turso_conn
         .execute(query, converted.0)
         .await

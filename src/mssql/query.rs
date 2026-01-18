@@ -3,6 +3,7 @@ use futures_util::TryStreamExt;
 use tiberius::Query;
 
 use super::config::MssqlClient;
+use crate::adapters::result_set::{column_count, init_result_set};
 use crate::query_utils::extract_column_names;
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 
@@ -35,22 +36,14 @@ pub async fn build_result_set(
     let column_names = extract_column_names(columns.iter(), |col| col.name());
 
     // Preallocate capacity if we can estimate the number of rows
-    let mut result_set = ResultSet::with_capacity(10);
-    // Store column names once in the result set
-    let column_names_rc = std::sync::Arc::new(column_names);
-    result_set.set_column_names(column_names_rc);
+    let mut result_set = init_result_set(column_names, 10);
 
     // Process the stream
     let mut rows_stream = stream.into_row_stream();
     while let Some(row_result) = rows_stream.try_next().await.map_err(|e| {
         SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {e}"))
     })? {
-        let col_count = result_set
-            .get_column_names()
-            .ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError("No column names available".to_string())
-            })?
-            .len();
+        let col_count = column_count(&result_set)?;
 
         let mut row_values = Vec::with_capacity(col_count);
 

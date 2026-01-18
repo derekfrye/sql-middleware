@@ -88,6 +88,7 @@ Priority criteria (in order of weight):
 13. **Centralize parameter/result-set adapters**
    - Backends: all (with backend-specific hooks).
    - Estimated LOC change: ~120-250.
+   - **Addressed:** Added shared adapters in `adapters::{params,result_set}` and refactored backend call sites to use them for conversion and column-count/result-set setup.
    - Build shared helpers for `RowValues -> driver params` and driver rows -> `ResultSet`, with backend hooks for internals.
    - Add focused tests comparing result-set output and parameter handling before/after.
 

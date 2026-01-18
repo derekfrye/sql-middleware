@@ -1,6 +1,8 @@
+use crate::adapters::params::convert_params;
+use crate::adapters::result_set::{column_count, init_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::query_utils::extract_column_names;
-use crate::types::{ConversionMode, ParamConverter};
+use crate::types::ConversionMode;
 use chrono::NaiveDateTime;
 use serde_json::Value;
 use tokio_postgres::{Client, Statement, Transaction, types::ToSql};
@@ -23,20 +25,12 @@ pub async fn build_result_set(
 
     // Preallocate capacity if we can estimate the number of rows
     let capacity = rows.len();
-    let mut result_set = ResultSet::with_capacity(capacity);
-    // Store column names once in the result set
-    let column_names_rc = std::sync::Arc::new(column_names);
-    result_set.set_column_names(column_names_rc);
+    let mut result_set = init_result_set(column_names, capacity);
 
     for row in rows {
         let mut row_values = Vec::new();
 
-        let col_count = result_set
-            .get_column_names()
-            .ok_or_else(|| {
-                SqlMiddlewareDbError::ExecutionError("No column names available".to_string())
-            })?
-            .len();
+        let col_count = column_count(&result_set)?;
 
         for i in 0..col_count {
             let value = postgres_extract_value(&row, i)?;
@@ -103,7 +97,7 @@ pub fn postgres_extract_value(
 ///
 /// # Errors
 /// Returns errors from result processing.
-pub fn build_result_set_from_rows(
+pub(crate) fn build_result_set_from_rows(
     rows: &[tokio_postgres::Row],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let mut result_set = ResultSet::with_capacity(rows.len());
@@ -128,15 +122,14 @@ pub fn build_result_set_from_rows(
 ///
 /// # Errors
 /// Returns errors from row value extraction.
-pub fn build_result_set_from_statement(
+pub(crate) fn build_result_set_from_statement(
     stmt: &Statement,
     rows: &[tokio_postgres::Row],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let column_names = extract_column_names(stmt.columns().iter(), |col| col.name());
     let column_count = column_names.len();
 
-    let mut result_set = ResultSet::with_capacity(rows.len());
-    result_set.set_column_names(std::sync::Arc::new(column_names));
+    let mut result_set = init_result_set(column_names, rows.len());
 
     for row in rows {
         let mut row_values = Vec::with_capacity(column_count);
@@ -167,7 +160,7 @@ pub async fn execute_query_on_client(
 ///
 /// # Errors
 /// Returns errors from parameter conversion, preparation, or query execution.
-pub async fn execute_query_prepared_on_client(
+pub(crate) async fn execute_query_prepared_on_client(
     client: &Client,
     query: &str,
     params: &[RowValues],
@@ -198,7 +191,7 @@ pub async fn execute_dml_on_client(
 ///
 /// # Errors
 /// Returns errors from parameter conversion, preparation, or query execution.
-pub async fn execute_dml_prepared_on_client(
+pub(crate) async fn execute_dml_prepared_on_client(
     client: &Client,
     query: &str,
     params: &[RowValues],
@@ -229,7 +222,7 @@ async fn query_rows_on_client(
     err_label: &str,
 ) -> Result<Vec<tokio_postgres::Row>, SqlMiddlewareDbError>
 {
-    let converted = PgParams::convert_sql_params(params, ConversionMode::Query)?;
+    let converted = convert_params::<PgParams>(params, ConversionMode::Query)?;
     let refs = converted.as_refs();
     let rows = match stmt {
         Some(stmt) => client.query(stmt, refs).await,
@@ -246,7 +239,7 @@ async fn execute_rows_on_client(
     err_label: &str,
 ) -> Result<u64, SqlMiddlewareDbError>
 {
-    let converted = PgParams::convert_sql_params(params, ConversionMode::Execute)?;
+    let converted = convert_params::<PgParams>(params, ConversionMode::Execute)?;
     let refs = converted.as_refs();
     let rows = match stmt {
         Some(stmt) => client.execute(stmt, refs).await,

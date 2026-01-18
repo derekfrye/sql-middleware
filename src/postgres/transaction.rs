@@ -2,9 +2,8 @@ use std::ops::DerefMut;
 
 use tokio_postgres::{Client, Statement, Transaction as PgTransaction};
 
-use crate::middleware::{
-    ConversionMode, ParamConverter, ResultSet, RowValues, SqlMiddlewareDbError,
-};
+use crate::adapters::params::convert_params;
+use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::tx_outcome::TxOutcome;
 
 use super::{Params, build_result_set};
@@ -51,8 +50,7 @@ impl Tx<'_> {
         prepared: &Prepared,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted =
-            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let converted = convert_params::<Params>(params, ConversionMode::Execute)?;
 
         let rows = self.tx.execute(&prepared.stmt, converted.as_refs()).await?;
 
@@ -68,8 +66,7 @@ impl Tx<'_> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted =
-            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Execute)?;
+        let converted = convert_params::<Params>(params, ConversionMode::Execute)?;
         let rows = self.tx.execute(query, converted.as_refs()).await?;
         convert_affected_rows(rows, "Invalid rows affected count")
     }
@@ -83,8 +80,7 @@ impl Tx<'_> {
         prepared: &Prepared,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted =
-            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let converted = convert_params::<Params>(params, ConversionMode::Query)?;
         build_result_set(&prepared.stmt, converted.as_refs(), &self.tx).await
     }
 
@@ -97,8 +93,7 @@ impl Tx<'_> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        let converted =
-            <Params as ParamConverter>::convert_sql_params(params, ConversionMode::Query)?;
+        let converted = convert_params::<Params>(params, ConversionMode::Query)?;
         let rows = self.tx.query(query, converted.as_refs()).await?;
         build_result_set_from_rows(&rows)
     }

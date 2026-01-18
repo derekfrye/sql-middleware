@@ -1,4 +1,5 @@
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::adapters::params::convert_params;
+use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
 
 use super::connection::SqliteConnection;
 use super::params::Params;
@@ -26,7 +27,7 @@ pub async fn execute_select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let params_owned = Params::convert(params)?.0;
+    let params_owned = convert_params::<Params>(params, ConversionMode::Query)?.0;
     sqlite_client
         .execute_select(query, &params_owned, build_result_set)
         .await
@@ -42,6 +43,6 @@ pub async fn execute_dml(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
-    let params_owned = Params::convert(params)?.0;
+    let params_owned = convert_params::<Params>(params, ConversionMode::Execute)?.0;
     sqlite_client.execute_dml(query, &params_owned).await
 }

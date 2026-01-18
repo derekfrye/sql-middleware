@@ -1,8 +1,9 @@
 use bb8::PooledConnection;
 
+use crate::adapters::params::convert_params;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::turso::params::Params as TursoParams;
-use crate::types::{ConversionMode, ParamConverter};
+use crate::types::ConversionMode;
 
 use super::{InTx, TursoConnection, TursoManager};
 
@@ -57,7 +58,7 @@ impl TursoConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<usize, SqlMiddlewareDbError> {
-        let converted = TursoParams::convert_sql_params(params, ConversionMode::Execute)?;
+        let converted = convert_params::<TursoParams>(params, ConversionMode::Execute)?;
         let mut rows = self
             .conn_mut()
             .query(query, converted.0)
@@ -82,7 +83,7 @@ pub async fn dml(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
-    let converted = TursoParams::convert_sql_params(params, ConversionMode::Execute)?;
+    let converted = convert_params::<TursoParams>(params, ConversionMode::Execute)?;
     let mut rows = conn
         .query(query, converted.0)
         .await

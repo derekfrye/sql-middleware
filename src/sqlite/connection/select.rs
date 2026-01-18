@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use crate::adapters::params::convert_params;
 use crate::executor::QueryTarget;
-use crate::middleware::{ResultSet, SqlMiddlewareDbError};
+use crate::middleware::{ConversionMode, ResultSet, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
 use crate::types::RowValues;
 
@@ -88,7 +89,7 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let converted = Params::convert(params)?.0;
+    let converted = convert_params::<Params>(params, ConversionMode::Query)?.0;
     let sql_owned = query.to_owned();
     let params_owned = converted.clone();
     let handle = Arc::clone(&*conn);
