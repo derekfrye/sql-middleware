@@ -19,8 +19,30 @@ Evolve the existing `simulator/` crate into a deterministic, property-driven sim
 - Shrinking: reduce failing plans to a minimal counterexample.
 - Bug base: optional storage of failing seeds/plans.
 
+## Turso-Derived Properties and Oracles (Mapped to sql-middleware)
+This is a concise mapping of existing Turso simulator properties/oracles into what translates cleanly for a pool/connection-focused simulator.
+
+### Properties (Direct or Near-Term Fits)
+- **InsertValuesSelect (PQS)** -> exercise write then read through pooled connections; validate end-to-end query/param plumbing and result shape.
+- **ReadYourUpdatesBack** -> validate update visibility on the same connection; combine with tx boundaries to check commit/rollback visibility.
+- **DeleteSelect** -> ensure deleted rows are not visible (in and out of a transaction) across pooled connections.
+- **SelectLimit** -> deterministic result size checks with normalized ordering and row counts.
+- **DoubleCreateFailure / DropSelect** -> normalize error class mapping and verify consistent error handling across backends.
+
+### Properties (Defer or Optional)
+- **SelectSelectOptimizer (NoREC)**, **WhereTrueFalseNull (TLP)**, **UnionAllPreservesCardinality** -> SQL-semantics-heavy; only include if we build robust query generation + result normalization.
+- **TableHasExpectedContent / AllTableHaveExpectedContent** -> require a shadow model; consider replacing with differential oracle checks.
+- **FsyncNoWait** -> storage semantics; translate to fault injection on connections instead (disconnect/reopen/busy/timeout).
+- **FaultyQuery** -> use for pool/connection fault injection and error class normalization.
+
+### Oracles (Core Modes to Implement)
+- **Property** -> primary mode for pool/tx/connection lifecycle properties.
+- **Differential** -> run the same plan against two backends (e.g., sqlite vs turso) and compare results/errors.
+- **Doublecheck** -> run the same plan twice against one backend to verify deterministic behavior.
+- **Shadow-state** -> optional; likely not needed for initial middleware focus.
+
 ## Target Architecture (New Simulator Design)
-Keep the existing crate and refactor into clearly separated layers:
+Delete the existing crate (its in .git so we can always backtrack later if needed) and refactor into clearly separated layers:
 
 1) Plan + Properties
 - Define a `Plan` type: `Vec<Interaction>`.
