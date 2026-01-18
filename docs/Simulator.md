@@ -1,0 +1,151 @@
+# Simulator Migration Plan
+
+## Goal
+Evolve the existing `simulator/` crate into a deterministic, property-driven simulator that tests the full sql-middleware stack across all backends, borrowing the design ideas from Turso's simulator without importing `turso_core` or Turso internals.
+
+## Current State (sql-middleware simulator)
+- Deterministic, single-threaded scheduler with a fake clock.
+- Models pool checkout/return, tx begin/commit/rollback, and coarse fault injection.
+- Oracle checks pool invariants only.
+- Backend is a pure model (no real database or driver).
+- Minimal CLI with quick/stress presets and basic logging.
+
+## Concepts to Borrow from Turso
+- Interaction plans: sequences of actions + assertions.
+- Properties: named invariants that define required outcomes.
+- Generation: random plan generation controlled by workload weights.
+- Profiles: reusable bundles of weights, sizes, and error injection knobs.
+- Differential/Doublecheck modes: run the same plan against multiple backends or twice to verify stability.
+- Shrinking: reduce failing plans to a minimal counterexample.
+- Bug base: optional storage of failing seeds/plans.
+
+## Target Architecture (New Simulator Design)
+Keep the existing crate and refactor into clearly separated layers:
+
+1) Plan + Properties
+- Define a `Plan` type: `Vec<Interaction>`.
+- `Interaction` includes:
+  - Operation (connect, checkout, begin, execute, commit, rollback, sleep, etc.).
+  - Optional SQL payload + parameter values.
+  - Expected outcomes (assertions).
+- `Property` enum defines reusable invariants (pool correctness, tx isolation, retry behavior, result shape).
+
+2) Generation
+- `generation/` module produces `Plan` from:
+  - Workload distribution (reads/writes/ddl/tx).
+  - Backend capabilities.
+  - Property selection.
+- Keep randomization deterministic via seed.
+
+3) Runner
+- `runner/` executes a `Plan` through a backend adapter.
+- Collects a trace and checks assertions.
+- Supports `run_once`, `loop`, `doublecheck`, and `differential` modes.
+
+4) Backends
+- Define a `Backend` trait with the minimum surface needed by the plan runner:
+  - `open_pool`, `checkout`, `return_conn`
+  - `begin`, `commit`, `rollback`
+  - `execute(sql, params)`, `query(sql, params)`
+  - `sleep(ms)`
+  - `fault_inject` hooks (optional)
+- Implement adapters for:
+  - SQLite (rusqlite)
+  - Postgres (tokio-postgres)
+  - MSSQL (tiberius)
+  - Turso (turso crate)
+- Keep adapters in `simulator/src/backends/` with feature gates.
+
+5) Oracle + Assertions
+- Keep pool invariants but expand to:
+  - Result-set invariants (row counts, deterministic ordering when specified).
+  - Transaction invariants (commit visibility, rollback visibility).
+  - Error invariants (busy/timeout/error class mapping).
+- Assertions stored alongside interactions.
+
+6) Shrink + Replay
+- Store failing plans as JSON.
+- Provide a shrinker that removes interactions and replays to find a minimal repro.
+- Keep `--seed` reproducibility.
+
+## Concrete Migration Steps
+
+### Phase 0: Baseline Cleanup (1-2 days)
+- Move current model-based simulator into `legacy/`.
+- Add `docs/Simulator.md` (this doc).
+- Add `simulator/src/plan.rs` with minimal `Plan` + `Interaction` types.
+- Add JSON serialization for plans (serde).
+
+### Phase 1: Core Plan Runner (2-4 days)
+- Implement `runner/mod.rs` with:
+  - `run_plan(plan, backend, oracle, config)`
+  - structured trace events.
+- Adapt current scheduler to drive plan execution deterministically.
+- Add plan logging:
+  - JSON plan dump on failure.
+  - human-readable trace summary (first N, last N steps).
+
+### Phase 2: Properties + Generation (3-6 days)
+- Introduce `properties/` with a minimal set:
+  - `PoolCheckoutReturn`
+  - `TxCommitVisible`
+  - `TxRollbackInvisible`
+  - `RetryAfterBusy`
+- Create `generation/` to build plans from:
+  - workload weights
+  - property selection
+- Reuse existing CLI weights (ddl_rate, busy_rate, panic_rate) and map to generator inputs.
+
+### Phase 3: Backend Adapters (4-8 days)
+- Implement a backend trait and adapters:
+  - `backends/sqlite.rs` (rusqlite)
+  - `backends/postgres.rs` (tokio-postgres)
+  - `backends/mssql.rs` (tiberius)
+  - `backends/turso.rs` (turso)
+- Each adapter:
+  - Encapsulates connection pool + checkout behavior through sql-middleware APIs.
+  - Normalizes errors into a simulator error enum.
+  - Exposes `execute` and `query` with consistent output shape.
+
+### Phase 4: Differential + Doublecheck (2-4 days)
+- `--doublecheck`: run plan twice against the same backend and compare results.
+- `--differential`: run plan against two backends and compare outcomes (e.g., sqlite vs turso).
+- Add a `ResultComparator` to normalize result ordering and data types.
+
+### Phase 5: Shrinking + Bug Base (3-6 days)
+- Add `shrinker/` for plan delta debugging:
+  - remove blocks of interactions and replay until failure persists.
+  - optional heuristic shrink (similar to Turso).
+- Add `bugbase/` with plan storage, seed, config, and last failure metadata.
+
+### Phase 6: Profiles + Schema (2-3 days)
+- Add `profiles/` with default presets:
+  - `quick`, `stress`, `ddl-heavy`, `write-heavy`
+- Optional JSON schema for profile validation.
+
+## Suggested Module Layout
+- `simulator/src/args.rs` -> extend CLI with new modes and profile selection
+- `simulator/src/plan.rs` -> Plan + Interaction + Assertion types
+- `simulator/src/properties/` -> properties + generators
+- `simulator/src/generation/` -> plan generator and workload distribution
+- `simulator/src/runner/` -> execution + scheduling + trace
+- `simulator/src/backends/` -> per-backend adapters
+- `simulator/src/shrinker/` -> plan shrinking and replay
+- `simulator/src/bugbase/` -> store/reload failures
+- `simulator/src/oracle.rs` -> expanded assertions + invariants
+
+## Immediate Next Milestone (Practical First Step)
+Focus on a minimal vertical slice that proves the new design:
+1) Plan type + runner that can execute against a single backend (SQLite).
+2) Two properties: `PoolCheckoutReturn` and `TxCommitVisible`.
+3) JSON plan dump on failure.
+4) CLI option to run a fixed seed and reminder to replay.
+
+## Risks and Mitigations
+- Backend behavior differences: normalize errors and results with a common schema.
+- Flaky behavior: enforce deterministic seeds and stable scheduling.
+- Complexity creep: keep the first set of properties small and expand iteratively.
+
+## References (Conceptual)
+- Turso simulator design: interaction plans + properties + deterministic runs.
+- TigerBeetle DST inspiration (deterministic simulation testing model).
