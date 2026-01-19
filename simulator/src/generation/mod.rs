@@ -1,7 +1,7 @@
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::args::SimConfig;
+use crate::args::{BackendKind, SimConfig};
 use crate::plan::{Action, Interaction, Plan};
 use crate::properties::PropertyKind;
 
@@ -136,6 +136,11 @@ fn next_op(
             (GenOp::Rollback, rollback_weight),
             (GenOp::Ddl, config.ddl_rate),
         ];
+        return choose_weighted(&weights, rng);
+    }
+
+    if matches!(config.backend, BackendKind::Sqlite) && in_flight_tx > 0 {
+        let weights = [(GenOp::Return, 1.0)];
         return choose_weighted(&weights, rng);
     }
 

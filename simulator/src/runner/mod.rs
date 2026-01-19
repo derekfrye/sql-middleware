@@ -154,7 +154,7 @@ async fn apply_action(
             let conn = task.conn.as_mut().ok_or_else(|| {
                 BackendError::Init("execute requested without a connection".to_string())
             })?;
-            let result = backend.execute(conn, sql).await;
+            let result = backend.execute(conn, sql, task.in_tx).await;
             handle_action_result(result, expect_error)?;
         }
         Action::Query {
@@ -165,7 +165,7 @@ async fn apply_action(
             let conn = task.conn.as_mut().ok_or_else(|| {
                 BackendError::Init("query requested without a connection".to_string())
             })?;
-            let result = backend.query(conn, sql).await;
+            let result = backend.query(conn, sql, task.in_tx).await;
             let result = match handle_action_result(result, expect_error)? {
                 Some(result) => result,
                 None => return Ok(()),
