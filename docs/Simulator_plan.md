@@ -94,7 +94,7 @@ Delete the existing crate (its in .git so we can always backtrack later if neede
 
 ### Phase 0: Baseline Cleanup (1-2 days)
 - Move current model-based simulator into `legacy/`.
-- Add `docs/Simulator.md` (this doc).
+- Add `docs/Simulator_plan.md` (this doc).
 - Add `simulator/src/plan.rs` with minimal `Plan` + `Interaction` types.
 - Add JSON serialization for plans (serde).
 
@@ -164,7 +164,15 @@ Focus on a minimal vertical slice that proves the new design:
      - Uses a real `sql-middleware` SQLite pool (`bb8` + `SqliteManager`) instead of the legacy model to validate actual middleware behavior, but introduces async runtime requirements.
      - Plan execution is single-threaded and sequential per interaction; no concurrent scheduling yet, so it does not exercise interleavings until a scheduler layer is added.
      - The runner uses a minimal action set (`checkout`, `return`, `begin`, `commit`, `rollback`, `execute`, `query`, `sleep`) and logs row/column counts only; assertions and richer result comparison are deferred.
-2) Two properties: `PoolCheckoutReturn` and `TxCommitVisible`.
+2) Two properties: `PoolCheckoutReturn` and `TxCommitVisible`. **Implemented** via `--property` with plan builders in `simulator/src/properties/mod.rs`.
+   - Examples (see CLI flag in `simulator/src/args.rs`):
+     - `cargo run -p simulator -- --property tx-commit-visible`
+     - `cargo run -p simulator -- --property pool-checkout-return`
+   - Choices/tradeoffs:
+     - Properties are implemented as fixed plans (not generated) so we can assert behavior without building the generator yet.
+     - Assertions are limited to row/column counts (`QueryExpectation`) rather than full result equality, keeping result normalization out of scope for now.
+     - Properties run through the plan runner path (SQLite only today), so they validate middleware integration but do not yet cover multi-backend or differential modes.
+   - Follow-up: once plan generation lands, properties can be expressed as invariants over generated plans; once differential/doublecheck modes land, the same properties can run across multiple backends and compare normalized results/errors.
 3) JSON plan dump on failure.
 4) CLI option to run a fixed seed and reminder to replay.
 

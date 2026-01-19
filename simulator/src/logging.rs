@@ -1,57 +1,9 @@
-use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tracing_subscriber::fmt::writer::MakeWriter;
-
-pub(crate) struct EventLog {
-    first_steps: Vec<String>,
-    tail_steps: VecDeque<String>,
-    first_limit: usize,
-    tail_limit: usize,
-}
-
-impl EventLog {
-    pub(crate) fn new(first_limit: usize, tail_limit: usize) -> Self {
-        Self {
-            first_steps: Vec::with_capacity(first_limit),
-            tail_steps: VecDeque::with_capacity(tail_limit),
-            first_limit,
-            tail_limit,
-        }
-    }
-
-    pub(crate) fn record(&mut self, message: String) {
-        if self.first_steps.len() < self.first_limit {
-            self.first_steps.push(message.clone());
-        }
-        if self.tail_limit > 0 {
-            if self.tail_steps.len() == self.tail_limit {
-                self.tail_steps.pop_front();
-            }
-            self.tail_steps.push_back(message.clone());
-        }
-        tracing::info!("{}", message);
-    }
-
-    pub(crate) fn dump_failure(&self, reason: &str) {
-        tracing::error!("failure: {}", reason);
-        if !self.first_steps.is_empty() {
-            tracing::error!("first steps:");
-            for line in &self.first_steps {
-                tracing::error!("{}", line);
-            }
-        }
-        if !self.tail_steps.is_empty() {
-            tracing::error!("tail steps:");
-            for line in &self.tail_steps {
-                tracing::error!("{}", line);
-            }
-        }
-    }
-}
 
 #[derive(Clone)]
 pub(crate) struct LogWriter {

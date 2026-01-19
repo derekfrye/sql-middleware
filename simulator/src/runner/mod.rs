@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::backends::sqlite::{BackendError, SqliteBackend, SqliteBackendConfig};
-use crate::plan::{Action, Plan};
+use crate::plan::{Action, Plan, QueryExpectation};
 use sql_middleware::ResultSet;
 
 #[derive(Debug)]
@@ -156,12 +156,15 @@ async fn apply_action(
             })?;
             backend.execute(conn, sql).await?;
         }
-        Action::Query { sql } => {
+        Action::Query { sql, expect } => {
             let conn = task.conn.as_mut().ok_or_else(|| {
                 BackendError::Init("query requested without a connection".to_string())
             })?;
             let result = backend.query(conn, sql).await?;
             let summary = summarize_result(&result);
+            if let Some(expect) = expect {
+                verify_query_expectation(expect, &summary)?;
+            }
             tracing::info!(
                 "plan_query rows={} columns={}",
                 summary.row_count,
@@ -202,4 +205,27 @@ fn summarize_result(result: &ResultSet) -> QuerySummary {
         row_count: result.results.len(),
         column_count,
     }
+}
+
+fn verify_query_expectation(
+    expect: &QueryExpectation,
+    summary: &QuerySummary,
+) -> Result<(), BackendError> {
+    if let Some(row_count) = expect.row_count {
+        if summary.row_count != row_count {
+            return Err(BackendError::Init(format!(
+                "query row_count mismatch: expected {row_count}, got {}",
+                summary.row_count
+            )));
+        }
+    }
+    if let Some(column_count) = expect.column_count {
+        if summary.column_count != column_count {
+            return Err(BackendError::Init(format!(
+                "query column_count mismatch: expected {column_count}, got {}",
+                summary.column_count
+            )));
+        }
+    }
+    Ok(())
 }
