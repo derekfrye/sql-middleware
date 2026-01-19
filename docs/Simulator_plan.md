@@ -108,15 +108,25 @@ Delete the existing crate (its in .git so we can always backtrack later if neede
   - human-readable trace summary (first N, last N steps).
 
 ### Phase 2: Properties + Generation (3-6 days)
-- Introduce `properties/` with a minimal set:
+- Introduce `properties/` with a minimal set. **Implemented** in `simulator/src/properties/mod.rs`:
   - `PoolCheckoutReturn`
   - `TxCommitVisible`
   - `TxRollbackInvisible`
   - `RetryAfterBusy`
-- Create `generation/` to build plans from:
-  - workload weights
-  - property selection
-- Reuse existing CLI weights (ddl_rate, busy_rate, panic_rate) and map to generator inputs.
+  - Example: `cargo run -p simulator -- --property tx-rollback-invisible`
+  - Choices/tradeoffs:
+    - `RetryAfterBusy` uses `BEGIN IMMEDIATE` and expects a `locked`-matching error string; this is SQLite-specific and assumes pool size >= 2.
+- Create `generation/` to build plans from workload weights and property selection. **Implemented** in `simulator/src/generation/mod.rs`.
+  - Examples:
+    - `cargo run -p simulator -- --generate --steps 500 --seed 42 --tasks 8`
+    - `cargo run -p simulator -- --generate --property tx-commit-visible --steps 200`
+  - Choices/tradeoffs:
+    - The generator prepends a bootstrap table and optional property plan, then fills remaining steps with weighted actions.
+    - Generated queries do not carry expectations yet; they are used to exercise the stack rather than assert results.
+- Reuse existing CLI weights (ddl_rate, busy_rate, panic_rate) and map to generator inputs. **Implemented** via `simulator/src/args.rs`.
+  - Mapping notes:
+    - `ddl_rate` controls DDL frequency; `busy_rate` injects sleep while holding a connection to simulate contention.
+    - `panic_rate` biases rollback vs commit in transactions to simulate failure-heavy mixes.
 
 ### Phase 3: Backend Adapters (4-8 days)
 - Implement a backend trait and adapters:

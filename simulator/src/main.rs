@@ -1,5 +1,6 @@
 mod args;
 mod backends;
+mod generation;
 mod logging;
 mod plan;
 mod properties;
@@ -28,9 +29,26 @@ fn main() {
     let config_json = serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
     tracing::info!("config: {}", config_json);
 
+    if config.plan.is_some() && config.generate {
+        eprintln!("--plan and --generate are mutually exclusive");
+        std::process::exit(1);
+    }
     if config.plan.is_some() && config.property.is_some() {
         eprintln!("--plan and --property are mutually exclusive");
         std::process::exit(1);
+    }
+
+    if config.generate {
+        match generation::generate_plan(&config) {
+            Ok(plan) => {
+                run_plan(plan, config.pool_size, config.dump_plan_on_failure.as_deref());
+            }
+            Err(err) => {
+                eprintln!("failed to generate plan: {err}");
+                std::process::exit(1);
+            }
+        }
+        return;
     }
 
     if let Some(plan_path) = config.plan.clone() {
@@ -51,7 +69,7 @@ fn main() {
         return;
     }
 
-    eprintln!("missing required flag: --plan or --property");
+    eprintln!("missing required flag: --plan, --property, or --generate");
     std::process::exit(1);
 }
 

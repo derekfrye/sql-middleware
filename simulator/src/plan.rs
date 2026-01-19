@@ -21,10 +21,14 @@ pub(crate) enum Action {
     Begin,
     Commit,
     Rollback,
-    Execute { sql: String },
+    Execute {
+        sql: String,
+        expect_error: Option<ErrorExpectation>,
+    },
     Query {
         sql: String,
         expect: Option<QueryExpectation>,
+        expect_error: Option<ErrorExpectation>,
     },
     Sleep { ms: u64 },
 }
@@ -33,6 +37,11 @@ pub(crate) enum Action {
 pub(crate) struct QueryExpectation {
     pub(crate) row_count: Option<usize>,
     pub(crate) column_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ErrorExpectation {
+    pub(crate) contains: String,
 }
 
 impl Plan {

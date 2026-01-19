@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::backends::sqlite::{BackendError, SqliteBackend, SqliteBackendConfig};
-use crate::plan::{Action, Plan, QueryExpectation};
+use crate::plan::{Action, ErrorExpectation, Plan, QueryExpectation};
 use sql_middleware::ResultSet;
 
 #[derive(Debug)]
@@ -150,17 +150,26 @@ async fn apply_action(
             backend.rollback(conn).await?;
             task.in_tx = false;
         }
-        Action::Execute { sql } => {
+        Action::Execute { sql, expect_error } => {
             let conn = task.conn.as_mut().ok_or_else(|| {
                 BackendError::Init("execute requested without a connection".to_string())
             })?;
-            backend.execute(conn, sql).await?;
+            let result = backend.execute(conn, sql).await;
+            handle_action_result(result, expect_error)?;
         }
-        Action::Query { sql, expect } => {
+        Action::Query {
+            sql,
+            expect,
+            expect_error,
+        } => {
             let conn = task.conn.as_mut().ok_or_else(|| {
                 BackendError::Init("query requested without a connection".to_string())
             })?;
-            let result = backend.query(conn, sql).await?;
+            let result = backend.query(conn, sql).await;
+            let result = match handle_action_result(result, expect_error)? {
+                Some(result) => result,
+                None => return Ok(()),
+            };
             let summary = summarize_result(&result);
             if let Some(expect) = expect {
                 verify_query_expectation(expect, &summary)?;
@@ -205,6 +214,34 @@ fn summarize_result(result: &ResultSet) -> QuerySummary {
         row_count: result.results.len(),
         column_count,
     }
+}
+
+fn handle_action_result<T>(
+    result: Result<T, BackendError>,
+    expect_error: &Option<ErrorExpectation>,
+) -> Result<Option<T>, BackendError> {
+    match (result, expect_error) {
+        (Ok(value), None) => Ok(Some(value)),
+        (Ok(_), Some(expect)) => Err(BackendError::Init(format!(
+            "expected error containing {:?}, but action succeeded",
+            expect.contains
+        ))),
+        (Err(err), None) => Err(err),
+        (Err(err), Some(expect)) => {
+            if error_matches(&err, expect) {
+                Ok(None)
+            } else {
+                Err(BackendError::Init(format!(
+                    "error mismatch: expected {:?}, got {}",
+                    expect.contains, err
+                )))
+            }
+        }
+    }
+}
+
+fn error_matches(err: &BackendError, expect: &ErrorExpectation) -> bool {
+    err.to_string().contains(&expect.contains)
 }
 
 fn verify_query_expectation(
