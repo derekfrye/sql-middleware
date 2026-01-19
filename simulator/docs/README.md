@@ -32,6 +32,11 @@ Write logs to a file:
 cargo run -p simulator -- --log /tmp/sim.log
 ```
 
+Dump the plan on failure for replay:
+```bash
+cargo run -p simulator -- --property tx-commit-visible --dump-plan-on-failure /tmp/failed-plan.json
+```
+
 ## Limitations and future ideas
 Limitations:
 - Single-backend (SQLite) execution only; no differential/doublecheck runs yet.

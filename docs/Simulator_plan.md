@@ -173,8 +173,14 @@ Focus on a minimal vertical slice that proves the new design:
      - Assertions are limited to row/column counts (`QueryExpectation`) rather than full result equality, keeping result normalization out of scope for now.
      - Properties run through the plan runner path (SQLite only today), so they validate middleware integration but do not yet cover multi-backend or differential modes.
    - Follow-up: once plan generation lands, properties can be expressed as invariants over generated plans; once differential/doublecheck modes land, the same properties can run across multiple backends and compare normalized results/errors.
-3) JSON plan dump on failure.
-4) CLI option to run a fixed seed and reminder to replay.
+3) JSON plan dump on failure (for both `--plan` input and `--property`-generated plans), plus a clear replay path. **Implemented** via `--dump-plan-on-failure`.
+   - Examples:
+     - `cargo run -p simulator -- --plan simulator/plans/first.json --dump-plan-on-failure /tmp/failed-plan.json`
+     - `cargo run -p simulator -- --property tx-commit-visible --dump-plan-on-failure /tmp/failed-plan.json`
+   - Choices/tradeoffs:
+     - Dump path is user-specified (no auto-generated filenames) to keep behavior explicit and avoid writing unexpected files.
+     - Dumping happens only on failure, and the same plan is replayable via `--plan`.
+4) CLI option to control plan dump location/name and a reminder to replay the dumped plan. **Implemented** as `--dump-plan-on-failure` with a replay hint printed on failure.
 
 ## Risks and Mitigations
 - Backend behavior differences: normalize errors and results with a common schema.

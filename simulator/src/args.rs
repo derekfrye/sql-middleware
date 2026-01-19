@@ -22,6 +22,8 @@ pub(crate) struct Args {
     pub(crate) pool_size: usize,
     #[arg(long)]
     pub(crate) log: Option<PathBuf>,
+    #[arg(long)]
+    pub(crate) dump_plan_on_failure: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -31,6 +33,7 @@ pub(crate) struct SimConfig {
     pub(crate) property: Option<PropertyKind>,
     pub(crate) pool_size: usize,
     pub(crate) log: Option<PathBuf>,
+    pub(crate) dump_plan_on_failure: Option<PathBuf>,
 }
 
 impl SimConfig {
@@ -41,6 +44,7 @@ impl SimConfig {
             property: args.property,
             pool_size: args.pool_size,
             log: args.log,
+            dump_plan_on_failure: args.dump_plan_on_failure,
         }
     }
 }
