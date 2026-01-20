@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sql-middleware = { path = "..", default-features = false, features = ["sqlite"] }
+sql-middleware = { path = "..", default-features = false }
 clap = { version = "4", features = ["derive"] }
 rand = "0"
 rand_chacha = "0"
@@ -15,4 +15,11 @@ tracing-subscriber = "0"
 humantime = "2"
 tokio = { version = "1", features = ["rt", "time"] }
 bb8 = "0"
-rusqlite = "0"
+async-trait = "0"
+rusqlite = { version = "0", optional = true }
+
+[features]
+default = ["sqlite"]
+sqlite = ["sql-middleware/sqlite", "dep:rusqlite"]
+postgres = ["sql-middleware/postgres"]
+turso = ["sql-middleware/turso"]

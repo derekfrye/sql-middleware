@@ -4,33 +4,14 @@ use sql_middleware::middleware::{
 };
 use std::time::Duration;
 
+use async_trait::async_trait;
 use sql_middleware::sqlite::{SqliteConnection, apply_wal_pragmas};
 use sql_middleware::sqlite::config::SqliteManager;
 use sql_middleware::sqlite::params::Params;
 use sql_middleware::sqlite::query::build_result_set;
-use sql_middleware::RowValues;
-use sql_middleware::SqlMiddlewareDbError;
+use sql_middleware::{RowValues, SqlMiddlewareDbError};
 
-#[derive(Debug)]
-pub(crate) enum BackendError {
-    Init(String),
-    Sql(SqlMiddlewareDbError),
-}
-
-impl std::fmt::Display for BackendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BackendError::Init(message) => write!(f, "{message}"),
-            BackendError::Sql(err) => write!(f, "{err}"),
-        }
-    }
-}
-
-impl From<SqlMiddlewareDbError> for BackendError {
-    fn from(err: SqlMiddlewareDbError) -> Self {
-        BackendError::Sql(err)
-    }
-}
+use crate::backends::{Backend, BackendError};
 
 #[derive(Debug, Clone)]
 pub(crate) struct SqliteBackendConfig {
@@ -250,5 +231,46 @@ impl SqliteBackend {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+    }
+}
+
+#[async_trait]
+impl Backend for SqliteBackend {
+    async fn checkout(&self) -> Result<MiddlewarePoolConnection, BackendError> {
+        self.checkout().await
+    }
+
+    async fn begin(&self, conn: &mut MiddlewarePoolConnection) -> Result<(), BackendError> {
+        self.begin(conn).await
+    }
+
+    async fn commit(&self, conn: &mut MiddlewarePoolConnection) -> Result<(), BackendError> {
+        self.commit(conn).await
+    }
+
+    async fn rollback(&self, conn: &mut MiddlewarePoolConnection) -> Result<(), BackendError> {
+        self.rollback(conn).await
+    }
+
+    async fn execute(
+        &self,
+        conn: &mut MiddlewarePoolConnection,
+        sql: &str,
+        in_tx: bool,
+    ) -> Result<(), BackendError> {
+        self.execute(conn, sql, in_tx).await
+    }
+
+    async fn query(
+        &self,
+        conn: &mut MiddlewarePoolConnection,
+        sql: &str,
+        in_tx: bool,
+    ) -> Result<sql_middleware::ResultSet, BackendError> {
+        self.query(conn, sql, in_tx).await
+    }
+
+    async fn sleep(&self, ms: u64) {
+        self.sleep(ms).await;
     }
 }

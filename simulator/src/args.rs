@@ -5,8 +5,17 @@ use std::path::PathBuf;
 use crate::properties::PropertyKind;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize)]
+pub(crate) enum ResetMode {
+    Truncate,
+    Delete,
+    Recreate,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Serialize)]
 pub(crate) enum BackendKind {
     Sqlite,
+    Postgres,
+    Turso,
 }
 
 #[derive(Parser, Debug)]
@@ -14,6 +23,10 @@ pub(crate) enum BackendKind {
 pub(crate) struct Args {
     #[arg(long, value_enum, default_value = "sqlite")]
     pub(crate) backend: BackendKind,
+    #[arg(long)]
+    pub(crate) doublecheck: bool,
+    #[arg(long, value_enum)]
+    pub(crate) differential_backend: Option<BackendKind>,
     #[arg(long)]
     pub(crate) plan: Option<PathBuf>,
     #[arg(long, value_enum)]
@@ -42,11 +55,29 @@ pub(crate) struct Args {
     pub(crate) log: Option<PathBuf>,
     #[arg(long)]
     pub(crate) dump_plan_on_failure: Option<PathBuf>,
+    #[arg(long, value_enum, default_value = "truncate")]
+    pub(crate) reset_mode: ResetMode,
+    #[arg(long, value_name = "TABLE")]
+    pub(crate) reset_table: Vec<String>,
+    #[arg(long)]
+    pub(crate) pg_dbname: Option<String>,
+    #[arg(long)]
+    pub(crate) pg_host: Option<String>,
+    #[arg(long)]
+    pub(crate) pg_port: Option<u16>,
+    #[arg(long)]
+    pub(crate) pg_user: Option<String>,
+    #[arg(long)]
+    pub(crate) pg_password: Option<String>,
+    #[arg(long, default_value = "/tmp/sql-middleware-simulator-turso.db")]
+    pub(crate) turso_db_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SimConfig {
     pub(crate) backend: BackendKind,
+    pub(crate) doublecheck: bool,
+    pub(crate) differential_backend: Option<BackendKind>,
     pub(crate) plan: Option<PathBuf>,
     pub(crate) property: Option<PropertyKind>,
     pub(crate) generate: bool,
@@ -61,12 +92,22 @@ pub(crate) struct SimConfig {
     pub(crate) pool_size: usize,
     pub(crate) log: Option<PathBuf>,
     pub(crate) dump_plan_on_failure: Option<PathBuf>,
+    pub(crate) reset_mode: ResetMode,
+    pub(crate) reset_tables: Vec<String>,
+    pub(crate) pg_dbname: Option<String>,
+    pub(crate) pg_host: Option<String>,
+    pub(crate) pg_port: Option<u16>,
+    pub(crate) pg_user: Option<String>,
+    pub(crate) pg_password: Option<String>,
+    pub(crate) turso_db_path: String,
 }
 
 impl SimConfig {
     pub(crate) fn from_args(args: Args) -> Self {
         SimConfig {
             backend: args.backend,
+            doublecheck: args.doublecheck,
+            differential_backend: args.differential_backend,
             plan: args.plan,
             property: args.property,
             generate: args.generate,
@@ -81,6 +122,14 @@ impl SimConfig {
             pool_size: args.pool_size,
             log: args.log,
             dump_plan_on_failure: args.dump_plan_on_failure,
+            reset_mode: args.reset_mode,
+            reset_tables: args.reset_table,
+            pg_dbname: args.pg_dbname,
+            pg_host: args.pg_host,
+            pg_port: args.pg_port,
+            pg_user: args.pg_user,
+            pg_password: args.pg_password,
+            turso_db_path: args.turso_db_path,
         }
     }
 }

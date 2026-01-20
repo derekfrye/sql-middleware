@@ -7,8 +7,8 @@ Evolve the existing `simulator/` crate into a deterministic, property-driven sim
 - Deterministic, single-threaded scheduler with a fake clock.
 - Models pool checkout/return, tx begin/commit/rollback, and coarse fault injection.
 - Oracle checks pool invariants only.
-- Backend is a pure model (no real database or driver).
-- Minimal CLI with quick/stress presets and basic logging.
+- Backend adapters drive real `sql-middleware` pools for SQLite; Postgres/Turso adapters exist behind feature flags.
+- CLI includes plan/property generation and backend selection flags (see below).
 
 ## Concepts to Borrow from Turso
 - Interaction plans: sequences of actions + assertions.
@@ -123,13 +123,14 @@ Delete the existing crate (its in .git so we can always backtrack later if neede
   - Choices/tradeoffs:
     - The generator prepends a bootstrap table and optional property plan, then fills remaining steps with weighted actions.
     - Generated queries do not carry expectations yet; they are used to exercise the stack rather than assert results.
+    - SQLite generation avoids non-transaction actions while any task has an open transaction to reduce lock errors in the single-threaded runner.
 - Reuse existing CLI weights (ddl_rate, busy_rate, panic_rate) and map to generator inputs. **Implemented** via `simulator/src/args.rs`.
   - Mapping notes:
     - `ddl_rate` controls DDL frequency; `busy_rate` injects sleep while holding a connection to simulate contention.
     - `panic_rate` biases rollback vs commit in transactions to simulate failure-heavy mixes.
 
 ### Phase 3: Backend Adapters (4-8 days)
-- Implement a backend trait and adapters:
+- Implement a backend trait and adapters. **Implemented** in `simulator/src/backends/mod.rs` plus adapters:
   - `backends/sqlite.rs` (rusqlite)
   - `backends/postgres.rs` (tokio-postgres)
   - `backends/mssql.rs` (tiberius)
@@ -138,11 +139,22 @@ Delete the existing crate (its in .git so we can always backtrack later if neede
   - Encapsulates connection pool + checkout behavior through sql-middleware APIs.
   - Normalizes errors into a simulator error enum.
   - Exposes `execute` and `query` with consistent output shape.
+  - SQLite adapter uses explicit transaction APIs and retries busy/locked errors on BEGIN/COMMIT/ROLLBACK/execute/query.
+  - Postgres/Turso adapters are implemented with CLI-supplied connection options and share the same runner interface.
+ - Choices/tradeoffs:
+   - Backends are feature-gated; builds must enable the desired backend feature flags.
+   - Postgres configuration is currently CLI-only and requires flags for all connection fields (no env var fallback).
+   - SQLite generation is conservative to avoid lock errors in a single-threaded runner (fewer interleavings).
 
 ### Phase 4: Differential + Doublecheck (2-4 days)
-- `--doublecheck`: run plan twice against the same backend and compare results.
-- `--differential`: run plan against two backends and compare outcomes (e.g., sqlite vs turso).
-- Add a `ResultComparator` to normalize result ordering and data types.
+- `--doublecheck`: run plan twice against the same backend and compare results. **Implemented** via `--doublecheck`.
+- `--differential`: run plan against two backends and compare outcomes (e.g., sqlite vs turso). **Implemented** via `--differential-backend`.
+- Add a `ResultComparator` to normalize result ordering and data types. **Implemented** in `simulator/src/comparator.rs`.
+  - Comparisons include error class matching; error message matching is only enforced for `--doublecheck`.
+  - Query row/column counts and normalized values are compared only when a reset is configured (see below).
+  - Reset flags:
+    - `--reset-table <table>` (repeatable)
+    - `--reset-mode <truncate|delete|recreate>`
 
 ### Phase 5: Shrinking + Bug Base (3-6 days)
 - Add `shrinker/` for plan delta debugging:
@@ -174,6 +186,7 @@ Focus on a minimal vertical slice that proves the new design:
      - Uses a real `sql-middleware` SQLite pool (`bb8` + `SqliteManager`) instead of the legacy model to validate actual middleware behavior, but introduces async runtime requirements.
      - Plan execution is single-threaded and sequential per interaction; no concurrent scheduling yet, so it does not exercise interleavings until a scheduler layer is added.
      - The runner uses a minimal action set (`checkout`, `return`, `begin`, `commit`, `rollback`, `execute`, `query`, `sleep`) and logs row/column counts only; assertions and richer result comparison are deferred.
+     - SQLite backend uses transaction-aware execution to avoid implicit nested transactions.
 2) Two properties: `PoolCheckoutReturn` and `TxCommitVisible`. **Implemented** via `--property` with plan builders in `simulator/src/properties/mod.rs`.
    - Examples (see CLI flag in `simulator/src/args.rs`):
      - `cargo run -p simulator -- --property tx-commit-visible`
@@ -191,6 +204,12 @@ Focus on a minimal vertical slice that proves the new design:
      - Dump path is user-specified (no auto-generated filenames) to keep behavior explicit and avoid writing unexpected files.
      - Dumping happens only on failure, and the same plan is replayable via `--plan`.
 4) CLI option to control plan dump location/name and a reminder to replay the dumped plan. **Implemented** as `--dump-plan-on-failure` with a replay hint printed on failure.
+5) Backend trait + adapters for SQLite/Postgres/Turso with CLI backend selection. **Implemented** in `simulator/src/backends/mod.rs` and adapters, feature-gated by backend.
+
+## Implemented CLI Backend Flags
+- `--backend sqlite|postgres|turso` selects the runtime backend (feature-gated).
+- Postgres flags: `--pg-dbname`, `--pg-host`, `--pg-port`, `--pg-user`, `--pg-password` (required for Postgres).
+- Turso flag: `--turso-db-path` (defaults to `/tmp/sql-middleware-simulator-turso.db`).
 
 ## Risks and Mitigations
 - Backend behavior differences: normalize errors and results with a common schema.
