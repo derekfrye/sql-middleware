@@ -1,20 +1,24 @@
 mod args;
 mod backends;
+mod bugbase;
 mod comparator;
 mod generation;
 mod logging;
 mod plan;
 mod properties;
 mod runner;
+mod shrinker;
 
 use clap::Parser;
 use tracing::Level;
 
 use crate::args::{Args, SimConfig};
 use crate::backends::build_backend;
+use crate::bugbase::{BugBase, BugRecord, BugRecordKind};
 use crate::comparator::{compare_runs, ComparisonConfig, ComparisonMismatch};
 use crate::logging::LogWriter;
 use crate::runner::{PlanRun, RunError, RunSummary};
+use crate::shrinker::ShrinkResult;
 
 fn main() {
     let args = Args::parse();
@@ -94,11 +98,11 @@ fn run_plan(config: &SimConfig, plan: plan::Plan, dump_path: Option<&std::path::
             std::process::exit(1);
         });
     let plan_for_dump = plan.clone();
-    match runtime.block_on(run_mode(config, plan)) {
+    match runtime.block_on(run_with_failure_context(config, plan)) {
         Ok(summary) => {
             tracing::info!("plan complete: steps={}", summary.steps);
         }
-        Err(err) => {
+        Err(context) => {
             if let Some(path) = dump_path {
                 if let Err(dump_err) = dump_plan(path, &plan_for_dump) {
                     eprintln!("failed to dump plan to {}: {dump_err}", path.display());
@@ -110,7 +114,26 @@ fn run_plan(config: &SimConfig, plan: plan::Plan, dump_path: Option<&std::path::
                     );
                 }
             }
-            report_mode_error(err);
+            match maybe_write_bugbase(config, &plan_for_dump, &context) {
+                Ok(Some(path)) => {
+                    eprintln!("wrote bugbase entry to {}", path.display());
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    eprintln!("failed to write bugbase entry: {err}");
+                }
+            }
+            if let Some(shrink_result) = context.shrink_result.as_ref() {
+                let shrink_report = &shrink_result.report;
+                eprintln!(
+                    "shrunk failing plan from {} to {} steps in {} rounds ({} attempts)",
+                    shrink_report.original_steps,
+                    shrink_report.shrunk_steps,
+                    shrink_report.rounds,
+                    shrink_report.attempts
+                );
+            }
+            report_mode_error(context.error);
             std::process::exit(1);
         }
     }
@@ -131,6 +154,26 @@ async fn run_mode(config: &SimConfig, plan: plan::Plan) -> Result<RunSummary, Mo
         run_doublecheck(config, plan).await
     } else {
         run_single(config, plan).await
+    }
+}
+
+async fn run_with_failure_context(
+    config: &SimConfig,
+    plan: plan::Plan,
+) -> Result<RunSummary, FailureContext> {
+    match run_mode(config, plan.clone()).await {
+        Ok(summary) => Ok(summary),
+        Err(error) => {
+            let shrink_result = if config.shrink_on_failure {
+                shrink_plan_on_failure(config, plan, &error).await
+            } else {
+                None
+            };
+            Err(FailureContext {
+                error,
+                shrink_result,
+            })
+        }
     }
 }
 
@@ -247,11 +290,43 @@ async fn run_once(
     Ok(runner::execute_plan(plan, &mut backend).await)
 }
 
+async fn shrink_plan_on_failure(
+    config: &SimConfig,
+    plan: plan::Plan,
+    error: &ModeError,
+) -> Option<ShrinkResult> {
+    let fingerprint = error_fingerprint(error);
+    let shrink_result = shrinker::shrink_plan(plan, config.shrink_max_rounds, |candidate| async {
+        match run_mode(config, candidate.clone()).await {
+            Ok(_) => false,
+            Err(err) => error_fingerprint(&err) == fingerprint,
+        }
+    })
+    .await;
+    Some(shrink_result)
+}
+
 #[derive(Debug)]
 enum ModeError {
     PlanRun { label: &'static str, error: RunError },
     Compare(ComparisonMismatch),
     Setup { label: &'static str, reason: String },
+}
+
+#[derive(Debug)]
+struct FailureContext {
+    error: ModeError,
+    shrink_result: Option<ShrinkResult>,
+}
+
+fn error_fingerprint(error: &ModeError) -> String {
+    match error {
+        ModeError::PlanRun { error, .. } => {
+            format!("plan_run:{:?}:{}", error.action, error.reason)
+        }
+        ModeError::Compare(mismatch) => format!("compare:{}", mismatch.reason),
+        ModeError::Setup { reason, .. } => format!("setup:{reason}"),
+    }
 }
 
 fn report_mode_error(err: ModeError) {
@@ -272,4 +347,60 @@ fn report_mode_error(err: ModeError) {
             eprintln!("{label} setup failed: {reason}");
         }
     }
+}
+
+fn maybe_write_bugbase(
+    config: &SimConfig,
+    plan: &plan::Plan,
+    context: &FailureContext,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let bugbase_dir = match &config.bugbase_dir {
+        Some(dir) => dir.clone(),
+        None => return Ok(None),
+    };
+
+    let record = match &context.error {
+        ModeError::PlanRun { label, error } => BugRecord {
+            kind: BugRecordKind::PlanRun,
+            label: (*label).to_string(),
+            error: error.reason.clone(),
+            step: Some(error.step),
+            task: Some(error.task),
+            action: Some(error.action.clone()),
+            comparison_step: None,
+        },
+        ModeError::Compare(mismatch) => BugRecord {
+            kind: BugRecordKind::Compare,
+            label: "compare".to_string(),
+            error: mismatch.reason.clone(),
+            step: None,
+            task: None,
+            action: None,
+            comparison_step: Some(mismatch.step),
+        },
+        ModeError::Setup { label, reason } => BugRecord {
+            kind: BugRecordKind::Setup,
+            label: (*label).to_string(),
+            error: reason.clone(),
+            step: None,
+            task: None,
+            action: None,
+            comparison_step: None,
+        },
+    };
+
+    let shrunk_plan = context
+        .shrink_result
+        .as_ref()
+        .and_then(|result| {
+            if result.report.original_steps != result.report.shrunk_steps {
+                Some(&result.plan)
+            } else {
+                None
+            }
+        });
+
+    let bugbase = BugBase::new(bugbase_dir);
+    let path = bugbase.store_failure(config, plan, shrunk_plan, &record)?;
+    Ok(Some(path))
 }

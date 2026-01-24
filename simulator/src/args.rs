@@ -34,6 +34,12 @@ pub(crate) struct Args {
     #[arg(long)]
     pub(crate) generate: bool,
     #[arg(long)]
+    pub(crate) shrink_on_failure: bool,
+    #[arg(long, default_value_t = 128)]
+    pub(crate) shrink_max_rounds: usize,
+    #[arg(long)]
+    pub(crate) bugbase_dir: Option<PathBuf>,
+    #[arg(long)]
     pub(crate) steps: Option<usize>,
     #[arg(long)]
     pub(crate) seed: Option<u64>,
@@ -81,6 +87,9 @@ pub(crate) struct SimConfig {
     pub(crate) plan: Option<PathBuf>,
     pub(crate) property: Option<PropertyKind>,
     pub(crate) generate: bool,
+    pub(crate) shrink_on_failure: bool,
+    pub(crate) shrink_max_rounds: usize,
+    pub(crate) bugbase_dir: Option<PathBuf>,
     pub(crate) steps: usize,
     pub(crate) seed: u64,
     pub(crate) tasks: usize,
@@ -111,6 +120,9 @@ impl SimConfig {
             plan: args.plan,
             property: args.property,
             generate: args.generate,
+            shrink_on_failure: args.shrink_on_failure,
+            shrink_max_rounds: args.shrink_max_rounds.max(1),
+            bugbase_dir: args.bugbase_dir,
             steps: args.steps.unwrap_or(1_000),
             seed: args.seed.unwrap_or_else(random_seed),
             tasks: args.tasks.max(1),

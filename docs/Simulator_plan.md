@@ -158,9 +158,15 @@ Delete the existing crate (its in .git so we can always backtrack later if neede
 
 ### Phase 5: Shrinking + Bug Base (3-6 days)
 - Add `shrinker/` for plan delta debugging:
-  - remove blocks of interactions and replay until failure persists.
+  - remove blocks of interactions and replay until failure persists. **Implemented** in `simulator/src/shrinker/mod.rs`.
   - optional heuristic shrink (similar to Turso).
-- Add `bugbase/` with plan storage, seed, config, and last failure metadata.
+- Add `bugbase/` with plan storage, seed, config, and last failure metadata. **Implemented** in `simulator/src/bugbase/mod.rs`.
+  - CLI flags:
+    - `--shrink-on-failure`
+    - `--shrink-max-rounds <n>`
+    - `--bugbase-dir <path>`
+  - Outputs:
+    - `plan.json`, `config.json`, `failure.json`, and optional `shrunk_plan.json`.
 
 ### Phase 6: Profiles + Schema (2-3 days)
 - Add `profiles/` with default presets:
