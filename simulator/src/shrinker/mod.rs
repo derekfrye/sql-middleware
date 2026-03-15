@@ -16,11 +16,7 @@ pub(crate) struct ShrinkResult {
     pub(crate) report: ShrinkReport,
 }
 
-pub(crate) async fn shrink_plan<F, Fut>(
-    plan: Plan,
-    max_rounds: usize,
-    predicate: F,
-) -> ShrinkResult
+pub(crate) async fn shrink_plan<F, Fut>(plan: Plan, max_rounds: usize, predicate: F) -> ShrinkResult
 where
     F: Fn(&Plan) -> Fut,
     Fut: Future<Output = bool>,

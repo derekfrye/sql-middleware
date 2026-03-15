@@ -96,9 +96,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
         })?;
 
         let query_and_params = QueryAndParams {
-            query: format!(
-                "INSERT INTO {test_table} (espn_id, name, ins_ts) VALUES ($1, $2, $3)"
-            ),
+            query: format!("INSERT INTO {test_table} (espn_id, name, ins_ts) VALUES ($1, $2, $3)"),
             params: vec![
                 RowValues::Int(123_456),
                 RowValues::Text("test name".to_string()),
@@ -196,9 +194,7 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
 
             let rs = tx
                 .select(
-                    &format!(
-                        "SELECT espn_id, name, ins_ts FROM {test_table_2} WHERE espn_id = $1"
-                    ),
+                    &format!("SELECT espn_id, name, ins_ts FROM {test_table_2} WHERE espn_id = $1"),
                     &[RowValues::Int(123_456)],
                 )
                 .await?;
@@ -210,8 +206,10 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             assert_eq!(row.get("ins_ts").unwrap().as_timestamp().unwrap(), typed_ts);
         }
 
-        let query = format!("DROP TABLE {test_table};
-        DROP TABLE {test_table_2};");
+        let query = format!(
+            "DROP TABLE {test_table};
+        DROP TABLE {test_table_2};"
+        );
         ({
             let tx = pgconn.transaction().await?;
             {

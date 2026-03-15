@@ -323,23 +323,26 @@ fn benchmark_sqlx_prepare_parallel(
     let pool = SQLX_POOL.clone();
     let concurrency = *BENCH_CONCURRENCY;
 
-    group.bench_function(BenchmarkId::new("sqlx_prepare_parallel", concurrency), |b| {
-        let pool = pool.clone();
-        b.to_async(runtime).iter_custom(move |iters| {
+    group.bench_function(
+        BenchmarkId::new("sqlx_prepare_parallel", concurrency),
+        |b| {
             let pool = pool.clone();
-            async move {
-                let mut total = Duration::default();
-                for _ in 0..iters {
-                    let start = Instant::now();
-                    sqlx_parallel_prepare(&pool, concurrency)
-                        .await
-                        .expect("sqlx prepare parallel");
-                    total += start.elapsed();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let pool = pool.clone();
+                async move {
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let start = Instant::now();
+                        sqlx_parallel_prepare(&pool, concurrency)
+                            .await
+                            .expect("sqlx prepare parallel");
+                        total += start.elapsed();
+                    }
+                    total
                 }
-                total
-            }
-        });
-    });
+            });
+        },
+    );
 }
 
 fn sqlite_multithread_pool_checkout_sqlx(c: &mut Criterion) {

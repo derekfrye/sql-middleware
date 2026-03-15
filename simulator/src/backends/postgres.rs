@@ -3,8 +3,8 @@ use sql_middleware::middleware::{
     ConfigAndPool, MiddlewarePoolConnection, PgConfig, PostgresOptions,
 };
 
-use crate::backends::{Backend, BackendError};
 use crate::args::SimConfig;
+use crate::backends::{Backend, BackendError};
 
 pub(crate) struct PostgresBackend {
     pool: ConfigAndPool,
@@ -78,8 +78,6 @@ fn pg_config_from_args(config: &SimConfig) -> Result<PgConfig, BackendError> {
 
 fn required_arg<T>(flag: &str, value: Option<T>) -> Result<T, BackendError> {
     value.ok_or_else(|| {
-        BackendError::Init(format!(
-            "missing required --{flag} for postgres backend"
-        ))
+        BackendError::Init(format!("missing required --{flag} for postgres backend"))
     })
 }

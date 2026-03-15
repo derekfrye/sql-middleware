@@ -3,8 +3,8 @@ use crate::executor::{
     QueryTarget, QueryTargetKind, execute_select_dispatch, execute_select_prepared_dispatch,
 };
 use crate::pool::MiddlewarePoolConnection;
-use crate::translation::PrepareMode;
 use crate::results::ResultSet;
+use crate::translation::PrepareMode;
 use crate::types::RowValues;
 
 #[cfg(feature = "postgres")]
@@ -42,21 +42,22 @@ impl QueryBuilder<'_, '_> {
             }
             #[cfg(feature = "sqlite")]
             QueryTarget {
-                kind: QueryTargetKind::TypedSqlite { conn }
-                    | QueryTargetKind::TypedSqliteTx { conn },
+                kind:
+                    QueryTargetKind::TypedSqlite { conn } | QueryTargetKind::TypedSqliteTx { conn },
                 ..
             } => select_typed_sqlite(conn, translated.as_ref(), self.params.as_ref()).await,
             #[cfg(feature = "postgres")]
             QueryTarget {
-                kind: QueryTargetKind::TypedPostgres { conn }
-                    | QueryTargetKind::TypedPostgresTx { conn },
+                kind:
+                    QueryTargetKind::TypedPostgres { conn } | QueryTargetKind::TypedPostgresTx { conn },
                 ..
-            } => select_typed_postgres(conn, translated.as_ref(), self.params.as_ref(), use_prepare)
-                .await,
+            } => {
+                select_typed_postgres(conn, translated.as_ref(), self.params.as_ref(), use_prepare)
+                    .await
+            }
             #[cfg(feature = "turso")]
             QueryTarget {
-                kind: QueryTargetKind::TypedTurso { conn }
-                    | QueryTargetKind::TypedTursoTx { conn },
+                kind: QueryTargetKind::TypedTurso { conn } | QueryTargetKind::TypedTursoTx { conn },
                 ..
             } => select_typed_turso(conn, translated.as_ref(), self.params.as_ref()).await,
             #[cfg(feature = "postgres")]
@@ -92,7 +93,8 @@ impl QueryBuilder<'_, '_> {
                     let mut prepared = tx.prepare(translated.as_ref()).await?;
                     tx.query_prepared(&mut prepared, self.params.as_ref()).await
                 } else {
-                    tx.execute_select(translated.as_ref(), self.params.as_ref()).await
+                    tx.execute_select(translated.as_ref(), self.params.as_ref())
+                        .await
                 }
             }
         }

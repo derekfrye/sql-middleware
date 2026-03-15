@@ -44,7 +44,10 @@ fn compare_step(
     if left.step != right.step {
         return Err(ComparisonMismatch {
             step: left.step.min(right.step),
-            reason: format!("step index mismatch: left={} right={}", left.step, right.step),
+            reason: format!(
+                "step index mismatch: left={} right={}",
+                left.step, right.step
+            ),
         });
     }
 
@@ -58,7 +61,10 @@ fn compare_step(
     if left.action != right.action {
         return Err(ComparisonMismatch {
             step: left.step,
-            reason: format!("action mismatch: left={:?} right={:?}", left.action, right.action),
+            reason: format!(
+                "action mismatch: left={:?} right={:?}",
+                left.action, right.action
+            ),
         });
     }
 
@@ -141,7 +147,10 @@ fn compare_query(
         if left.columns != right.columns {
             return Err(ComparisonMismatch {
                 step,
-                reason: format!("query columns mismatch: left={:?} right={:?}", left.columns, right.columns),
+                reason: format!(
+                    "query columns mismatch: left={:?} right={:?}",
+                    left.columns, right.columns
+                ),
             });
         }
         if left.rows != right.rows {

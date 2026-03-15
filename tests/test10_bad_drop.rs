@@ -43,8 +43,7 @@ async fn run_postgres_bad_drop() -> Result<(), SqlMiddlewareDbError> {
     run_pg_fixed_drop(&pool, debug).await?;
     {
         let mut conn = PgConnection::<PgIdle>::from_pool(&pool).await?;
-        conn.execute_batch("DROP TABLE IF EXISTS bad_drop;")
-            .await?;
+        conn.execute_batch("DROP TABLE IF EXISTS bad_drop;").await?;
     }
     Ok(())
 }

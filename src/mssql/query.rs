@@ -4,8 +4,8 @@ use tiberius::Query;
 
 use super::config::MssqlClient;
 use crate::adapters::result_set::{column_count, init_result_set};
-use crate::query_utils::extract_column_names;
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::query_utils::extract_column_names;
 
 /// Build a result set from a SQL Server query execution
 ///
@@ -152,6 +152,7 @@ pub fn bind_query_params<'a>(query: &'a str, params: &[RowValues]) -> Query<'a> 
 }
 
 pub(crate) fn convert_affected_rows(rows: u64) -> Result<usize, SqlMiddlewareDbError> {
-    usize::try_from(rows)
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}")))
+    usize::try_from(rows).map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("Invalid rows affected count: {e}"))
+    })
 }

@@ -8,6 +8,8 @@ use crate::args::{BackendKind, SimConfig};
 pub(crate) mod postgres;
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
+#[cfg(feature = "sqlite")]
+mod sqlite_backend_impl;
 #[cfg(feature = "turso")]
 pub(crate) mod turso;
 

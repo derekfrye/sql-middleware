@@ -8,8 +8,8 @@ use crate::middleware::SqlMiddlewareDbError;
 
 use super::SqliteTypedConnection;
 use super::core::{SKIP_DROP_ROLLBACK, begin_from_conn, run_blocking};
-use crate::sqlite::connection::{rollback_with_busy_retries, rollback_with_busy_retries_blocking};
 use crate::sqlite::config::SharedSqliteConnection;
+use crate::sqlite::connection::{rollback_with_busy_retries, rollback_with_busy_retries_blocking};
 
 impl SqliteTypedConnection<super::core::Idle> {
     /// Begin an explicit transaction.

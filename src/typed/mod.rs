@@ -4,13 +4,13 @@
 //! transaction state tracking, plus backend-neutral `AnyIdle`/`AnyTx` wrappers.
 
 mod any;
-mod macros;
 #[cfg(feature = "postgres")]
 mod impl_postgres;
 #[cfg(feature = "sqlite")]
 mod impl_sqlite;
 #[cfg(feature = "turso")]
 mod impl_turso;
+mod macros;
 mod traits;
 
 // Re-export everything for public API

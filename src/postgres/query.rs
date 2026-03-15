@@ -1,13 +1,10 @@
-use crate::adapters::params::convert_params;
+use super::client_exec::{execute_rows_on_client, query_rows_on_client};
 use crate::adapters::result_set::{column_count, init_result_set};
 use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::query_utils::extract_column_names;
-use crate::types::ConversionMode;
 use chrono::NaiveDateTime;
 use serde_json::Value;
 use tokio_postgres::{Client, Statement, Transaction, types::ToSql};
-
-use super::params::Params as PgParams;
 
 /// Build a result set from a Postgres query execution
 ///
@@ -151,8 +148,7 @@ pub async fn execute_query_on_client(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let rows =
-        query_rows_on_client(client, query, None, params, "postgres select error").await?;
+    let rows = query_rows_on_client(client, query, None, params, "postgres select error").await?;
     build_result_set_from_rows(&rows)
 }
 
@@ -199,51 +195,11 @@ pub(crate) async fn execute_dml_prepared_on_client(
     let stmt = client.prepare(query).await.map_err(|e| {
         SqlMiddlewareDbError::ExecutionError(format!("postgres prepare error: {e}"))
     })?;
-    let rows =
-        execute_rows_on_client(client, query, Some(&stmt), params, "postgres execute error")
-            .await?;
+    let rows = execute_rows_on_client(client, query, Some(&stmt), params, "postgres execute error")
+        .await?;
     convert_affected_rows(rows, "postgres affected rows conversion error")
 }
 
-pub(crate) fn convert_affected_rows(
-    rows: u64,
-    label: &str,
-) -> Result<usize, SqlMiddlewareDbError> {
-    usize::try_from(rows).map_err(|e| {
-        SqlMiddlewareDbError::ExecutionError(format!("{label}: {e}"))
-    })
-}
-
-async fn query_rows_on_client(
-    client: &Client,
-    query: &str,
-    stmt: Option<&Statement>,
-    params: &[RowValues],
-    err_label: &str,
-) -> Result<Vec<tokio_postgres::Row>, SqlMiddlewareDbError>
-{
-    let converted = convert_params::<PgParams>(params, ConversionMode::Query)?;
-    let refs = converted.as_refs();
-    let rows = match stmt {
-        Some(stmt) => client.query(stmt, refs).await,
-        None => client.query(query, refs).await,
-    };
-    rows.map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("{err_label}: {e}")))
-}
-
-async fn execute_rows_on_client(
-    client: &Client,
-    query: &str,
-    stmt: Option<&Statement>,
-    params: &[RowValues],
-    err_label: &str,
-) -> Result<u64, SqlMiddlewareDbError>
-{
-    let converted = convert_params::<PgParams>(params, ConversionMode::Execute)?;
-    let refs = converted.as_refs();
-    let rows = match stmt {
-        Some(stmt) => client.execute(stmt, refs).await,
-        None => client.execute(query, refs).await,
-    };
-    rows.map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("{err_label}: {e}")))
+pub(crate) fn convert_affected_rows(rows: u64, label: &str) -> Result<usize, SqlMiddlewareDbError> {
+    usize::try_from(rows).map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("{label}: {e}")))
 }

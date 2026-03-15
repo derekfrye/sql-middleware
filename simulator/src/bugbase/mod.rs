@@ -70,8 +70,7 @@ impl BugBase {
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let content = serde_json::to_string_pretty(value)
         .map_err(|err| format!("failed to serialize {}: {err}", path.display()))?;
-    fs::write(path, content)
-        .map_err(|err| format!("failed to write {}: {err}", path.display()))
+    fs::write(path, content).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
 fn create_unique_dir(root: &Path, prefix: &str) -> Result<PathBuf, String> {
@@ -94,13 +93,15 @@ fn create_unique_dir(root: &Path, prefix: &str) -> Result<PathBuf, String> {
                 return Err(format!(
                     "failed to create bugbase entry {}: {err}",
                     dir.display()
-                ))
+                ));
             }
         }
     }
 }
 
 fn current_timestamp() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("{}-{:06}", now.as_secs(), now.subsec_micros())
 }

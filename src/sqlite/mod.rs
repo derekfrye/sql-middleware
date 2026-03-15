@@ -12,6 +12,8 @@
 //! - `prepared`: prepared statement helpers
 
 pub mod config;
+mod config_options;
+mod config_tests;
 pub mod connection;
 pub mod executor;
 pub mod params;
@@ -22,7 +24,7 @@ pub mod typed;
 
 // Re-export the public API
 #[allow(unused_imports)]
-pub use config::{SqliteOptions, SqliteOptionsBuilder};
+pub use config_options::{SqliteOptions, SqliteOptionsBuilder};
 #[allow(unused_imports)]
 pub use connection::{SqliteConnection, apply_wal_pragmas};
 #[allow(unused_imports)]

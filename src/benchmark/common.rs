@@ -36,9 +36,7 @@ pub fn generate_insert_statements(num_rows: usize) -> String {
         let e = rng.random_bool(0.5);
 
         let blob_len = rng.random_range(10..21);
-        let blob: Vec<u8> = (0..blob_len)
-            .map(|_| rng.random::<u8>())
-            .collect();
+        let blob: Vec<u8> = (0..blob_len).map(|_| rng.random::<u8>()).collect();
         let mut blob_hex = String::with_capacity(blob_len * 2);
         for byte in &blob {
             write!(blob_hex, "{byte:02X}").expect("writing to string");
@@ -102,9 +100,7 @@ pub fn generate_postgres_insert_statements(num_rows: usize) -> String {
         let e = rng.random_bool(0.5);
 
         let blob_len = rng.random_range(10..21);
-        let blob: Vec<u8> = (0..blob_len)
-            .map(|_| rng.random::<u8>())
-            .collect();
+        let blob: Vec<u8> = (0..blob_len).map(|_| rng.random::<u8>()).collect();
         let mut blob_hex = String::with_capacity(blob_len * 2);
         for byte in &blob {
             write!(blob_hex, "{byte:02x}").expect("writing to string");

@@ -1,11 +1,11 @@
 use bb8::PooledConnection;
 
+use crate::adapters::params::convert_params;
 use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
-use crate::query_utils::extract_column_names;
 use crate::query_builder::QueryBuilder;
+use crate::query_utils::extract_column_names;
 use crate::results::ResultSet;
-use crate::adapters::params::convert_params;
 use crate::turso::params::Params as TursoParams;
 use crate::types::ConversionMode;
 

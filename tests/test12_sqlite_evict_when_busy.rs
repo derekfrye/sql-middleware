@@ -1,11 +1,11 @@
 #![cfg(feature = "sqlite")]
 
+use sql_middleware::SqlMiddlewareDbError;
 use sql_middleware::middleware::ConfigAndPool;
 use sql_middleware::pool::MiddlewarePoolConnection;
 use sql_middleware::sqlite::transaction::{
     begin_transaction, set_rewrap_on_rollback_failure_for_tests,
 };
-use sql_middleware::SqlMiddlewareDbError;
 
 /// When rollback fails with `SQLITE_BUSY`, we should evict instead of rewrapping the connection.
 /// This test forces a busy error via a test hook and verifies both the new behavior (evict)
@@ -62,7 +62,9 @@ async fn sqlite_evicts_connection_when_rollback_busy() -> Result<(), SqlMiddlewa
 
 fn set_force_rollback_busy(conn_slot: &mut MiddlewarePoolConnection, force: bool) {
     match conn_slot {
-        MiddlewarePoolConnection::Sqlite { conn: Some(conn), .. } => {
+        MiddlewarePoolConnection::Sqlite {
+            conn: Some(conn), ..
+        } => {
             conn.set_force_rollback_busy_for_tests(force);
         }
         _ => panic!("expected sqlite connection"),

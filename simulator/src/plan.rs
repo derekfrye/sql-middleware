@@ -30,7 +30,9 @@ pub(crate) enum Action {
         expect: Option<QueryExpectation>,
         expect_error: Option<ErrorExpectation>,
     },
-    Sleep { ms: u64 },
+    Sleep {
+        ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]

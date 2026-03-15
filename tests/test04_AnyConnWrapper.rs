@@ -398,7 +398,10 @@ END;
     // lets first run this through 100 transactions, yikes
     for param in params {
         // println!("param: {:?}", param);
-        conn.query(&parameterized_query).params(&param).dml().await?;
+        conn.query(&parameterized_query)
+            .params(&param)
+            .dml()
+            .await?;
     }
 
     let result_set = conn.query(&count_query).select().await?;
@@ -466,13 +469,19 @@ END;
             // For this test, skip the MSSQL implementation
             // Simply insert the data using the middleware connection
             for param in params {
-                conn.query(&parameterized_query).params(&param).dml().await?;
+                conn.query(&parameterized_query)
+                    .params(&param)
+                    .dml()
+                    .await?;
             }
         }
         #[cfg(feature = "turso")]
         DatabaseType::Turso => {
             for param in params {
-                conn.query(&parameterized_query).params(&param).dml().await?;
+                conn.query(&parameterized_query)
+                    .params(&param)
+                    .dml()
+                    .await?;
             }
         }
     }
@@ -571,13 +580,19 @@ END;
         DatabaseType::Mssql => {
             // For MS SQL, insert data using the middleware connection
             for param in params {
-                conn.query(&parameterized_query).params(&param).dml().await?;
+                conn.query(&parameterized_query)
+                    .params(&param)
+                    .dml()
+                    .await?;
             }
         }
         #[cfg(feature = "turso")]
         DatabaseType::Turso => {
             for param in params {
-                conn.query(&parameterized_query).params(&param).dml().await?;
+                conn.query(&parameterized_query)
+                    .params(&param)
+                    .dml()
+                    .await?;
             }
         }
     }
@@ -688,9 +703,8 @@ END;
     // println!("dbdriver: {:?}, res: {:?}", db_type, res);
 
     // make sure to match the val from above
-    let query = format!(
-        "select count(*) as cnt,name from {test_table} where id = 990 group by name;"
-    );
+    let query =
+        format!("select count(*) as cnt,name from {test_table} where id = 990 group by name;");
     let result_set = conn.query(&query).select().await?;
     // theres two in here now, we inserted same val 2x above
     assert_eq!(

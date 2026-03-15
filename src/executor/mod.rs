@@ -1,5 +1,7 @@
+mod connection;
 mod dispatch;
 mod targets;
+mod translation;
 
 pub use dispatch::{execute_batch, query};
 pub(crate) use dispatch::{

@@ -141,8 +141,7 @@ impl Tx<'_> {
             }
             Err(err) => {
                 let handle = conn.conn_handle();
-                let rollback_result =
-                    super::connection::rollback_with_busy_retries(&handle).await;
+                let rollback_result = super::connection::rollback_with_busy_retries(&handle).await;
                 if rollback_result.is_ok() || rewrap_on_rollback_failure_for_tests() {
                     conn.in_transaction = false;
                     self.rewrap(conn);
@@ -203,8 +202,7 @@ impl Drop for Tx<'_> {
     fn drop(&mut self) {
         if let Some(mut conn) = self.conn.take() {
             let handle = conn.conn_handle();
-            let rollback_result =
-                super::connection::rollback_with_busy_retries_blocking(&handle);
+            let rollback_result = super::connection::rollback_with_busy_retries_blocking(&handle);
             if rollback_result.is_ok() || rewrap_on_rollback_failure_for_tests() {
                 conn.in_transaction = false;
                 self.rewrap(conn);

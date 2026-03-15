@@ -1,10 +1,10 @@
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rand::SeedableRng;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sqlx::{
-    ConnectOptions, Executor, Row, Statement,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
+    ConnectOptions, Executor, Row, Statement,
 };
 use std::hint::black_box;
 use std::path::{Path, PathBuf};

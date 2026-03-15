@@ -41,21 +41,22 @@ impl QueryBuilder<'_, '_> {
             }
             #[cfg(feature = "sqlite")]
             QueryTarget {
-                kind: QueryTargetKind::TypedSqlite { conn }
-                    | QueryTargetKind::TypedSqliteTx { conn },
+                kind:
+                    QueryTargetKind::TypedSqlite { conn } | QueryTargetKind::TypedSqliteTx { conn },
                 ..
             } => dml_typed_sqlite(conn, translated.as_ref(), self.params.as_ref()).await,
             #[cfg(feature = "postgres")]
             QueryTarget {
-                kind: QueryTargetKind::TypedPostgres { conn }
-                    | QueryTargetKind::TypedPostgresTx { conn },
+                kind:
+                    QueryTargetKind::TypedPostgres { conn } | QueryTargetKind::TypedPostgresTx { conn },
                 ..
-            } => dml_typed_postgres(conn, translated.as_ref(), self.params.as_ref(), use_prepare)
-                .await,
+            } => {
+                dml_typed_postgres(conn, translated.as_ref(), self.params.as_ref(), use_prepare)
+                    .await
+            }
             #[cfg(feature = "turso")]
             QueryTarget {
-                kind: QueryTargetKind::TypedTurso { conn }
-                    | QueryTargetKind::TypedTursoTx { conn },
+                kind: QueryTargetKind::TypedTurso { conn } | QueryTargetKind::TypedTursoTx { conn },
                 ..
             } => dml_typed_turso(conn, translated.as_ref(), self.params.as_ref()).await,
             #[cfg(feature = "postgres")]
@@ -67,7 +68,8 @@ impl QueryBuilder<'_, '_> {
                     let prepared = tx.prepare(translated.as_ref()).await?;
                     tx.execute_prepared(&prepared, self.params.as_ref()).await
                 } else {
-                    tx.execute_dml(translated.as_ref(), self.params.as_ref()).await
+                    tx.execute_dml(translated.as_ref(), self.params.as_ref())
+                        .await
                 }
             }
             #[cfg(feature = "mssql")]
@@ -79,7 +81,8 @@ impl QueryBuilder<'_, '_> {
                     let prepared = tx.prepare(translated.as_ref())?;
                     tx.execute_prepared(&prepared, self.params.as_ref()).await
                 } else {
-                    tx.execute_dml(translated.as_ref(), self.params.as_ref()).await
+                    tx.execute_dml(translated.as_ref(), self.params.as_ref())
+                        .await
                 }
             }
             #[cfg(feature = "turso")]
@@ -92,7 +95,8 @@ impl QueryBuilder<'_, '_> {
                     tx.execute_prepared(&mut prepared, self.params.as_ref())
                         .await
                 } else {
-                    tx.execute_dml(translated.as_ref(), self.params.as_ref()).await
+                    tx.execute_dml(translated.as_ref(), self.params.as_ref())
+                        .await
                 }
             }
         }

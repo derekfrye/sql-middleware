@@ -114,8 +114,7 @@ impl TursoNonTxPreparedStatement {
 
     async fn reset(&self) -> Result<(), SqlMiddlewareDbError> {
         let stmt = self.statement.lock().await;
-        stmt.reset().map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Turso reset error: {e}"))
-        })
+        stmt.reset()
+            .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso reset error: {e}")))
     }
 }

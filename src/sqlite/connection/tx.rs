@@ -7,8 +7,11 @@ use std::thread;
 use std::time::Duration;
 use tokio::time::sleep;
 
-const ROLLBACK_BUSY_RETRIES: &[Duration] =
-    &[Duration::from_millis(10), Duration::from_millis(25), Duration::from_millis(50)];
+const ROLLBACK_BUSY_RETRIES: &[Duration] = &[
+    Duration::from_millis(10),
+    Duration::from_millis(25),
+    Duration::from_millis(50),
+];
 
 pub(crate) async fn rollback_with_busy_retries(
     handle: &SharedSqliteConnection,

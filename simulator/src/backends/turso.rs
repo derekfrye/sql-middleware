@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use sql_middleware::middleware::{ConfigAndPool, MiddlewarePoolConnection, TursoOptions};
 
-use crate::backends::{Backend, BackendError};
 use crate::args::SimConfig;
+use crate::backends::{Backend, BackendError};
 
 pub(crate) struct TursoBackend {
     pool: ConfigAndPool,
@@ -10,7 +10,8 @@ pub(crate) struct TursoBackend {
 
 impl TursoBackend {
     pub(crate) async fn new(config: &SimConfig) -> Result<Self, BackendError> {
-        let pool = ConfigAndPool::new_turso(TursoOptions::new(config.turso_db_path.clone())).await?;
+        let pool =
+            ConfigAndPool::new_turso(TursoOptions::new(config.turso_db_path.clone())).await?;
         Ok(Self { pool })
     }
 }

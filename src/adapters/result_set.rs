@@ -11,6 +11,8 @@ pub(crate) fn init_result_set(column_names: Vec<String>, capacity: usize) -> Res
 pub(crate) fn column_count(result_set: &ResultSet) -> Result<usize, SqlMiddlewareDbError> {
     result_set
         .get_column_names()
-        .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("No column names available".to_string()))
+        .ok_or_else(|| {
+            SqlMiddlewareDbError::ExecutionError("No column names available".to_string())
+        })
         .map(|cols| cols.len())
 }

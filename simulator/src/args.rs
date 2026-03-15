@@ -160,6 +160,8 @@ fn clamp_rate(value: f64) -> f64 {
 
 fn random_seed() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     now.as_secs() ^ (now.subsec_nanos() as u64)
 }
