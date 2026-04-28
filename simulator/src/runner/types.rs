@@ -1,7 +1,7 @@
 use crate::backends::ErrorClass;
 use crate::plan::Action;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct RunError {
     pub(crate) step: usize,
     pub(crate) task: usize,

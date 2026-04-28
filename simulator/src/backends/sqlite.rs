@@ -4,28 +4,19 @@ use sql_middleware::middleware::{
 };
 use std::time::Duration;
 
+use sql_middleware::RowValues;
 use sql_middleware::sqlite::config::SqliteManager;
 use sql_middleware::sqlite::params::Params;
 use sql_middleware::sqlite::query::build_result_set;
 use sql_middleware::sqlite::{SqliteConnection, apply_wal_pragmas};
-use sql_middleware::{RowValues, SqlMiddlewareDbError};
 
-use crate::backends::{Backend, BackendError};
+use crate::backends::BackendError;
 
-#[derive(Debug, Clone)]
-pub(crate) struct SqliteBackendConfig {
-    pub(crate) db_path: String,
-    pub(crate) pool_size: usize,
-}
-
-impl SqliteBackendConfig {
-    pub(crate) fn in_memory(pool_size: usize) -> Self {
-        Self {
-            db_path: "file::memory:?cache=shared".to_string(),
-            pool_size,
-        }
-    }
-}
+#[path = "sqlite/config.rs"]
+mod config;
+#[path = "sqlite/retry.rs"]
+mod retry;
+pub(crate) use config::SqliteBackendConfig;
 
 pub(crate) struct SqliteBackend {
     pool: ConfigAndPool,
@@ -37,7 +28,8 @@ impl SqliteBackend {
     const MAX_RETRY_DELAY_MS: u64 = 100;
 
     pub(crate) async fn new(config: SqliteBackendConfig) -> Result<Self, BackendError> {
-        let pool_size = config.pool_size.max(1) as u32;
+        let pool_size = u32::try_from(config.pool_size.max(1))
+            .map_err(|_| BackendError::Init("sqlite pool size does not fit in u32".to_string()))?;
         let manager = SqliteManager::new(config.db_path);
         let pool = Pool::builder()
             .max_size(pool_size)
@@ -69,7 +61,6 @@ impl SqliteBackend {
     fn sqlite_conn_mut(
         conn: &mut MiddlewarePoolConnection,
     ) -> Result<&mut SqliteConnection, BackendError> {
-        #[allow(unreachable_patterns)]
         match conn {
             MiddlewarePoolConnection::Sqlite { conn, .. } => conn.as_mut().ok_or_else(|| {
                 BackendError::Init("SQLite connection already taken from pool wrapper".to_string())
@@ -80,49 +71,58 @@ impl SqliteBackend {
         }
     }
 
-    fn is_busy_error(err: &BackendError) -> bool {
-        match err {
-            BackendError::Sql(SqlMiddlewareDbError::SqliteError(
-                rusqlite::Error::SqliteFailure(code, _),
-            )) => matches!(
-                code.code,
-                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-            ),
-            _ => false,
-        }
-    }
-
     pub(crate) async fn begin(
         &self,
         conn: &mut MiddlewarePoolConnection,
     ) -> Result<(), BackendError> {
-        self.retry_busy(|| {
+        let mut delay_ms = Self::INITIAL_RETRY_DELAY_MS;
+        for attempt in 0..=Self::BUSY_RETRIES {
             let sqlite_conn = Self::sqlite_conn_mut(conn)?;
-            sqlite_conn.begin().await.map_err(BackendError::from)
-        })
-        .await
+            match sqlite_conn.begin().await.map_err(BackendError::from) {
+                Ok(result) => return Ok(result),
+                Err(err) if retry::is_busy_error(&err) && attempt < Self::BUSY_RETRIES => {
+                    Self::sleep_before_retry(&mut delay_ms).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("retry loop should return on last attempt");
     }
 
     pub(crate) async fn commit(
         &self,
         conn: &mut MiddlewarePoolConnection,
     ) -> Result<(), BackendError> {
-        self.retry_busy(|| {
+        let mut delay_ms = Self::INITIAL_RETRY_DELAY_MS;
+        for attempt in 0..=Self::BUSY_RETRIES {
             let sqlite_conn = Self::sqlite_conn_mut(conn)?;
-            sqlite_conn.commit().await.map_err(BackendError::from)
-        })
-        .await
+            match sqlite_conn.commit().await.map_err(BackendError::from) {
+                Ok(result) => return Ok(result),
+                Err(err) if retry::is_busy_error(&err) && attempt < Self::BUSY_RETRIES => {
+                    Self::sleep_before_retry(&mut delay_ms).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("retry loop should return on last attempt");
     }
 
     pub(crate) async fn rollback(
         &self,
         conn: &mut MiddlewarePoolConnection,
     ) -> Result<(), BackendError> {
-        self.retry_busy(|| {
+        let mut delay_ms = Self::INITIAL_RETRY_DELAY_MS;
+        for attempt in 0..=Self::BUSY_RETRIES {
             let sqlite_conn = Self::sqlite_conn_mut(conn)?;
-            sqlite_conn.rollback().await.map_err(BackendError::from)
-        })
-        .await
+            match sqlite_conn.rollback().await.map_err(BackendError::from) {
+                Ok(result) => return Ok(result),
+                Err(err) if retry::is_busy_error(&err) && attempt < Self::BUSY_RETRIES => {
+                    Self::sleep_before_retry(&mut delay_ms).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("retry loop should return on last attempt");
     }
 
     pub(crate) async fn execute(
@@ -131,18 +131,22 @@ impl SqliteBackend {
         sql: &str,
         in_tx: bool,
     ) -> Result<(), BackendError> {
-        self.retry_busy(|| {
-            if in_tx {
-                let sqlite_conn = Self::sqlite_conn_mut(conn)?;
-                sqlite_conn
-                    .execute_batch_in_tx(sql)
-                    .await
-                    .map_err(BackendError::from)
+        let mut delay_ms = Self::INITIAL_RETRY_DELAY_MS;
+        for attempt in 0..=Self::BUSY_RETRIES {
+            let result = if in_tx {
+                Self::execute_in_tx(conn, sql).await
             } else {
                 conn.execute_batch(sql).await.map_err(BackendError::from)
+            };
+            match result {
+                Ok(result) => return Ok(result),
+                Err(err) if retry::is_busy_error(&err) && attempt < Self::BUSY_RETRIES => {
+                    Self::sleep_before_retry(&mut delay_ms).await;
+                }
+                Err(err) => return Err(err),
             }
-        })
-        .await
+        }
+        unreachable!("retry loop should return on last attempt");
     }
 
     pub(crate) async fn query(
@@ -151,20 +155,22 @@ impl SqliteBackend {
         sql: &str,
         in_tx: bool,
     ) -> Result<sql_middleware::ResultSet, BackendError> {
-        self.retry_busy(|| {
-            if in_tx {
-                let sqlite_conn = Self::sqlite_conn_mut(conn)?;
-                let params: &[RowValues] = &[];
-                let params = Params::convert(params).map_err(BackendError::from)?;
-                sqlite_conn
-                    .execute_select_in_tx(sql, params.as_values(), build_result_set)
-                    .await
-                    .map_err(BackendError::from)
+        let mut delay_ms = Self::INITIAL_RETRY_DELAY_MS;
+        for attempt in 0..=Self::BUSY_RETRIES {
+            let result = if in_tx {
+                Self::query_in_tx(conn, sql).await
             } else {
                 conn.query(sql).select().await.map_err(BackendError::from)
+            };
+            match result {
+                Ok(result) => return Ok(result),
+                Err(err) if retry::is_busy_error(&err) && attempt < Self::BUSY_RETRIES => {
+                    Self::sleep_before_retry(&mut delay_ms).await;
+                }
+                Err(err) => return Err(err),
             }
-        })
-        .await
+        }
+        unreachable!("retry loop should return on last attempt");
     }
 
     pub(crate) async fn sleep(&self, ms: u64) {
@@ -174,21 +180,32 @@ impl SqliteBackend {
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
     }
 
-    async fn retry_busy<T, F>(&self, mut op: F) -> Result<T, BackendError>
-    where
-        F: FnMut() -> Result<T, BackendError>,
-    {
-        let mut delay_ms = Self::INITIAL_RETRY_DELAY_MS;
-        for attempt in 0..=Self::BUSY_RETRIES {
-            match op() {
-                Ok(result) => return Ok(result),
-                Err(err) if Self::is_busy_error(&err) && attempt < Self::BUSY_RETRIES => {
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    delay_ms = (delay_ms * 2).min(Self::MAX_RETRY_DELAY_MS);
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        unreachable!("retry loop should return on last attempt");
+    async fn execute_in_tx(
+        conn: &mut MiddlewarePoolConnection,
+        sql: &str,
+    ) -> Result<(), BackendError> {
+        let sqlite_conn = Self::sqlite_conn_mut(conn)?;
+        sqlite_conn
+            .execute_batch_in_tx(sql)
+            .await
+            .map_err(BackendError::from)
+    }
+
+    async fn query_in_tx(
+        conn: &mut MiddlewarePoolConnection,
+        sql: &str,
+    ) -> Result<sql_middleware::ResultSet, BackendError> {
+        let sqlite_conn = Self::sqlite_conn_mut(conn)?;
+        let params: &[RowValues] = &[];
+        let params = Params::convert(params).map_err(BackendError::from)?;
+        sqlite_conn
+            .execute_select_in_tx(sql, params.as_values(), build_result_set)
+            .await
+            .map_err(BackendError::from)
+    }
+
+    async fn sleep_before_retry(delay_ms: &mut u64) {
+        tokio::time::sleep(Duration::from_millis(*delay_ms)).await;
+        *delay_ms = (*delay_ms * 2).min(Self::MAX_RETRY_DELAY_MS);
     }
 }

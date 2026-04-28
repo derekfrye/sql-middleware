@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use rand_chacha::ChaCha8Rng;
 
 use crate::args::{BackendKind, SimConfig};
@@ -6,7 +6,7 @@ use crate::plan::{Action, Interaction};
 
 use super::state::{GenState, TaskState};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum GenOp {
     Checkout,
     Return,
@@ -20,7 +20,7 @@ pub(super) enum GenOp {
 }
 
 pub(super) fn next_op(
-    task: &TaskState,
+    task: TaskState,
     in_flight_tx: usize,
     config: &SimConfig,
     rng: &mut ChaCha8Rng,
@@ -102,23 +102,17 @@ fn idle_weights(in_flight_tx: usize, config: &SimConfig) -> Vec<(GenOp, f64)> {
 fn choose_weighted(items: &[(GenOp, f64)], rng: &mut ChaCha8Rng) -> GenOp {
     let total: f64 = items.iter().map(|(_, weight)| weight.max(0.0)).sum();
     if total <= f64::EPSILON {
-        return items
-            .first()
-            .map(|(op, _)| op.clone())
-            .unwrap_or(GenOp::Sleep(1));
+        return items.first().map_or(GenOp::Sleep(1), |(op, _)| *op);
     }
 
     let mut target = rng.random::<f64>() * total;
     for (op, weight) in items {
         let weight = weight.max(0.0);
         if target <= weight {
-            return op.clone();
+            return *op;
         }
         target -= weight;
     }
 
-    items
-        .last()
-        .map(|(op, _)| op.clone())
-        .unwrap_or(GenOp::Sleep(1))
+    items.last().map_or(GenOp::Sleep(1), |(op, _)| *op)
 }

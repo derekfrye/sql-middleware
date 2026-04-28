@@ -45,11 +45,11 @@ fn main() {
         eprintln!("--doublecheck and --differential-backend are mutually exclusive");
         std::process::exit(1);
     }
-    if let Some(differential_backend) = config.differential_backend {
-        if differential_backend == config.backend {
-            eprintln!("--differential-backend must differ from --backend");
-            std::process::exit(1);
-        }
+    if let Some(differential_backend) = config.differential_backend
+        && differential_backend == config.backend
+    {
+        eprintln!("--differential-backend must differ from --backend");
+        std::process::exit(1);
     }
 
     if config.generate {

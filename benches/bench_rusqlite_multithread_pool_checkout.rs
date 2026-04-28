@@ -1,5 +1,3 @@
-#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
-
 //! Criterion benchmark comparing concurrent checkout/query patterns between
 //! the sql-middleware abstraction and a direct `rusqlite` approach backed by a
 //! simple connection pool. Each micro-benchmark fans out a batch of single-row
@@ -40,7 +38,6 @@ impl Dataset {
 
 /// Row representation shared across benchmark variants to keep decode cost consistent.
 #[derive(Debug)]
-#[allow(dead_code)]
 struct BenchRow {
     id: i64,
     name: String,
@@ -59,6 +56,10 @@ impl BenchRow {
                 .map(|value| value != 0)
                 .or_else(|_| row.get(3))?,
         })
+    }
+
+    fn into_tuple(self) -> (i64, String, f64, bool) {
+        (self.id, self.name, self.score, self.active)
     }
 }
 
@@ -131,7 +132,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
     let path = PathBuf::from("benchmark_sqlite_multithread_lookup.db");
     prepare_sqlite_dataset(&path, row_count).expect("prepare sqlite dataset");
 
-    let mut ids: Vec<i64> = (1..=row_count as i64).collect();
+    let mut ids: Vec<i64> = lookup_ids(row_count);
     let mut rng = ChaCha8Rng::seed_from_u64(9_876_543_210);
     ids.shuffle(&mut rng);
 
@@ -162,6 +163,11 @@ fn lookup_row_count_to_run() -> usize {
                 .and_then(|value| value.parse().ok())
         })
         .unwrap_or(1024)
+}
+
+fn lookup_ids(row_count: usize) -> Vec<i64> {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    (1..=row_count).map(i64::from).collect()
 }
 
 /// Resolve how many worker tasks to run in parallel.
@@ -196,11 +202,13 @@ fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> RusqliteResult<()> {
         let mut insert_stmt =
             tx.prepare("INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)")?;
 
-        for id in 1..=row_count as i64 {
+        let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+        for id in 1..=row_count {
+            let db_id = i64::from(id);
             let name = format!("name-{id}");
-            let score = id as f64 * 0.5;
+            let score = f64::from(id) * 0.5;
             let active = id % 2 == 0;
-            insert_stmt.execute(rusqlite::params![id, name, score, i32::from(active)])?;
+            insert_stmt.execute(rusqlite::params![db_id, name, score, i32::from(active)])?;
         }
     }
     tx.commit()?;
@@ -292,7 +300,7 @@ async fn rusqlite_parallel_select(
             for id in chunk {
                 let row = stmt.query_row([id], BenchRow::from_rusqlite)?;
                 // try to prevent compiler optimizing away the work we're timing
-                black_box(row);
+                black_box(row.into_tuple());
             }
             Ok::<(), rusqlite::Error>(())
         }));

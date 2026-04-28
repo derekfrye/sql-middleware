@@ -19,7 +19,7 @@ pub(super) fn report_failure(config: &SimConfig, plan: &plan::Plan, context: Fai
         emit_dump(path, plan);
     }
     emit_bugbase(config, plan, &context);
-    emit_shrink_report(&context.shrink_result);
+    emit_shrink_report(context.shrink_result.as_ref());
     report_mode_error(context.error);
     std::process::exit(1);
 }
@@ -44,8 +44,8 @@ fn emit_bugbase(config: &SimConfig, plan: &plan::Plan, context: &FailureContext)
     }
 }
 
-fn emit_shrink_report(shrink_result: &Option<ShrinkResult>) {
-    if let Some(shrink_result) = shrink_result.as_ref() {
+fn emit_shrink_report(shrink_result: Option<&ShrinkResult>) {
+    if let Some(shrink_result) = shrink_result {
         let shrink_report = &shrink_result.report;
         eprintln!(
             "shrunk failing plan from {} to {} steps in {} rounds ({} attempts)",
@@ -59,7 +59,7 @@ fn emit_shrink_report(shrink_result: &Option<ShrinkResult>) {
 
 fn report_mode_error(err: ModeError) {
     match err {
-        ModeError::PlanRun { label, error } => report_run_error(label, error),
+        ModeError::PlanRun { label, error } => report_run_error(label, &error),
         ModeError::Compare(mismatch) => {
             eprintln!(
                 "comparison failed at step {}: {}",
@@ -72,7 +72,7 @@ fn report_mode_error(err: ModeError) {
     }
 }
 
-fn report_run_error(label: &'static str, error: RunError) {
+fn report_run_error(label: &'static str, error: &RunError) {
     eprintln!(
         "{label} run failed at step {} (task {}): {}",
         error.step, error.task, error.reason

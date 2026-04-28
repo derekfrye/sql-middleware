@@ -45,7 +45,7 @@ where
             break;
         }
 
-        let chunk_size = (total + n - 1) / n;
+        let chunk_size = total.div_ceil(n);
         let mut reduced = false;
 
         for chunk_index in 0..n {
@@ -61,7 +61,6 @@ where
             attempts += 1;
             if predicate(&candidate).await {
                 current = candidate;
-                n = 2;
                 reduced = true;
                 break;
             }
@@ -69,6 +68,7 @@ where
 
         rounds += 1;
         if reduced {
+            n = 2;
             continue;
         }
 

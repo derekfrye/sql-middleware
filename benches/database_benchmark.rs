@@ -5,7 +5,6 @@ use sql_middleware::benchmark::sqlite::{benchmark_sqlite, cleanup_sqlite};
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
 
-#[allow(dead_code)]
 struct DatabaseCleanup;
 
 impl Drop for DatabaseCleanup {
@@ -16,17 +15,19 @@ impl Drop for DatabaseCleanup {
     }
 }
 
-static _CLEANUP: LazyLock<DatabaseCleanup> = LazyLock::new(|| DatabaseCleanup);
+static CLEANUP: LazyLock<DatabaseCleanup> = LazyLock::new(|| DatabaseCleanup);
 
 // Shared runtime for all benchmarks to avoid dual runtimes
 static SHARED_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().unwrap());
 
 fn sqlite_benches_wrapper(c: &mut criterion::Criterion) {
+    LazyLock::force(&CLEANUP);
     benchmark_sqlite(c, &SHARED_RUNTIME);
 }
 
 #[cfg(feature = "postgres")]
 fn postgres_benches_wrapper(c: &mut criterion::Criterion) {
+    LazyLock::force(&CLEANUP);
     benchmark_postgres(c, &SHARED_RUNTIME);
 }
 

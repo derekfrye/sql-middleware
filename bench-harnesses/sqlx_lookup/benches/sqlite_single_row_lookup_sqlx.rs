@@ -14,12 +14,17 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct BenchRow {
     id: i64,
     name: String,
     score: f64,
     active: bool,
+}
+
+impl BenchRow {
+    fn into_tuple(self) -> (i64, String, f64, bool) {
+        (self.id, self.name, self.score, self.active)
+    }
 }
 
 struct Dataset {
@@ -55,7 +60,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
             .await
             .expect("failed to prepare dataset");
 
-        let mut ids: Vec<i64> = (1..=row_count as i64).collect();
+        let mut ids: Vec<i64> = lookup_ids(row_count);
         let mut rng = ChaCha8Rng::seed_from_u64(1_234_567_890);
         ids.shuffle(&mut rng);
 
@@ -78,6 +83,11 @@ fn lookup_row_count_to_run() -> usize {
                 .and_then(|value| value.parse().ok())
         })
         .unwrap_or(1000)
+}
+
+fn lookup_ids(row_count: usize) -> Vec<i64> {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    (1..=row_count).map(i64::from).collect()
 }
 
 async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sqlx::Error> {
@@ -114,12 +124,14 @@ async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sql
 
     let mut tx = pool.begin().await?;
 
-    for id in 1..=row_count as i64 {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    for id in 1..=row_count {
+        let db_id = i64::from(id);
         let name = format!("name-{id}");
-        let score = id as f64 * 0.5;
-        let active = (id % 2 == 0) as i64;
+        let score = f64::from(id) * 0.5;
+        let active = i64::from(id % 2 == 0);
         sqlx::query("INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)")
-            .bind(id)
+            .bind(db_id)
             .bind(name)
             .bind(score)
             .bind(active)
@@ -133,7 +145,7 @@ async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sql
     Ok(())
 }
 
-fn bench_row_from_sqlite_row(row: SqliteRow) -> BenchRow {
+fn bench_row_from_sqlite_row(row: &SqliteRow) -> BenchRow {
     // Manual decode keeps the SQLx path aligned with middleware's CustomDbRow extraction so the comparison stays fair.
     BenchRow {
         id: row.try_get(0).expect("extract id"),
@@ -188,9 +200,9 @@ fn benchmark_sqlx_manual_decode(
                             .fetch_one(&mut *conn)
                             .await
                             .expect("sqlx fetch");
-                        let row = bench_row_from_sqlite_row(row);
+                        let row = bench_row_from_sqlite_row(&row);
                         // Black-box the decoded struct to mirror the middleware benchmark exactly.
-                        std::hint::black_box(row);
+                        std::hint::black_box(row.into_tuple());
                     }
                     total += start.elapsed();
                 }
@@ -383,8 +395,8 @@ fn benchmark_sqlx_decode(
 
                     let start = Instant::now();
                     for row in rows {
-                        let decoded = bench_row_from_sqlite_row(row);
-                        black_box(decoded);
+                        let decoded = bench_row_from_sqlite_row(&row);
+                        black_box(decoded.into_tuple());
                     }
                     total += start.elapsed();
                 }

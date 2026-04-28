@@ -1,6 +1,8 @@
 #![cfg(any(feature = "sqlite", feature = "turso"))]
-use chrono::NaiveDateTime;
-use serde_json::json;
+#[path = "test03_sqlite/assertions.rs"]
+mod assertions;
+
+use assertions::assert_selected_rows;
 use sql_middleware::middleware::{ConfigAndPool, RowValues};
 use tokio::runtime::Runtime;
 
@@ -31,22 +33,11 @@ impl Drop for FileCleanup {
     }
 }
 
-#[allow(clippy::too_many_lines, clippy::float_cmp)]
 #[test]
 fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
 
-    #[allow(unused_mut)]
-    let mut test_cases = vec![
-        TestCase::Sqlite("file::memory:?cache=shared".to_string()),
-        TestCase::Sqlite(unique_path("test_sqlite")),
-    ];
-
-    #[cfg(feature = "turso")]
-    {
-        test_cases.push(TestCase::Turso(":memory:".to_string()));
-        test_cases.push(TestCase::Turso(unique_path("test_turso")));
-    }
+    let test_cases = test_cases();
 
     for case in test_cases {
         let _cleanup_guard = match &case {
@@ -118,7 +109,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
                 ],
             ];
 
-            for (sql, params) in setup_queries.into_iter().zip(param_sets.into_iter()) {
+            for (sql, params) in setup_queries.into_iter().zip(param_sets) {
                 conn.query(sql).params(&params).dml().await?;
             }
 
@@ -139,47 +130,7 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
             // we expect 4 rows
             assert_eq!(res.results.len(), 4);
 
-            // row 1
-            assert_eq!(*res.results[0].get("recid").unwrap().as_int().unwrap(), 1);
-            assert_eq!(*res.results[0].get("a").unwrap().as_int().unwrap(), 1);
-            assert_eq!(res.results[0].get("b").unwrap().as_text().unwrap(), "Alpha");
-            assert_eq!(
-                res.results[0].get("c").unwrap().as_timestamp().unwrap(),
-                NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
-            );
-            assert_eq!(res.results[0].get("d").unwrap().as_float().unwrap(), 10.5);
-            assert!(*res.results[0].get("e").unwrap().as_bool().unwrap());
-            assert_eq!(
-                res.results[0].get("f").unwrap().as_blob().unwrap(),
-                b"Blob12"
-            );
-            // JSON as text
-            assert_eq!(
-                json!(res.results[0].get("g").unwrap().as_text().unwrap()),
-                json!(r#"{"name": "Alice", "age": 30}"#)
-            );
-
-            // row 3
-            assert_eq!(*res.results[2].get("recid").unwrap().as_int().unwrap(), 3);
-            assert_eq!(*res.results[2].get("a").unwrap().as_int().unwrap(), 3);
-            assert_eq!(
-                res.results[2].get("b").unwrap().as_text().unwrap(),
-                "Charlie"
-            );
-            assert_eq!(
-                res.results[2].get("c").unwrap().as_timestamp().unwrap(),
-                NaiveDateTime::parse_from_str("2024-01-03 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
-            );
-            assert_eq!(res.results[2].get("d").unwrap().as_float().unwrap(), 30.25);
-            assert!(*res.results[2].get("e").unwrap().as_bool().unwrap());
-
-            // param row (Juliet)
-            assert_eq!(*res.results[3].get("a").unwrap().as_int().unwrap(), 100);
-            assert_eq!(res.results[3].get("d").unwrap().as_float().unwrap(), 100.75);
-            assert_eq!(
-                res.results[3].get("f").unwrap().as_blob().unwrap(),
-                b"Blob11"
-            );
+            assert_selected_rows(&res);
 
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;
@@ -187,3 +138,21 @@ fn sqlite_and_turso_multiple_column_test_db2() -> Result<(), Box<dyn std::error:
 
     Ok(())
 }
+
+fn test_cases() -> Vec<TestCase> {
+    let mut cases = vec![
+        TestCase::Sqlite("file::memory:?cache=shared".to_string()),
+        TestCase::Sqlite(unique_path("test_sqlite")),
+    ];
+    add_turso_cases(&mut cases);
+    cases
+}
+
+#[cfg(feature = "turso")]
+fn add_turso_cases(cases: &mut Vec<TestCase>) {
+    cases.push(TestCase::Turso(":memory:".to_string()));
+    cases.push(TestCase::Turso(unique_path("test_turso")));
+}
+
+#[cfg(not(feature = "turso"))]
+fn add_turso_cases(_cases: &mut Vec<TestCase>) {}

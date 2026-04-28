@@ -1,6 +1,9 @@
 // use sqlx_middleware::convenience_items::{ create_tables, MissingDbObjects };
 // use sqlx_middleware::db::{ QueryState, DatabaseType, Db, ConfigAndPool };
 // use sqlx_middleware::model::{ CheckType, CustomDbRow, DatabaseResult, QueryAndParams, RowValues };
+#[path = "postgres_test02/assertions.rs"]
+mod assertions;
+
 use chrono::NaiveDateTime;
 // use sqlx::{ Connection, Executor };
 
@@ -25,15 +28,9 @@ fn build_typed_pg_config(cfg: &PgConfig) -> tokio_postgres::Config {
     cfg.to_tokio_config()
 }
 
-#[allow(clippy::too_many_lines)]
 #[test]
 fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cfg = PgConfig::new();
-    cfg.dbname = Some("testing".to_string());
-    cfg.host = Some("10.3.0.201".to_string());
-    cfg.port = Some(5432);
-    cfg.user = Some("testuser".to_string());
-    cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
+    let cfg = postgres_config();
 
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
@@ -127,100 +124,75 @@ fn test2_postgres_cr_and_del_tbls() -> Result<(), Box<dyn std::error::Error>> {
             Ok::<_, SqlMiddlewareDbError>(result_set)
         })?;
 
-        let expected_result = [sql_middleware::test_helpers::create_test_row(
-            vec![
-                "event_id".to_string(),
-                "espn_id".to_string(),
-                "name".to_string(),
-                "ins_ts".to_string(),
-            ],
-            vec![
-                RowValues::Int(1),
-                RowValues::Int(123_456),
-                RowValues::Text("test name".to_string()),
-                RowValues::Timestamp(
-                    NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")
-                        .unwrap(),
-                ),
-            ],
-        )];
+        assertions::assert_inserted_row(&result);
 
-        let cols_to_actually_check = ["espn_id", "name", "ins_ts"];
-
-        for (index, row) in result.results.iter().enumerate() {
-            let left: Vec<RowValues> = row
-                .column_names
-                .iter()
-                .zip(&row.rows) // Pair column names with corresponding row values
-                .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
-                .map(|(_, value)| value.clone()) // Collect the filtered row values
-                .collect();
-
-            // Get column names and row values from the expected result
-            let right: Vec<RowValues> = expected_result[index]
-                .column_names
-                .iter()
-                .zip(&expected_result[index].rows) // Pair column names with corresponding row values
-                .filter(|(col_name, _)| cols_to_actually_check.contains(&col_name.as_str()))
-                .map(|(_, value)| value.clone()) // Collect the filtered row values
-                .collect();
-
-            assert_eq!(left, right);
-        }
-
-        #[cfg(feature = "postgres")]
-        {
-            let pool = PgManager::new(typed_pg_cfg).build_pool().await?;
-            let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
-
-            let typed_truncate = format!("TRUNCATE {test_table_2};");
-            typed_conn.execute_batch(&typed_truncate).await?;
-            let typed_ts =
-                NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?;
-            let mut tx = typed_conn.begin().await?;
-            let inserted = tx
-                .dml(
-                    &format!(
-                        "INSERT INTO {test_table_2} (espn_id, name, ins_ts) VALUES ($1, $2, $3)"
-                    ),
-                    &[
-                        RowValues::Int(123_456),
-                        RowValues::Text("test name".to_string()),
-                        RowValues::Timestamp(typed_ts),
-                    ],
-                )
-                .await?;
-            assert_eq!(inserted, 1);
-
-            let rs = tx
-                .select(
-                    &format!("SELECT espn_id, name, ins_ts FROM {test_table_2} WHERE espn_id = $1"),
-                    &[RowValues::Int(123_456)],
-                )
-                .await?;
-            let _ = tx.commit().await?;
-            assert_eq!(rs.results.len(), 1);
-            let row = &rs.results[0];
-            assert_eq!(*row.get("espn_id").unwrap().as_int().unwrap(), 123_456);
-            assert_eq!(row.get("name").unwrap().as_text().unwrap(), "test name");
-            assert_eq!(row.get("ins_ts").unwrap().as_timestamp().unwrap(), typed_ts);
-        }
-
-        let query = format!(
-            "DROP TABLE {test_table};
-        DROP TABLE {test_table_2};"
-        );
-        ({
-            let tx = pgconn.transaction().await?;
-            {
-                tx.batch_execute(&query).await?;
-            };
-            tx.commit().await?;
-            Ok::<_, SqlMiddlewareDbError>(())
-        })?;
+        run_typed_postgres_path(&typed_pg_cfg, test_table_2).await?;
+        drop_test_tables(&mut pgconn, test_table, test_table_2).await?;
 
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
 
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
+async fn run_typed_postgres_path(
+    typed_pg_cfg: &tokio_postgres::Config,
+    test_table_2: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = PgManager::new(typed_pg_cfg.clone()).build_pool().await?;
+    let mut typed_conn: PgConnection<PgIdle> = PgConnection::from_pool(&pool).await?;
+    let typed_truncate = format!("TRUNCATE {test_table_2};");
+    typed_conn.execute_batch(&typed_truncate).await?;
+    let typed_ts = NaiveDateTime::parse_from_str("2021-08-06 16:00:00", "%Y-%m-%d %H:%M:%S")?;
+    let mut tx = typed_conn.begin().await?;
+    let inserted = tx
+        .dml(
+            &format!("INSERT INTO {test_table_2} (espn_id, name, ins_ts) VALUES ($1, $2, $3)"),
+            &[
+                RowValues::Int(123_456),
+                RowValues::Text("test name".to_string()),
+                RowValues::Timestamp(typed_ts),
+            ],
+        )
+        .await?;
+    assert_eq!(inserted, 1);
+    let rs = tx
+        .select(
+            &format!("SELECT espn_id, name, ins_ts FROM {test_table_2} WHERE espn_id = $1"),
+            &[RowValues::Int(123_456)],
+        )
+        .await?;
+    let _ = tx.commit().await?;
+    assert_eq!(rs.results.len(), 1);
+    let row = &rs.results[0];
+    assert_eq!(*row.get("espn_id").unwrap().as_int().unwrap(), 123_456);
+    assert_eq!(row.get("name").unwrap().as_text().unwrap(), "test name");
+    assert_eq!(row.get("ins_ts").unwrap().as_timestamp().unwrap(), typed_ts);
+    Ok(())
+}
+
+fn postgres_config() -> PgConfig {
+    let mut cfg = PgConfig::new();
+    cfg.dbname = Some("testing".to_string());
+    cfg.host = Some("10.3.0.201".to_string());
+    cfg.port = Some(5432);
+    cfg.user = Some("testuser".to_string());
+    cfg.password = Some(env::var("TESTING_PG_PASSWORD").unwrap_or_default());
+    cfg
+}
+
+async fn drop_test_tables(
+    pgconn: &mut tokio_postgres::Client,
+    test_table: &str,
+    test_table_2: &str,
+) -> Result<(), SqlMiddlewareDbError> {
+    let query = format!(
+        "DROP TABLE {test_table};
+        DROP TABLE {test_table_2};"
+    );
+    let tx = pgconn.transaction().await?;
+    tx.batch_execute(&query).await?;
+    tx.commit().await?;
     Ok(())
 }

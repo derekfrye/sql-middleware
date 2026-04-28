@@ -5,13 +5,13 @@ mod types;
 use std::path::Path;
 
 use crate::args::{BackendKind, ResetMode};
-use crate::backends::{Backend, BackendError};
+use crate::backends::{Backend, BackendError, ErrorClass};
 use crate::plan::{Action, Plan};
 
 use types::TaskState;
 pub(crate) use types::{
-    ActionError, ActionObservation, PlanRun, QueryObservation, QuerySummary, RunError, RunSummary,
-    StepOutcome, StepResult,
+    ActionError, ActionObservation, PlanRun, QueryObservation, RunError, RunSummary, StepOutcome,
+    StepResult,
 };
 
 pub(crate) fn load_plan(path: &Path) -> Result<Plan, String> {
@@ -41,8 +41,7 @@ pub(crate) async fn execute_plan(plan: Plan, backend: &mut Box<dyn Backend>) -> 
         .iter()
         .map(|interaction| interaction.task)
         .max()
-        .map(|id| id + 1)
-        .unwrap_or(0);
+        .map_or(0, |id| id + 1);
 
     let mut tasks = Vec::with_capacity(task_count);
     for _ in 0..task_count {
@@ -56,27 +55,24 @@ pub(crate) async fn execute_plan(plan: Plan, backend: &mut Box<dyn Backend>) -> 
         let task_id = interaction.task;
         let action = interaction.action;
 
-        let task = match tasks.get_mut(task_id) {
-            Some(task) => task,
-            None => {
-                let run_error = RunError {
-                    step,
-                    task: task_id,
-                    action: action.clone(),
-                    reason: "unknown task id".to_string(),
-                };
-                outcomes.push(StepOutcome {
-                    step,
-                    task: task_id,
-                    action: action.clone(),
-                    result: StepResult::Err(ActionError {
-                        class: ErrorClass::Init,
-                        message: run_error.reason.clone(),
-                    }),
-                });
-                error = Some(run_error);
-                break;
-            }
+        let Some(task) = tasks.get_mut(task_id) else {
+            let run_error = RunError {
+                step,
+                task: task_id,
+                action: action.clone(),
+                reason: "unknown task id".to_string(),
+            };
+            outcomes.push(StepOutcome {
+                step,
+                task: task_id,
+                action: action.clone(),
+                result: StepResult::Err(ActionError {
+                    class: ErrorClass::Init,
+                    message: run_error.reason.clone(),
+                }),
+            });
+            error = Some(run_error);
+            break;
         };
 
         match actions::apply_action(backend, task, &action).await {
@@ -118,20 +114,6 @@ pub(crate) async fn execute_plan(plan: Plan, backend: &mut Box<dyn Backend>) -> 
     }
 
     PlanRun { outcomes, error }
-}
-
-pub(crate) async fn run_plan(
-    plan: Plan,
-    backend: &mut Box<dyn Backend>,
-) -> Result<RunSummary, RunError> {
-    let run = execute_plan(plan, backend).await;
-    if let Some(err) = run.error {
-        Err(err)
-    } else {
-        Ok(RunSummary {
-            steps: run.outcomes.len(),
-        })
-    }
 }
 
 fn action_label(action: &Action) -> &'static str {

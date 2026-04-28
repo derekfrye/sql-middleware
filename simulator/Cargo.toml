@@ -22,4 +22,5 @@ rusqlite = { version = "0", optional = true }
 default = ["sqlite"]
 sqlite = ["sql-middleware/sqlite", "dep:rusqlite"]
 postgres = ["sql-middleware/postgres"]
+mssql = ["sql-middleware/mssql"]
 turso = ["sql-middleware/turso"]

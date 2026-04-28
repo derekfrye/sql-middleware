@@ -11,7 +11,7 @@ pub(crate) enum ResetMode {
     Recreate,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize)]
 pub(crate) enum BackendKind {
     Sqlite,
     Postgres,
@@ -149,12 +149,8 @@ impl SimConfig {
 fn clamp_rate(value: f64) -> f64 {
     if value.is_nan() {
         0.0
-    } else if value < 0.0 {
-        0.0
-    } else if value > 1.0 {
-        1.0
     } else {
-        value
+        value.clamp(0.0, 1.0)
     }
 }
 
@@ -163,5 +159,5 @@ fn random_seed() -> u64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    now.as_secs() ^ (now.subsec_nanos() as u64)
+    now.as_secs() ^ u64::from(now.subsec_nanos())
 }

@@ -48,7 +48,7 @@ pub(crate) fn report_failure(config: &SimConfig, plan: &plan::Plan, context: Fai
 pub(crate) enum ModeError {
     PlanRun {
         label: &'static str,
-        error: RunError,
+        error: Box<RunError>,
     },
     Compare(ComparisonMismatch),
     Setup {
@@ -65,19 +65,16 @@ pub(crate) struct FailureContext {
 
 async fn run_single(config: &SimConfig, plan: plan::Plan) -> Result<RunSummary, ModeError> {
     let run = run_once(config, config.backend, plan, "primary").await?;
-    run.error.map_or_else(
-        || {
-            Ok(RunSummary {
-                steps: run.outcomes.len(),
-            })
-        },
-        |error| {
-            Err(ModeError::PlanRun {
-                label: "primary",
-                error,
-            })
-        },
-    )
+    if let Some(error) = run.error {
+        Err(ModeError::PlanRun {
+            label: "primary",
+            error: Box::new(error),
+        })
+    } else {
+        Ok(RunSummary {
+            steps: run.outcomes.len(),
+        })
+    }
 }
 
 async fn run_doublecheck(config: &SimConfig, plan: plan::Plan) -> Result<RunSummary, ModeError> {
@@ -85,8 +82,8 @@ async fn run_doublecheck(config: &SimConfig, plan: plan::Plan) -> Result<RunSumm
     let second = run_once(config, config.backend, plan, "doublecheck-2").await?;
 
     compare_runs(&first, &second, compare_config(config, true)).map_err(ModeError::Compare)?;
-    success_or_plan_error(first, "doublecheck-1")?;
-    success_or_plan_error(second, "doublecheck-2")?;
+    success_or_plan_error(&first, "doublecheck-1")?;
+    success_or_plan_error(&second, "doublecheck-2")?;
 
     Ok(RunSummary {
         steps: first.outcomes.len(),
@@ -103,8 +100,8 @@ async fn run_differential(
 
     compare_runs(&primary, &secondary, compare_config(config, false))
         .map_err(ModeError::Compare)?;
-    success_or_plan_error(primary, "primary")?;
-    success_or_plan_error(secondary, "differential")?;
+    success_or_plan_error(&primary, "primary")?;
+    success_or_plan_error(&secondary, "differential")?;
 
     Ok(RunSummary {
         steps: primary.outcomes.len(),
@@ -147,14 +144,17 @@ async fn shrink_plan_on_failure(
     error: &ModeError,
 ) -> Option<ShrinkResult> {
     let fingerprint = error_fingerprint(error);
-    let shrink_result =
-        crate::shrinker::shrink_plan(plan, config.shrink_max_rounds, |candidate| async {
+    let shrink_result = crate::shrinker::shrink_plan(plan, config.shrink_max_rounds, |candidate| {
+        let candidate = candidate.clone();
+        let fingerprint = fingerprint.clone();
+        async move {
             match run_mode(config, candidate.clone()).await {
                 Ok(_) => false,
                 Err(err) => error_fingerprint(&err) == fingerprint,
             }
-        })
-        .await;
+        }
+    })
+    .await;
     Some(shrink_result)
 }
 
@@ -167,9 +167,12 @@ fn compare_config(config: &SimConfig, compare_error_messages: bool) -> Compariso
     }
 }
 
-fn success_or_plan_error(run: PlanRun, label: &'static str) -> Result<(), ModeError> {
-    match run.error {
-        Some(error) => Err(ModeError::PlanRun { label, error }),
+fn success_or_plan_error(run: &PlanRun, label: &'static str) -> Result<(), ModeError> {
+    match &run.error {
+        Some(error) => Err(ModeError::PlanRun {
+            label,
+            error: Box::new(error.clone()),
+        }),
         None => Ok(()),
     }
 }

@@ -1,10 +1,11 @@
 mod ops;
 mod state;
 
-use rand::{Rng, SeedableRng};
+use rand::RngExt;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::args::{BackendKind, SimConfig};
+use crate::args::SimConfig;
 use crate::plan::{Action, Interaction, Plan};
 use crate::properties::PropertyKind;
 use ops::{build_action, next_op};
@@ -31,8 +32,7 @@ pub(crate) fn generate_plan(config: &SimConfig) -> Result<Plan, String> {
         let required_tasks = property_required_tasks(property);
         if tasks < required_tasks {
             return Err(format!(
-                "property {:?} requires at least {} tasks",
-                property, required_tasks
+                "property {property:?} requires at least {required_tasks} tasks"
             ));
         }
         prefix.extend(property.build_plan().interactions);
@@ -47,7 +47,7 @@ pub(crate) fn generate_plan(config: &SimConfig) -> Result<Plan, String> {
     interactions.extend(prefix);
 
     let mut in_flight_tx = 0usize;
-    for action in interactions.iter() {
+    for action in &interactions {
         apply_generated_action(&mut task_state, action, &mut in_flight_tx);
     }
 
@@ -56,7 +56,7 @@ pub(crate) fn generate_plan(config: &SimConfig) -> Result<Plan, String> {
         let task = task_state
             .get(task_id)
             .ok_or_else(|| format!("missing task state for {task_id}"))?;
-        let op = next_op(task, in_flight_tx, config, &mut rng);
+        let op = next_op(*task, in_flight_tx, config, &mut rng);
         let action = build_action(task_id, op, &mut gen_state);
         apply_generated_action(&mut task_state, &action, &mut in_flight_tx);
         interactions.push(action);
@@ -68,23 +68,29 @@ pub(crate) fn generate_plan(config: &SimConfig) -> Result<Plan, String> {
 fn bootstrap_plan() -> Vec<Interaction> {
     let table = "sim_gen";
     vec![
-        interaction(0, Action::Checkout),
-        interaction(
-            0,
-            Action::Execute {
+        Interaction {
+            task: 0,
+            action: Action::Checkout,
+        },
+        Interaction {
+            task: 0,
+            action: Action::Execute {
                 sql: format!("CREATE TABLE IF NOT EXISTS {table} (id INTEGER, value TEXT);"),
                 expect_error: None,
             },
-        ),
-        interaction(0, Action::Return),
+        },
+        Interaction {
+            task: 0,
+            action: Action::Return,
+        },
     ]
 }
 
 fn property_required_tasks(property: PropertyKind) -> usize {
     match property {
-        PropertyKind::PoolCheckoutReturn => 2,
-        PropertyKind::TxCommitVisible => 2,
-        PropertyKind::TxRollbackInvisible => 2,
-        PropertyKind::RetryAfterBusy => 2,
+        PropertyKind::PoolCheckoutReturn
+        | PropertyKind::TxCommitVisible
+        | PropertyKind::TxRollbackInvisible
+        | PropertyKind::RetryAfterBusy => 2,
     }
 }

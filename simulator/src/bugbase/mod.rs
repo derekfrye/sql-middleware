@@ -87,7 +87,6 @@ fn create_unique_dir(root: &Path, prefix: &str) -> Result<PathBuf, String> {
             Ok(()) => return Ok(dir),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 attempt = attempt.saturating_add(1);
-                continue;
             }
             Err(err) => {
                 return Err(format!(

@@ -1,8 +1,6 @@
-#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
-
-//! SQLx benchmark mirroring the middleware multi-thread pool checkout benchmark.
+//! `SQLx` benchmark mirroring the middleware multi-thread pool checkout benchmark.
 //! Focuses on async fan-out patterns (`spawn` + pooled connections) so we can
-//! directly compare middleware overheads against idiomatic SQLx usage.
+//! directly compare middleware overheads against idiomatic `SQLx` usage.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::seq::SliceRandom;
@@ -23,7 +21,6 @@ use tokio::task::JoinSet;
 const SQLITE_SELECT: &str = "SELECT id, name, score, active FROM test WHERE id = ?1";
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct BenchRow {
     id: i64,
     name: String,
@@ -32,7 +29,7 @@ struct BenchRow {
 }
 
 impl BenchRow {
-    fn from_sqlx(row: SqliteRow) -> Self {
+    fn from_sqlx(row: &SqliteRow) -> Self {
         let active = row
             .try_get::<i64, _>(3)
             .map(|value| value != 0)
@@ -44,6 +41,10 @@ impl BenchRow {
             score: row.try_get(2).expect("extract score"),
             active,
         }
+    }
+
+    fn into_tuple(self) -> (i64, String, f64, bool) {
+        (self.id, self.name, self.score, self.active)
     }
 }
 
@@ -88,7 +89,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
             .await
             .expect("prepare sqlite dataset");
 
-        let mut ids: Vec<i64> = (1..=row_count as i64).collect();
+        let mut ids: Vec<i64> = lookup_ids(row_count);
         let mut rng = ChaCha8Rng::seed_from_u64(9_876_543_210);
         ids.shuffle(&mut rng);
 
@@ -103,7 +104,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
 // on connection checkout and query execution.
 static SQLX_POOL: LazyLock<SqlitePool> = LazyLock::new(|| {
     let dataset = &*DATASET;
-    let concurrency = *BENCH_CONCURRENCY as u32;
+    let concurrency = u32::try_from(*BENCH_CONCURRENCY).expect("concurrency fits in u32");
     TOKIO_RUNTIME.block_on(async {
         let options = SqliteConnectOptions::from_str(dataset.path())
             .expect("create connect options")
@@ -127,6 +128,11 @@ fn lookup_row_count_to_run() -> usize {
                 .and_then(|value| value.parse().ok())
         })
         .unwrap_or(1024)
+}
+
+fn lookup_ids(row_count: usize) -> Vec<i64> {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    (1..=row_count).map(i64::from).collect()
 }
 
 async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sqlx::Error> {
@@ -162,12 +168,14 @@ async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sql
     .await?;
 
     let mut tx = pool.begin().await?;
-    for id in 1..=row_count as i64 {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    for id in 1..=row_count {
+        let db_id = i64::from(id);
         let name = format!("name-{id}");
-        let score = id as f64 * 0.5;
-        let active = (id % 2 == 0) as i64;
+        let score = f64::from(id) * 0.5;
+        let active = i64::from(id % 2 == 0);
         sqlx::query("INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)")
-            .bind(id)
+            .bind(db_id)
             .bind(name)
             .bind(score)
             .bind(active)
@@ -184,7 +192,7 @@ fn chunk_size(total: usize, concurrency: usize) -> usize {
     if concurrency == 0 {
         return total.max(1);
     }
-    (total + concurrency - 1) / concurrency
+    total.div_ceil(concurrency)
 }
 
 async fn sqlx_parallel_select(
@@ -205,9 +213,9 @@ async fn sqlx_parallel_select(
                     .bind(id)
                     .fetch_one(&mut *conn)
                     .await?;
-                let data = BenchRow::from_sqlx(row);
+                let data = BenchRow::from_sqlx(&row);
                 // try to prevent compiler optimizing away the work we're timing
-                black_box(data);
+                black_box(data.into_tuple());
             }
             Ok::<(), sqlx::Error>(())
         });

@@ -15,12 +15,14 @@ pub(super) async fn apply_action(
         Action::Begin => begin(backend, task).await,
         Action::Commit => commit(backend, task).await,
         Action::Rollback => rollback(backend, task).await,
-        Action::Execute { sql, expect_error } => execute(backend, task, sql, expect_error).await,
+        Action::Execute { sql, expect_error } => {
+            execute(backend, task, sql, expect_error.as_ref()).await
+        }
         Action::Query {
             sql,
             expect,
             expect_error,
-        } => query(backend, task, sql, expect, expect_error).await,
+        } => query(backend, task, sql, expect.as_ref(), expect_error.as_ref()).await,
         Action::Sleep { ms } => {
             backend.sleep(*ms).await;
             Ok(ActionObservation::Simple)
@@ -97,10 +99,11 @@ async fn execute(
     backend: &mut Box<dyn Backend>,
     task: &mut TaskState,
     sql: &str,
-    expect_error: &Option<ErrorExpectation>,
+    expect_error: Option<&ErrorExpectation>,
 ) -> Result<ActionObservation, BackendError> {
+    let in_tx = task.in_tx;
     let conn = connection_mut(task, "execute")?;
-    let result = backend.execute(conn, sql, task.in_tx).await;
+    let result = backend.execute(conn, sql, in_tx).await;
     handle_action_result(result, expect_error)?;
     Ok(ActionObservation::Simple)
 }
@@ -109,14 +112,14 @@ async fn query(
     backend: &mut Box<dyn Backend>,
     task: &mut TaskState,
     sql: &str,
-    expect: &Option<QueryExpectation>,
-    expect_error: &Option<ErrorExpectation>,
+    expect: Option<&QueryExpectation>,
+    expect_error: Option<&ErrorExpectation>,
 ) -> Result<ActionObservation, BackendError> {
+    let in_tx = task.in_tx;
     let conn = connection_mut(task, "query")?;
-    let result = backend.query(conn, sql, task.in_tx).await;
-    let result = match handle_action_result(result, expect_error)? {
-        Some(result) => result,
-        None => return Ok(ActionObservation::Simple),
+    let result = backend.query(conn, sql, in_tx).await;
+    let Some(result) = handle_action_result(result, expect_error)? else {
+        return Ok(ActionObservation::Simple);
     };
 
     Ok(ActionObservation::Query(observe_query_result(
@@ -145,7 +148,7 @@ fn require_in_tx(task: &TaskState, action: &str) -> Result<(), BackendError> {
 
 fn handle_action_result<T>(
     result: Result<T, BackendError>,
-    expect_error: &Option<ErrorExpectation>,
+    expect_error: Option<&ErrorExpectation>,
 ) -> Result<Option<T>, BackendError> {
     match (result, expect_error) {
         (Ok(value), None) => Ok(Some(value)),

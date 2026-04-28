@@ -1,26 +1,16 @@
 #![cfg(any(feature = "sqlite", feature = "postgres", feature = "turso"))]
+#[path = "custom_logic_between_txn/backend_tx.rs"]
+mod backend_tx;
 
 use std::env;
 
 use sql_middleware::middleware::{
-    ConfigAndPool, MiddlewarePoolConnection, PgConfig, PlaceholderStyle, RowValues,
-    SqlMiddlewareDbError, TxOutcome, translate_placeholders,
+    ConfigAndPool, MiddlewarePoolConnection, PgConfig, RowValues, SqlMiddlewareDbError,
 };
 use tokio::runtime::Runtime;
 
 #[cfg(feature = "postgres")]
-use sql_middleware::postgres::{
-    PostgresOptions, Prepared as PostgresPrepared, Tx as PostgresTx,
-    begin_transaction as begin_postgres_tx,
-};
-#[cfg(feature = "sqlite")]
-use sql_middleware::sqlite::{
-    Prepared as SqlitePrepared, Tx as SqliteTx, begin_transaction as begin_sqlite_tx,
-};
-#[cfg(feature = "turso")]
-use sql_middleware::turso::{
-    Prepared as TursoPrepared, Tx as TursoTx, begin_transaction as begin_turso_tx,
-};
+use sql_middleware::postgres::PostgresOptions;
 #[cfg(feature = "postgres")]
 use sql_middleware::typed_postgres::{Idle as PgIdle, PgConnection, PgManager};
 
@@ -36,135 +26,15 @@ fn postgres_config() -> PgConfig {
     cfg
 }
 
-enum BackendTx<'conn> {
-    #[cfg(feature = "turso")]
-    Turso(TursoTx<'conn>),
-    #[cfg(feature = "postgres")]
-    Postgres(PostgresTx<'conn>),
-    #[cfg(feature = "sqlite")]
-    Sqlite(SqliteTx<'conn>),
-}
-
-enum PreparedStmt {
-    #[cfg(feature = "turso")]
-    Turso(TursoPrepared),
-    #[cfg(feature = "postgres")]
-    Postgres(PostgresPrepared),
-    #[cfg(feature = "sqlite")]
-    Sqlite(SqlitePrepared),
-}
-
-impl BackendTx<'_> {
-    async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
-        match self {
-            #[cfg(feature = "turso")]
-            BackendTx::Turso(tx) => tx.commit().await,
-            #[cfg(feature = "postgres")]
-            BackendTx::Postgres(tx) => tx.commit().await,
-            #[cfg(feature = "sqlite")]
-            BackendTx::Sqlite(tx) => tx.commit().await,
-        }
-    }
-
-    async fn rollback(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
-        match self {
-            #[cfg(feature = "turso")]
-            BackendTx::Turso(tx) => tx.rollback().await,
-            #[cfg(feature = "postgres")]
-            BackendTx::Postgres(tx) => tx.rollback().await,
-            #[cfg(feature = "sqlite")]
-            BackendTx::Sqlite(tx) => tx.rollback().await,
-        }
-    }
-}
-
-impl PreparedStmt {
-    async fn execute_prepared(
-        &mut self,
-        tx: &mut BackendTx<'_>,
-        params: &[RowValues],
-    ) -> Result<usize, SqlMiddlewareDbError> {
-        match (tx, self) {
-            #[cfg(feature = "turso")]
-            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt)) => {
-                tx.execute_prepared(stmt, params).await
-            }
-            #[cfg(feature = "postgres")]
-            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
-                tx.execute_prepared(stmt, params).await
-            }
-            #[cfg(feature = "sqlite")]
-            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
-                tx.execute_prepared(stmt, params).await
-            }
-            _ => unreachable!("transaction and prepared variants should align"),
-        }
-    }
-}
-
-async fn run_execute_with_finalize(
-    mut tx: BackendTx<'_>,
-    mut stmt: PreparedStmt,
-    params: Vec<RowValues>,
-) -> Result<usize, SqlMiddlewareDbError> {
-    let result = stmt.execute_prepared(&mut tx, &params).await;
-    match result {
-        Ok(rows) => {
-            tx.commit().await?;
-            Ok(rows)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
-}
-
-async fn prepare_backend_tx_and_stmt<'conn>(
-    conn: &'conn mut MiddlewarePoolConnection,
-    base_query: &str,
-) -> Result<(BackendTx<'conn>, PreparedStmt), SqlMiddlewareDbError> {
-    match conn {
-        #[cfg(feature = "turso")]
-        MiddlewarePoolConnection::Turso { conn, .. } => {
-            let tx = begin_turso_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
-            let stmt = tx.prepare(q.as_ref()).await?;
-            Ok((BackendTx::Turso(tx), PreparedStmt::Turso(stmt)))
-        }
-        #[cfg(feature = "postgres")]
-        MiddlewarePoolConnection::Postgres { client, .. } => {
-            let tx = begin_postgres_tx(client).await?;
-            let stmt = tx.prepare(base_query).await?;
-            Ok((BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)))
-        }
-        #[cfg(feature = "sqlite")]
-        MiddlewarePoolConnection::Sqlite {
-            translate_placeholders: translate_default,
-            ..
-        } => {
-            let translate_default = *translate_default;
-            let tx = begin_sqlite_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, translate_default);
-            let stmt = tx.prepare(q.as_ref())?;
-            Ok((BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)))
-        }
-        _ => Err(SqlMiddlewareDbError::Unimplemented(
-            "expected Turso, Postgres, or SQLite connection".to_string(),
-        )),
-    }
-}
-
 async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMiddlewareDbError> {
     // Shared query authored once; translated for SQLite-family backends.
     let insert_query = "INSERT INTO custom_logic_txn (id, note) VALUES ($1, $2)";
 
     // Success path should commit.
     {
-        let (tx, stmt) = prepare_backend_tx_and_stmt(conn, insert_query).await?;
-        run_execute_with_finalize(
-            tx,
-            stmt,
+        backend_tx::execute_with_finalize(
+            conn,
+            insert_query,
             vec![RowValues::Int(1), RowValues::Text("ok".into())],
         )
         .await?;
@@ -172,10 +42,9 @@ async fn run_roundtrip(conn: &mut MiddlewarePoolConnection) -> Result<(), SqlMid
 
     // Duplicate insert should roll back and propagate the error.
     {
-        let (tx, stmt) = prepare_backend_tx_and_stmt(conn, insert_query).await?;
-        let res = run_execute_with_finalize(
-            tx,
-            stmt,
+        let res = backend_tx::execute_with_finalize(
+            conn,
+            insert_query,
             vec![RowValues::Int(1), RowValues::Text("dup".into())],
         )
         .await;

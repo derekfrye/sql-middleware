@@ -31,22 +31,10 @@ impl Drop for FileCleanup {
     }
 }
 
-#[allow(clippy::float_cmp)]
 #[test]
 fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new()?;
-
-    #[allow(unused_mut)]
-    let mut test_cases = vec![
-        TestCase::Sqlite("file::memory:?cache=shared".to_string()),
-        TestCase::Sqlite(unique_path("test_sqlite")),
-    ];
-
-    #[cfg(feature = "turso")]
-    {
-        test_cases.push(TestCase::Turso(":memory:".to_string()));
-        test_cases.push(TestCase::Turso(unique_path("test_turso")));
-    }
+    let test_cases = test_cases();
 
     for case in test_cases {
         // Clean up files for file-backed cases
@@ -112,7 +100,9 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap(),
                 NaiveDateTime::parse_from_str("2024-01-01 08:00:01", "%Y-%m-%d %H:%M:%S").unwrap()
             );
-            assert_eq!(res.results[0].get("d").unwrap().as_float().unwrap(), 10.5);
+            assert!(
+                (res.results[0].get("d").unwrap().as_float().unwrap() - 10.5).abs() < f64::EPSILON
+            );
             assert!(*res.results[0].get("e").unwrap().as_bool().unwrap());
             assert_eq!(
                 res.results[0].get("f").unwrap().as_blob().unwrap(),
@@ -130,3 +120,21 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+fn test_cases() -> Vec<TestCase> {
+    let mut cases = vec![
+        TestCase::Sqlite("file::memory:?cache=shared".to_string()),
+        TestCase::Sqlite(unique_path("test_sqlite")),
+    ];
+    add_turso_cases(&mut cases);
+    cases
+}
+
+#[cfg(feature = "turso")]
+fn add_turso_cases(cases: &mut Vec<TestCase>) {
+    cases.push(TestCase::Turso(":memory:".to_string()));
+    cases.push(TestCase::Turso(unique_path("test_turso")));
+}
+
+#[cfg(not(feature = "turso"))]
+fn add_turso_cases(_cases: &mut Vec<TestCase>) {}

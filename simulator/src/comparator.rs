@@ -128,19 +128,17 @@ fn compare_query(
     right: &QueryObservation,
     config: ComparisonConfig,
 ) -> Result<(), ComparisonMismatch> {
-    if config.compare_query_summaries {
-        if left.summary != right.summary {
-            return Err(ComparisonMismatch {
-                step,
-                reason: format!(
-                    "query summary mismatch: left rows={} cols={} right rows={} cols={}",
-                    left.summary.row_count,
-                    left.summary.column_count,
-                    right.summary.row_count,
-                    right.summary.column_count
-                ),
-            });
-        }
+    if config.compare_query_summaries && left.summary != right.summary {
+        return Err(ComparisonMismatch {
+            step,
+            reason: format!(
+                "query summary mismatch: left rows={} cols={} right rows={} cols={}",
+                left.summary.row_count,
+                left.summary.column_count,
+                right.summary.row_count,
+                right.summary.column_count
+            ),
+        });
     }
 
     if config.compare_query_values {

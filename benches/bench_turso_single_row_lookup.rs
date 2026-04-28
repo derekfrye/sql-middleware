@@ -1,5 +1,4 @@
 #![cfg(feature = "turso")]
-#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
 
 //! Criterion comparison of single-row SELECT latency for Turso via the
 //! sql-middleware abstraction. Structured to mirror
@@ -50,7 +49,7 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
         .block_on(prepare_turso_dataset(&path, row_count))
         .expect("failed to prepare Turso dataset");
 
-    let mut ids: Vec<i64> = (1..=row_count as i64).collect();
+    let mut ids: Vec<i64> = lookup_ids(row_count);
     let mut rng = ChaCha8Rng::seed_from_u64(1_234_567_890);
     ids.shuffle(&mut rng);
 
@@ -66,11 +65,8 @@ static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
         .expect("create Turso middleware pool")
 });
 
-static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> = LazyLock::new(|| {
-    std::env::var("BENCH_TRACE")
-        .map(|value| value != "0")
-        .unwrap_or(false)
-});
+static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> =
+    LazyLock::new(|| std::env::var("BENCH_TRACE").is_ok_and(|value| value != "0"));
 
 static TURSO_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyLock::new(|| {
     TOKIO_RUNTIME
@@ -107,7 +103,7 @@ impl MiddlewareQueryBreakdown {
     fn record_row(&mut self, query: Duration, decode: Duration, rows_returned: usize) {
         self.total_query += query;
         self.total_decode += decode;
-        self.total_rows += rows_returned as u64;
+        self.total_rows += u64::try_from(rows_returned).expect("rows returned fits in u64");
     }
 
     fn report(&self) {
@@ -115,8 +111,9 @@ impl MiddlewareQueryBreakdown {
             return;
         }
 
-        let query_per_row = self.total_query.as_nanos() as f64 / self.total_rows as f64;
-        let decode_per_row = self.total_decode.as_nanos() as f64 / self.total_rows as f64;
+        let total_rows = f64::from(u32::try_from(self.total_rows).expect("row count fits in u32"));
+        let query_per_row = self.total_query.as_secs_f64() * 1_000_000_000.0 / total_rows;
+        let decode_per_row = self.total_decode.as_secs_f64() * 1_000_000_000.0 / total_rows;
 
         eprintln!(
             "bench trace: middleware execute_select() {:.1} ns/row (decode {:.1} ns/row) across {} rows in {} iterations",
@@ -136,6 +133,11 @@ fn lookup_row_count_to_run() -> usize {
                 .and_then(|value| value.parse().ok())
         })
         .unwrap_or(1000)
+}
+
+fn lookup_ids(row_count: usize) -> Vec<i64> {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    (1..=row_count).map(i64::from).collect()
 }
 
 /// Create (or reset) a Turso database with predictable contents for repeatable runs.
@@ -166,11 +168,13 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
     )
     .await?;
 
-    for id in 1..=row_count as i64 {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    for id in 1..=row_count {
+        let db_id = i64::from(id);
         let params = [
-            RowValues::Int(id),
+            RowValues::Int(db_id),
             RowValues::Text(format!("name-{id}")),
-            RowValues::Float(id as f64 * 0.5),
+            RowValues::Float(f64::from(id) * 0.5),
             RowValues::Bool(id % 2 == 0),
         ];
         let _ = conn
@@ -186,7 +190,6 @@ async fn prepare_turso_dataset(path: &Path, row_count: usize) -> Result<(), SqlM
 
 /// Compact struct used to ensure identical decoding cost across benchmarks.
 #[derive(Debug)]
-#[allow(dead_code)]
 struct BenchRow {
     id: i64,
     name: String,
@@ -208,7 +211,9 @@ impl BenchRow {
 
         let score = match row.get_by_index(2) {
             Some(RowValues::Float(value)) => *value,
-            Some(RowValues::Int(value)) => *value as f64,
+            Some(RowValues::Int(value)) => {
+                f64::from(i32::try_from(*value).expect("score fits in i32"))
+            }
             _ => panic!("expected numeric score column"),
         };
 
@@ -226,14 +231,12 @@ impl BenchRow {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     fn from_turso_row(row: &turso::Row) -> Self {
         let id = match row
             .get_value(0)
             .expect("expected integer id column from turso row")
         {
             TursoValue::Integer(value) => value,
-            TursoValue::Real(value) => value as i64,
             other => panic!("unexpected id column type from turso row: {other:?}"),
         };
 
@@ -250,7 +253,9 @@ impl BenchRow {
             .expect("expected numeric score column from turso row")
         {
             TursoValue::Real(value) => value,
-            TursoValue::Integer(value) => value as f64,
+            TursoValue::Integer(value) => {
+                f64::from(i32::try_from(value).expect("score fits in i32"))
+            }
             other => panic!("unexpected score column type from turso row: {other:?}"),
         };
 
@@ -270,6 +275,10 @@ impl BenchRow {
             score,
             active,
         }
+    }
+
+    fn into_tuple(self) -> (i64, String, f64, bool) {
+        (self.id, self.name, self.score, self.active)
     }
 }
 
@@ -376,7 +385,7 @@ fn benchmark_middleware(
                             let decode_start = Instant::now();
                             let row = result.results.first().expect("expected row in result set");
                             let data = BenchRow::from_result_row(row);
-                            black_box(data);
+                            black_box(data.into_tuple());
                             let decode_elapsed = decode_start.elapsed();
 
                             stats.record_row(query_elapsed, decode_elapsed, result.results.len());
@@ -387,7 +396,7 @@ fn benchmark_middleware(
                                 .expect("execute middleware select");
                             let row = result.results.first().expect("expected row in result set");
                             let data = BenchRow::from_result_row(row);
-                            black_box(data);
+                            black_box(data.into_tuple());
                         }
                     }
                     total += start.elapsed();
@@ -571,7 +580,7 @@ fn benchmark_middleware_decode(
                 for _ in &ids {
                     let start = Instant::now();
                     let data = BenchRow::from_result_row(&sample_row);
-                    black_box(data);
+                    black_box(data.into_tuple());
                     total += start.elapsed();
                 }
             }

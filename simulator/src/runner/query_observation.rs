@@ -1,12 +1,13 @@
 use crate::backends::BackendError;
 use crate::plan::QueryExpectation;
 use sql_middleware::{ResultSet, RowValues};
+use std::fmt::Write;
 
 use super::types::{QueryObservation, QuerySummary};
 
 pub(super) fn observe_query_result(
     result: &ResultSet,
-    expect: &Option<QueryExpectation>,
+    expect: Option<&QueryExpectation>,
 ) -> Result<QueryObservation, BackendError> {
     let summary = summarize_result(result);
     if let Some(expect) = expect {
@@ -70,7 +71,6 @@ fn normalize_value(value: &RowValues) -> String {
 
 fn hex_encode(bytes: &[u8]) -> String {
     let mut encoded = String::with_capacity(bytes.len() * 2);
-    use std::fmt::Write;
     for byte in bytes {
         let _ = write!(encoded, "{byte:02x}");
     }
