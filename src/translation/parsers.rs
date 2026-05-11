@@ -29,8 +29,11 @@ pub(super) fn try_start_dollar_quote(bytes: &[u8], start: usize) -> Option<(Stri
 }
 
 pub(super) fn matches_tag(bytes: &[u8], idx: usize, tag: &str) -> bool {
-    let end = idx + 1 + tag.len();
-    end < bytes.len()
-        && bytes[idx + 1..=end].starts_with(tag.as_bytes())
-        && bytes.get(end) == Some(&b'$')
+    let Some(start) = idx.checked_add(1) else {
+        return false;
+    };
+    let Some(end) = start.checked_add(tag.len()) else {
+        return false;
+    };
+    bytes.get(start..end) == Some(tag.as_bytes()) && bytes.get(end) == Some(&b'$')
 }

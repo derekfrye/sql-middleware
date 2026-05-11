@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 use super::config::SqliteManager;
@@ -5,7 +7,7 @@ use super::config::SqliteManager;
 /// Options for configuring a `SQLite` pool.
 #[derive(Debug, Clone)]
 pub struct SqliteOptions {
-    pub db_path: String,
+    pub db_path: PathBuf,
     pub translate_placeholders: bool,
 }
 
@@ -13,7 +15,15 @@ impl SqliteOptions {
     #[must_use]
     pub fn new(db_path: String) -> Self {
         Self {
-            db_path,
+            db_path: db_path.into(),
+            translate_placeholders: false,
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(db_path: impl Into<PathBuf>) -> Self {
+        Self {
+            db_path: db_path.into(),
             translate_placeholders: false,
         }
     }
@@ -36,6 +46,13 @@ impl SqliteOptionsBuilder {
     pub fn new(db_path: String) -> Self {
         Self {
             opts: SqliteOptions::new(db_path),
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(db_path: impl Into<PathBuf>) -> Self {
+        Self {
+            opts: SqliteOptions::from_path(db_path),
         }
     }
 
@@ -66,12 +83,17 @@ impl ConfigAndPool {
         SqliteOptionsBuilder::new(db_path)
     }
 
+    #[must_use]
+    pub fn sqlite_path_builder(db_path: impl Into<PathBuf>) -> SqliteOptionsBuilder {
+        SqliteOptionsBuilder::from_path(db_path)
+    }
+
     /// Asynchronous initializer for `ConfigAndPool` with Sqlite using a bb8-backed pool.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
     pub async fn new_sqlite(opts: SqliteOptions) -> Result<Self, SqlMiddlewareDbError> {
-        let manager = SqliteManager::new(opts.db_path.clone());
+        let manager = SqliteManager::from_path(opts.db_path.clone());
         let pool = manager.build_pool().await?;
 
         {

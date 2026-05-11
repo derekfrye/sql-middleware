@@ -1,9 +1,11 @@
+use std::path::PathBuf;
+
 use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
 
 /// Options for configuring a Turso database.
 #[derive(Debug, Clone)]
 pub struct TursoOptions {
-    pub db_path: String,
+    pub db_path: PathBuf,
     pub translate_placeholders: bool,
 }
 
@@ -11,7 +13,15 @@ impl TursoOptions {
     #[must_use]
     pub fn new(db_path: String) -> Self {
         Self {
-            db_path,
+            db_path: db_path.into(),
+            translate_placeholders: false,
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(db_path: impl Into<PathBuf>) -> Self {
+        Self {
+            db_path: db_path.into(),
             translate_placeholders: false,
         }
     }
@@ -34,6 +44,13 @@ impl TursoOptionsBuilder {
     pub fn new(db_path: String) -> Self {
         Self {
             opts: TursoOptions::new(db_path),
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(db_path: impl Into<PathBuf>) -> Self {
+        Self {
+            opts: TursoOptions::from_path(db_path),
         }
     }
 
@@ -64,6 +81,11 @@ impl ConfigAndPool {
         TursoOptionsBuilder::new(db_path)
     }
 
+    #[must_use]
+    pub fn turso_path_builder(db_path: impl Into<PathBuf>) -> TursoOptionsBuilder {
+        TursoOptionsBuilder::from_path(db_path)
+    }
+
     /// Asynchronous initializer for `ConfigAndPool` with Turso (local/in-process).
     ///
     /// # Errors
@@ -71,8 +93,13 @@ impl ConfigAndPool {
     pub async fn new_turso(opts: TursoOptions) -> Result<Self, SqlMiddlewareDbError> {
         let db_path = opts.db_path;
         let translate_placeholders = opts.translate_placeholders;
+        let db_path = db_path.to_str().ok_or_else(|| {
+            SqlMiddlewareDbError::ConnectionError(
+                "Turso local database paths must be valid UTF-8".into(),
+            )
+        })?;
 
-        let db = turso::Builder::new_local(&db_path)
+        let db = turso::Builder::new_local(db_path)
             .build()
             .await
             .map_err(|e| {

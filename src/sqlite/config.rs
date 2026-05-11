@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -149,13 +150,22 @@ impl Drop for SqliteWorker {
 
 /// bb8 manager for `SQLite` connections.
 pub struct SqliteManager {
-    db_path: String,
+    db_path: PathBuf,
 }
 
 impl SqliteManager {
     #[must_use]
     pub fn new(db_path: String) -> Self {
-        Self { db_path }
+        Self {
+            db_path: db_path.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(db_path: impl Into<PathBuf>) -> Self {
+        Self {
+            db_path: db_path.into(),
+        }
     }
 
     /// Build a pool from this manager.
