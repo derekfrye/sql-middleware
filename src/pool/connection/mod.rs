@@ -1,6 +1,10 @@
+#[cfg(feature = "mssql")]
 mod mssql;
+#[cfg(feature = "postgres")]
 mod postgres;
+#[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "turso")]
 mod turso;
 
 #[cfg(feature = "postgres")]

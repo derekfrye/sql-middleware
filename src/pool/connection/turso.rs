@@ -36,6 +36,7 @@ impl MiddlewarePoolConnection {
             MiddlewarePoolConnection::Turso {
                 conn: turso_conn, ..
             } => TursoNonTxPreparedStatement::prepare(turso_conn.clone(), query).await,
+            #[cfg(any(feature = "postgres", feature = "sqlite", feature = "mssql"))]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "prepare_turso_statement is only available for Turso connections".to_string(),
             )),
