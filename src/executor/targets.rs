@@ -1,7 +1,11 @@
 use crate::pool::MiddlewarePoolConnection;
 
+mod typed;
+
 #[cfg(feature = "mssql")]
 use crate::mssql;
+#[cfg(feature = "mssql")]
+use crate::mssql::typed::MssqlManager;
 #[cfg(feature = "postgres")]
 use crate::postgres;
 #[cfg(feature = "postgres")]
@@ -12,7 +16,12 @@ use crate::sqlite::config::SqliteManager;
 use crate::turso;
 #[cfg(feature = "turso")]
 use crate::typed_turso::TursoManager;
-#[cfg(any(feature = "postgres", feature = "turso", feature = "sqlite"))]
+#[cfg(any(
+    feature = "postgres",
+    feature = "turso",
+    feature = "sqlite",
+    feature = "mssql"
+))]
 use bb8::PooledConnection;
 
 /// Target for batch execution (connection or transaction).
@@ -59,6 +68,14 @@ pub(crate) enum QueryTargetKind<'a> {
     #[cfg(feature = "postgres")]
     TypedPostgresTx {
         conn: &'a mut PooledConnection<'static, PgManager>,
+    },
+    #[cfg(feature = "mssql")]
+    TypedMssql {
+        conn: &'a mut PooledConnection<'static, MssqlManager>,
+    },
+    #[cfg(feature = "mssql")]
+    TypedMssqlTx {
+        conn: &'a mut PooledConnection<'static, MssqlManager>,
     },
     #[cfg(feature = "turso")]
     TypedTurso {
@@ -110,42 +127,6 @@ impl<'a> From<&'a mut MiddlewarePoolConnection> for QueryTarget<'a> {
     }
 }
 
-#[cfg(feature = "sqlite")]
-impl<'a> QueryTarget<'a> {
-    pub(crate) fn from_typed_sqlite(
-        conn: &'a mut PooledConnection<'static, SqliteManager>,
-        in_tx: bool,
-    ) -> Self {
-        let kind = if in_tx {
-            QueryTargetKind::TypedSqliteTx { conn }
-        } else {
-            QueryTargetKind::TypedSqlite { conn }
-        };
-        QueryTarget {
-            translation_default: false,
-            kind,
-        }
-    }
-}
-
-#[cfg(feature = "postgres")]
-impl<'a> QueryTarget<'a> {
-    pub(crate) fn from_typed_postgres(
-        conn: &'a mut PooledConnection<'static, PgManager>,
-        in_tx: bool,
-    ) -> Self {
-        let kind = if in_tx {
-            QueryTargetKind::TypedPostgresTx { conn }
-        } else {
-            QueryTargetKind::TypedPostgres { conn }
-        };
-        QueryTarget {
-            translation_default: false,
-            kind,
-        }
-    }
-}
-
 #[cfg(feature = "postgres")]
 impl<'a> From<&'a postgres::transaction::Tx<'a>> for QueryTarget<'a> {
     fn from(tx: &'a postgres::transaction::Tx<'a>) -> Self {
@@ -172,24 +153,6 @@ impl<'a> From<&'a turso::transaction::Tx<'a>> for QueryTarget<'a> {
         QueryTarget {
             translation_default: false,
             kind: QueryTargetKind::TursoTx(tx),
-        }
-    }
-}
-
-#[cfg(feature = "turso")]
-impl<'a> QueryTarget<'a> {
-    pub(crate) fn from_typed_turso(
-        conn: &'a mut PooledConnection<'static, TursoManager>,
-        in_tx: bool,
-    ) -> Self {
-        let kind = if in_tx {
-            QueryTargetKind::TypedTursoTx { conn }
-        } else {
-            QueryTargetKind::TypedTurso { conn }
-        };
-        QueryTarget {
-            translation_default: true,
-            kind,
         }
     }
 }

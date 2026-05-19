@@ -153,7 +153,10 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `typed_turso` module (`TursoConnection<Idle|InTx>`, `TursoManager`)
   - **Coverage:** `tests/test09_typed_api_generic.rs`, `tests/test10_bad_drop.rs`.
   - **Purpose:** Typed Turso connections/managers mirroring Postgres/SQLite typed flow; public additive API.
-- `set_skip_drop_rollback_for_tests` (typed_{postgres,sqlite,turso})
+- `typed_mssql` module (`MssqlTypedConnection<Idle|InTx>`, `MssqlManager`)
+  - **Coverage:** Compile-checked with the `mssql` feature; runtime tests require a SQL Server fixture.
+  - **Purpose:** Typed MSSQL connections/managers mirroring the shared typed flow; public additive API.
+- `set_skip_drop_rollback_for_tests` (typed_{postgres,sqlite,turso,mssql})
   - **Coverage:** `tests/test10_bad_drop.rs`.
   - **Purpose:** Test-only toggles to skip drop-time rollbacks; public today for test harnesses/backward compatibility (considered internal).
 

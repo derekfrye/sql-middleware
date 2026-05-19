@@ -14,6 +14,7 @@ pub mod params;
 pub mod prepared;
 pub mod query;
 pub mod transaction;
+pub mod typed;
 
 // Re-export the public API
 pub use client::create_mssql_client;
@@ -23,3 +24,4 @@ pub use params::Params;
 pub use prepared::MssqlNonTxPreparedStatement;
 pub use query::build_result_set;
 pub use transaction::{Prepared, Tx, begin_transaction};
+pub use typed::{Idle as TypedIdle, InTx as TypedInTx, MssqlManager, MssqlTypedConnection};

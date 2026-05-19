@@ -4,6 +4,8 @@
 //! transaction state tracking, plus backend-neutral `AnyIdle`/`AnyTx` wrappers.
 
 mod any;
+#[cfg(feature = "mssql")]
+mod impl_mssql;
 #[cfg(feature = "postgres")]
 mod impl_postgres;
 #[cfg(feature = "sqlite")]

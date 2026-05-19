@@ -10,6 +10,8 @@ impl Queryable for AnyIdle {
             AnyIdle::Postgres(conn) => conn.query(sql),
             #[cfg(feature = "sqlite")]
             AnyIdle::Sqlite(conn) => conn.query(sql),
+            #[cfg(feature = "mssql")]
+            AnyIdle::Mssql(conn) => conn.query(sql),
             #[cfg(feature = "turso")]
             AnyIdle::Turso(conn) => conn.query(sql),
             #[allow(unreachable_patterns)]
@@ -25,6 +27,8 @@ impl Queryable for AnyTx {
             AnyTx::Postgres(conn) => conn.query(sql),
             #[cfg(feature = "sqlite")]
             AnyTx::Sqlite(conn) => conn.query(sql),
+            #[cfg(feature = "mssql")]
+            AnyTx::Mssql(conn) => conn.query(sql),
             #[cfg(feature = "turso")]
             AnyTx::Turso(conn) => conn.query(sql),
             #[allow(unreachable_patterns)]

@@ -23,6 +23,10 @@ impl QueryTarget<'_> {
             QueryTargetKind::TypedPostgres { .. } => Some(PlaceholderStyle::Postgres),
             #[cfg(feature = "postgres")]
             QueryTargetKind::TypedPostgresTx { .. } => Some(PlaceholderStyle::Postgres),
+            #[cfg(feature = "mssql")]
+            QueryTargetKind::TypedMssql { .. } => None,
+            #[cfg(feature = "mssql")]
+            QueryTargetKind::TypedMssqlTx { .. } => None,
             #[cfg(feature = "turso")]
             QueryTargetKind::TursoTx(_) => Some(PlaceholderStyle::Sqlite),
             #[cfg(feature = "turso")]

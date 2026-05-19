@@ -1,3 +1,6 @@
+## 0.8.0
+- Added typed MSSQL support (`mssql::typed` and `typed_mssql`) with typestate idle/transaction wrappers, `AnyIdle`/`AnyTx` integration, query-builder targets, and a `typed-mssql` compatibility feature alias.
+
 ## 0.4.0
 - New typestate API (`typed` module with `AnyIdle`/`AnyTx`, backend wrappers, and `TxOutcome`) plus unified `query`/`execute_batch` targets that work with pooled connections or explicit transactions across Postgres, SQLite, Turso, and MSSQL. See an example in [test11](../tests/test11_issue_2.rs).
 - Swapped PostgreSQL/SQLite pooling to `bb8` with new backend-specific config builders (`postgres_builder`, `sqlite_builder`) and optional placeholder translation flags; `bb8` gives us custom managers/owned clients needed by the new typed connections and keeps pooling consistent across Postgres/SQLite/Turso. Version bumped to `0.4.0` with compatibility aliases for `typed-postgres`/`typed-turso`.

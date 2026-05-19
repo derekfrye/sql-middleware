@@ -1,6 +1,6 @@
 [package]
 name = "sql-middleware"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2024"
 authors = ["Derek Frye <derek.frye@gmail.com>"]
 license = "MIT"
@@ -24,6 +24,7 @@ sqlite = ["dep:rusqlite", "dep:bb8"]
 postgres = ["dep:tokio-postgres", "dep:bb8"]
 typed-postgres = ["postgres"] # compatibility alias; typed API is always on when postgres is enabled
 mssql = ["dep:tiberius", "dep:futures-util", "dep:bb8-tiberius", "dep:bb8"]
+typed-mssql = ["mssql"] # compatibility alias; typed API is always on when mssql is enabled
 turso = ["dep:turso", "dep:bb8"]
 typed-turso = ["turso"] # compatibility alias; typed API is always on when turso is enabled
 benchmarks = ["dep:criterion", "dep:rand", "dep:rand_chacha"]

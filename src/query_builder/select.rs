@@ -11,9 +11,16 @@ use crate::types::RowValues;
 use crate::postgres::typed::PgManager;
 #[cfg(feature = "sqlite")]
 use crate::sqlite::config::SqliteManager;
+#[cfg(feature = "mssql")]
+use crate::typed_mssql::MssqlManager;
 #[cfg(feature = "turso")]
 use crate::typed_turso::TursoManager;
-#[cfg(any(feature = "postgres", feature = "sqlite", feature = "turso"))]
+#[cfg(any(
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "turso",
+    feature = "mssql"
+))]
 use bb8::PooledConnection;
 
 use super::{QueryBuilder, translate_query_for_target};
@@ -60,6 +67,11 @@ impl QueryBuilder<'_, '_> {
                 kind: QueryTargetKind::TypedTurso { conn } | QueryTargetKind::TypedTursoTx { conn },
                 ..
             } => select_typed_turso(conn, translated.as_ref(), self.params.as_ref()).await,
+            #[cfg(feature = "mssql")]
+            QueryTarget {
+                kind: QueryTargetKind::TypedMssql { conn } | QueryTargetKind::TypedMssqlTx { conn },
+                ..
+            } => select_typed_mssql(conn, translated.as_ref(), self.params.as_ref()).await,
             #[cfg(feature = "postgres")]
             QueryTarget {
                 kind: QueryTargetKind::PostgresTx(tx),
@@ -144,4 +156,13 @@ async fn select_typed_turso(
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     crate::typed_turso::select(conn, query, params).await
+}
+
+#[cfg(feature = "mssql")]
+async fn select_typed_mssql(
+    conn: &mut PooledConnection<'static, MssqlManager>,
+    query: &str,
+    params: &[RowValues],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    crate::typed_mssql::select(conn, query, params).await
 }

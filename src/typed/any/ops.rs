@@ -16,6 +16,8 @@ impl TypedConnOps for AnyIdle {
                 AnyIdle::Postgres(conn) => conn.execute_batch(sql).await,
                 #[cfg(feature = "sqlite")]
                 AnyIdle::Sqlite(conn) => conn.execute_batch(sql).await,
+                #[cfg(feature = "mssql")]
+                AnyIdle::Mssql(conn) => conn.execute_batch(sql).await,
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => conn.execute_batch(sql).await,
                 #[allow(unreachable_patterns)]
@@ -36,6 +38,8 @@ impl TypedConnOps for AnyIdle {
                 AnyIdle::Postgres(conn) => conn.dml(query, params).await,
                 #[cfg(feature = "sqlite")]
                 AnyIdle::Sqlite(conn) => conn.dml(query, params).await,
+                #[cfg(feature = "mssql")]
+                AnyIdle::Mssql(conn) => conn.dml(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => conn.dml(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -56,6 +60,8 @@ impl TypedConnOps for AnyIdle {
                 AnyIdle::Postgres(conn) => conn.select(query, params).await,
                 #[cfg(feature = "sqlite")]
                 AnyIdle::Sqlite(conn) => conn.select(query, params).await,
+                #[cfg(feature = "mssql")]
+                AnyIdle::Mssql(conn) => conn.select(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => conn.select(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -77,6 +83,8 @@ impl TypedConnOps for AnyTx {
                 AnyTx::Postgres(conn) => conn.execute_batch(sql).await,
                 #[cfg(feature = "sqlite")]
                 AnyTx::Sqlite(conn) => conn.execute_batch(sql).await,
+                #[cfg(feature = "mssql")]
+                AnyTx::Mssql(conn) => conn.execute_batch(sql).await,
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(conn) => conn.execute_batch(sql).await,
                 #[allow(unreachable_patterns)]
@@ -97,6 +105,8 @@ impl TypedConnOps for AnyTx {
                 AnyTx::Postgres(conn) => conn.dml(query, params).await,
                 #[cfg(feature = "sqlite")]
                 AnyTx::Sqlite(conn) => conn.dml(query, params).await,
+                #[cfg(feature = "mssql")]
+                AnyTx::Mssql(conn) => conn.dml(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(conn) => conn.dml(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -117,6 +127,8 @@ impl TypedConnOps for AnyTx {
                 AnyTx::Postgres(conn) => conn.select(query, params).await,
                 #[cfg(feature = "sqlite")]
                 AnyTx::Sqlite(conn) => conn.select(query, params).await,
+                #[cfg(feature = "mssql")]
+                AnyTx::Mssql(conn) => conn.select(query, params).await,
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(conn) => conn.select(query, params).await,
                 #[allow(unreachable_patterns)]
@@ -137,6 +149,8 @@ impl BeginTx for AnyIdle {
                 AnyIdle::Postgres(conn) => Ok(AnyTx::Postgres(conn.begin().await?)),
                 #[cfg(feature = "sqlite")]
                 AnyIdle::Sqlite(conn) => Ok(AnyTx::Sqlite(conn.begin().await?)),
+                #[cfg(feature = "mssql")]
+                AnyIdle::Mssql(conn) => Ok(AnyTx::Mssql(conn.begin().await?)),
                 #[cfg(feature = "turso")]
                 AnyIdle::Turso(conn) => Ok(AnyTx::Turso(conn.begin().await?)),
                 #[allow(unreachable_patterns)]
@@ -157,6 +171,8 @@ impl TxConn for AnyTx {
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.commit().await?)),
                 #[cfg(feature = "sqlite")]
                 AnyTx::Sqlite(tx) => Ok(AnyIdle::Sqlite(tx.commit().await?)),
+                #[cfg(feature = "mssql")]
+                AnyTx::Mssql(tx) => Ok(AnyIdle::Mssql(tx.commit().await?)),
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.commit().await?)),
                 #[allow(unreachable_patterns)]
@@ -176,6 +192,8 @@ impl TxConn for AnyTx {
                 AnyTx::Postgres(tx) => Ok(AnyIdle::Postgres(tx.rollback().await?)),
                 #[cfg(feature = "sqlite")]
                 AnyTx::Sqlite(tx) => Ok(AnyIdle::Sqlite(tx.rollback().await?)),
+                #[cfg(feature = "mssql")]
+                AnyTx::Mssql(tx) => Ok(AnyIdle::Mssql(tx.rollback().await?)),
                 #[cfg(feature = "turso")]
                 AnyTx::Turso(tx) => Ok(AnyIdle::Turso(tx.rollback().await?)),
                 #[allow(unreachable_patterns)]

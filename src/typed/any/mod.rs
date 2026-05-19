@@ -1,5 +1,7 @@
 //! Backend-neutral `AnyIdle` and `AnyTx` enum wrappers.
 
+#[cfg(feature = "mssql")]
+use crate::mssql::typed::{Idle as MsIdle, InTx as MsInTx, MssqlTypedConnection};
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::{Idle as PgIdle, InTx as PgInTx, PgConnection};
 #[cfg(feature = "sqlite")]
@@ -16,6 +18,8 @@ pub enum AnyIdle {
     Postgres(PgConnection<PgIdle>),
     #[cfg(feature = "sqlite")]
     Sqlite(SqliteTypedConnection<SqIdle>),
+    #[cfg(feature = "mssql")]
+    Mssql(MssqlTypedConnection<MsIdle>),
     #[cfg(feature = "turso")]
     Turso(TursoConnection<TuIdle>),
 }
@@ -26,6 +30,8 @@ pub enum AnyTx {
     Postgres(PgConnection<PgInTx>),
     #[cfg(feature = "sqlite")]
     Sqlite(SqliteTypedConnection<SqInTx>),
+    #[cfg(feature = "mssql")]
+    Mssql(MssqlTypedConnection<MsInTx>),
     #[cfg(feature = "turso")]
     Turso(TursoConnection<TuInTx>),
 }

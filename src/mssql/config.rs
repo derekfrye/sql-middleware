@@ -161,7 +161,7 @@ impl ConfigAndPool {
     }
 }
 
-fn build_tiberius_config(opts: &MssqlOptions) -> TiberiusConfig {
+pub(crate) fn build_tiberius_config(opts: &MssqlOptions) -> TiberiusConfig {
     let mut config = TiberiusConfig::new();
     config.host(&opts.server);
     config.database(&opts.database);

@@ -17,6 +17,8 @@ pub mod tx_outcome;
 pub mod typed;
 /// Back-compat re-export: `typed_api` is now `typed`.
 pub use typed as typed_api;
+#[cfg(feature = "mssql")]
+pub mod typed_mssql;
 #[cfg(feature = "postgres")]
 pub mod typed_postgres;
 #[cfg(feature = "sqlite")]
