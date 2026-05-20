@@ -533,11 +533,7 @@ fn benchmark_middleware_marshalling(
                                 .prepare("SELECT id, name, score, active FROM test WHERE id = ?1")
                                 .await
                                 .expect("prepare statement");
-                            let cols = stmt
-                                .columns()
-                                .into_iter()
-                                .map(|c| c.name().to_string())
-                                .collect::<Vec<_>>();
+                            let cols = stmt.column_names();
                             let cols_arc = Arc::new(cols);
                             let params = [RowValues::Int(id)];
                             let converted = <TursoParams as ParamConverter>::convert_sql_params(

@@ -4,7 +4,6 @@ use crate::adapters::params::convert_params;
 use crate::executor::QueryTarget;
 use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
-use crate::query_utils::extract_column_names;
 use crate::results::ResultSet;
 use crate::turso::params::Params as TursoParams;
 use crate::types::ConversionMode;
@@ -73,11 +72,11 @@ async fn select_rows(
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
     let mut stmt = conn
-        .prepare(query)
+        .prepare_cached(query)
         .await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso prepare error: {e}")))?;
 
-    let cols = extract_column_names(stmt.columns().iter(), |col| col.name());
+    let cols = stmt.column_names();
     let cols_arc = std::sync::Arc::new(cols);
 
     let rows = stmt

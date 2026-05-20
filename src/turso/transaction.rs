@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::adapters::params::convert_params;
 use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
-use crate::query_utils::extract_column_names;
 use crate::turso::params::Params as TursoParams;
 use crate::tx_outcome::TxOutcome;
 
@@ -32,7 +31,7 @@ impl Tx<'_> {
             SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
         })?;
 
-        let cols = extract_column_names(stmt.columns().iter(), |col| col.name());
+        let cols = stmt.column_names();
 
         Ok(Prepared {
             stmt,
@@ -113,7 +112,7 @@ impl Tx<'_> {
             SqlMiddlewareDbError::ExecutionError(format!("Turso tx prepare error: {e}"))
         })?;
 
-        let cols = extract_column_names(stmt.columns().iter(), |col| col.name());
+        let cols = stmt.column_names();
         let cols_arc = Arc::new(cols);
 
         let rows = stmt.query(converted.0).await.map_err(|e| {

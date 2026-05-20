@@ -1,6 +1,5 @@
 use crate::adapters::params::convert_params;
 use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
-use crate::query_utils::extract_column_names;
 use crate::turso::params::Params as TursoParams;
 
 /// Execute a batch of SQL statements for Turso
@@ -33,11 +32,11 @@ pub async fn execute_select(
 
     // Prepare to fetch column names
     let mut stmt = turso_conn
-        .prepare(query)
+        .prepare_cached(query)
         .await
         .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}")))?;
 
-    let cols = extract_column_names(stmt.columns().iter(), |col| col.name());
+    let cols = stmt.column_names();
     let cols_arc = std::sync::Arc::new(cols);
 
     // Run query using the same statement to avoid double-prepare

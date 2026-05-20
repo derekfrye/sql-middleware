@@ -4,7 +4,6 @@ use tokio::sync::Mutex;
 
 use crate::adapters::params::convert_params;
 use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
-use crate::query_utils::extract_column_names;
 
 use super::params::Params as TursoParams;
 
@@ -45,11 +44,11 @@ impl TursoNonTxPreparedStatement {
         sql: &str,
     ) -> Result<Self, SqlMiddlewareDbError> {
         let sql_arc = Arc::new(sql.to_owned());
-        let statement = connection.prepare(sql).await.map_err(|e| {
+        let statement = connection.prepare_cached(sql).await.map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
         })?;
 
-        let columns = extract_column_names(statement.columns().iter(), |col| col.name());
+        let columns = statement.column_names();
 
         Ok(Self {
             _connection: connection,
