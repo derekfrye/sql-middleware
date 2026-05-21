@@ -100,19 +100,54 @@ static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
     })
 });
 
+fn sqlite_options(path: &str) -> SqliteConnectOptions {
+    SqliteConnectOptions::from_str(path)
+        .expect("create connect options")
+        .create_if_missing(true)
+        .disable_statement_logging()
+}
+
+fn tuned_sqlite_options(path: &str) -> SqliteConnectOptions {
+    sqlite_options(path)
+        .row_buffer_size(1)
+        .statement_cache_capacity(100)
+}
+
 // Pay the pool construction cost once up-front, keeping our benchmarks focused
 // on connection checkout and query execution.
 static SQLX_POOL: LazyLock<SqlitePool> = LazyLock::new(|| {
     let dataset = &*DATASET;
     let concurrency = u32::try_from(*BENCH_CONCURRENCY).expect("concurrency fits in u32");
     TOKIO_RUNTIME.block_on(async {
-        let options = SqliteConnectOptions::from_str(dataset.path())
-            .expect("create connect options")
-            .create_if_missing(true)
-            .disable_statement_logging();
         SqlitePoolOptions::new()
             .max_connections(concurrency.max(1))
-            .connect_with(options)
+            .connect_with(sqlite_options(dataset.path()))
+            .await
+            .expect("create sqlx pool")
+    })
+});
+
+static SQLX_POOL_NO_TEST_BEFORE_ACQUIRE: LazyLock<SqlitePool> = LazyLock::new(|| {
+    let dataset = &*DATASET;
+    let concurrency = u32::try_from(*BENCH_CONCURRENCY).expect("concurrency fits in u32");
+    TOKIO_RUNTIME.block_on(async {
+        SqlitePoolOptions::new()
+            .max_connections(concurrency.max(1))
+            .test_before_acquire(false)
+            .connect_with(sqlite_options(dataset.path()))
+            .await
+            .expect("create sqlx pool")
+    })
+});
+
+static SQLX_TUNED_POOL: LazyLock<SqlitePool> = LazyLock::new(|| {
+    let dataset = &*DATASET;
+    let concurrency = u32::try_from(*BENCH_CONCURRENCY).expect("concurrency fits in u32");
+    TOKIO_RUNTIME.block_on(async {
+        SqlitePoolOptions::new()
+            .max_connections(concurrency.max(1))
+            .test_before_acquire(false)
+            .connect_with(tuned_sqlite_options(dataset.path()))
             .await
             .expect("create sqlx pool")
     })
@@ -298,6 +333,39 @@ fn benchmark_sqlx_parallel_select(
     });
 }
 
+fn benchmark_sqlx_parallel_select_tuned(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+    let pool = SQLX_TUNED_POOL.clone();
+    let concurrency = *BENCH_CONCURRENCY;
+
+    group.bench_function(
+        BenchmarkId::new("sqlx_parallel_select_tuned", concurrency),
+        |b| {
+            let ids = ids.clone();
+            let pool = pool.clone();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let ids = ids.clone();
+                let pool = pool.clone();
+                async move {
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let start = Instant::now();
+                        sqlx_parallel_select(&pool, &ids, concurrency)
+                            .await
+                            .expect("sqlx parallel select");
+                        total += start.elapsed();
+                    }
+                    total
+                }
+            });
+        },
+    );
+}
+
 fn benchmark_sqlx_pool_checkout(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
@@ -322,6 +390,35 @@ fn benchmark_sqlx_pool_checkout(
             }
         });
     });
+}
+
+fn benchmark_sqlx_pool_checkout_no_test_before_acquire(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let runtime = &*TOKIO_RUNTIME;
+    let pool = SQLX_POOL_NO_TEST_BEFORE_ACQUIRE.clone();
+    let concurrency = *BENCH_CONCURRENCY;
+
+    group.bench_function(
+        BenchmarkId::new("sqlx_pool_checkout_no_test_before_acquire", concurrency),
+        |b| {
+            let pool = pool.clone();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let pool = pool.clone();
+                async move {
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let start = Instant::now();
+                        sqlx_parallel_checkout(&pool, concurrency)
+                            .await
+                            .expect("sqlx pool checkout");
+                        total += start.elapsed();
+                    }
+                    total
+                }
+            });
+        },
+    );
 }
 
 fn benchmark_sqlx_prepare_parallel(
@@ -359,7 +456,9 @@ fn sqlite_multithread_pool_checkout_sqlx(c: &mut Criterion) {
     group.throughput(Throughput::Elements(dataset.ids().len() as u64));
 
     benchmark_sqlx_parallel_select(&mut group);
+    benchmark_sqlx_parallel_select_tuned(&mut group);
     benchmark_sqlx_pool_checkout(&mut group);
+    benchmark_sqlx_pool_checkout_no_test_before_acquire(&mut group);
     benchmark_sqlx_prepare_parallel(&mut group);
 
     group.finish();

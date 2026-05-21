@@ -12,7 +12,7 @@ keywords = ["sql", "sqlite", "postgresql", "turso", "mssql"]
 documentation = "https://docs.rs/sql-middleware"
 
 [workspace]
-members = ["simulator", "bench-harnesses/sqlx_lookup"]
+members = ["simulator", "bench-harnesses/sqlx_lookup", "bench-harnesses/sqlx_lookup_alpha"]
 resolver = "3"
 
 [lints.rust]

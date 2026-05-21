@@ -1,0 +1,614 @@
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow},
+    ConnectOptions, Executor, Row, SqlStr, Statement,
+};
+use std::hint::black_box;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+use tokio::runtime::Runtime;
+
+const SQLITE_SELECT: &str = "SELECT id, name, score, active FROM test WHERE id = ?1";
+
+#[derive(Debug)]
+struct BenchRow {
+    id: i64,
+    name: String,
+    score: f64,
+    active: bool,
+}
+
+impl BenchRow {
+    fn into_tuple(self) -> (i64, String, f64, bool) {
+        (self.id, self.name, self.score, self.active)
+    }
+}
+
+struct Dataset {
+    path: String,
+    ids: Vec<i64>,
+}
+
+impl Dataset {
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn ids(&self) -> &[i64] {
+        &self.ids
+    }
+}
+
+fn shared_dataset_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("benchmark_sqlite_single_lookup.db")
+}
+
+static TOKIO_RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("create tokio runtime"));
+
+static DATASET: LazyLock<Dataset> = LazyLock::new(|| {
+    TOKIO_RUNTIME.block_on(async {
+        let row_count = lookup_row_count_to_run();
+        let path = shared_dataset_path();
+        prepare_sqlite_dataset(path.as_ref(), row_count)
+            .await
+            .expect("failed to prepare dataset");
+
+        let mut ids: Vec<i64> = lookup_ids(row_count);
+        let mut rng = ChaCha8Rng::seed_from_u64(1_234_567_890);
+        ids.shuffle(&mut rng);
+
+        let path_string = path.to_string_lossy().into_owned();
+
+        Dataset {
+            path: path_string,
+            ids,
+        }
+    })
+});
+
+fn lookup_row_count_to_run() -> usize {
+    std::env::var("BENCH_LOOKUPS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .or_else(|| {
+            std::env::var("BENCH_ROWS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+        })
+        .unwrap_or(1000)
+}
+
+fn lookup_ids(row_count: usize) -> Vec<i64> {
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    (1..=row_count).map(i64::from).collect()
+}
+
+fn sqlite_options(path: &str) -> SqliteConnectOptions {
+    SqliteConnectOptions::from_str(path)
+        .expect("options")
+        .create_if_missing(true)
+        .disable_statement_logging()
+}
+
+fn tuned_sqlite_options(path: &str) -> SqliteConnectOptions {
+    sqlite_options(path)
+        .row_buffer_size(1)
+        .statement_cache_capacity(100)
+}
+
+async fn open_pool(path: &str) -> sqlx::Result<sqlx::SqlitePool> {
+    SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(sqlite_options(path))
+        .await
+}
+
+async fn open_pool_no_test_before_acquire(path: &str) -> sqlx::Result<sqlx::SqlitePool> {
+    SqlitePoolOptions::new()
+        .max_connections(5)
+        .test_before_acquire(false)
+        .connect_with(sqlite_options(path))
+        .await
+}
+
+async fn open_tuned_pool(path: &str) -> sqlx::Result<sqlx::SqlitePool> {
+    SqlitePoolOptions::new()
+        .max_connections(5)
+        .test_before_acquire(false)
+        .connect_with(tuned_sqlite_options(path))
+        .await
+}
+
+async fn prepare_sqlite_dataset(path: &Path, row_count: usize) -> Result<(), sqlx::Error> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    if path.exists() {
+        let _ = std::fs::remove_file(path);
+    }
+
+    let path_str = path.to_string_lossy();
+    let options = SqliteConnectOptions::from_str(&path_str)?
+        .create_if_missing(true)
+        .disable_statement_logging();
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options.clone())
+        .await?;
+
+    sqlx::query(
+        "
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE test (
+            id      INTEGER PRIMARY KEY,
+            name    TEXT NOT NULL,
+            score   REAL NOT NULL,
+            active  INTEGER NOT NULL
+        );
+        ",
+    )
+    .execute(&pool)
+    .await?;
+
+    let mut tx = pool.begin().await?;
+
+    let row_count = i32::try_from(row_count).expect("benchmark row count fits in i32");
+    for id in 1..=row_count {
+        let db_id = i64::from(id);
+        let name = format!("name-{id}");
+        let score = f64::from(id) * 0.5;
+        let active = i64::from(id % 2 == 0);
+        sqlx::query("INSERT INTO test (id, name, score, active) VALUES (?1, ?2, ?3, ?4)")
+            .bind(db_id)
+            .bind(name)
+            .bind(score)
+            .bind(active)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    pool.close().await;
+
+    Ok(())
+}
+
+fn bench_row_from_sqlite_row(row: &SqliteRow) -> BenchRow {
+    // Manual decode keeps the SQLx path aligned with middleware's CustomDbRow extraction so the comparison stays fair.
+    BenchRow {
+        id: row.try_get(0).expect("extract id"),
+        name: row.try_get(1).expect("extract name"),
+        score: row.try_get(2).expect("extract score"),
+        active: row
+            .try_get::<i64, _>(3)
+            .map(|value| value != 0)
+            .or_else(|_| row.try_get(3))
+            .expect("extract active"),
+    }
+}
+
+fn benchmark_sqlx_manual_decode(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(BenchmarkId::new("sqlx", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let path = path.clone();
+            async move {
+                let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
+                    // Prepare once per iteration to mirror the middleware benchmark; typical SQLx users rely on the driver-managed cache instead.
+                    let stmt = conn
+                        .prepare(SqlStr::from_static(SQLITE_SELECT))
+                        .await
+                        .expect("prepare statement");
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let row = stmt
+                            .query()
+                            .bind(id)
+                            .fetch_one(&mut *conn)
+                            .await
+                            .expect("sqlx fetch");
+                        let row = bench_row_from_sqlite_row(&row);
+                        // Black-box the decoded struct to mirror the middleware benchmark exactly.
+                        std::hint::black_box(row.into_tuple());
+                    }
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_pool_acquire(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let runtime = &*TOKIO_RUNTIME;
+    let lookup_len = dataset.ids().len();
+
+    group.bench_function(BenchmarkId::new("sqlx_pool_acquire", lookup_len), |b| {
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let path = path.clone();
+            async move {
+                let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let start = Instant::now();
+                    let conn = pool.acquire().await.expect("acquire connection");
+                    drop(conn);
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_pool_acquire_no_test_before_acquire(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let runtime = &*TOKIO_RUNTIME;
+    let lookup_len = dataset.ids().len();
+
+    group.bench_function(
+        BenchmarkId::new("sqlx_pool_acquire_no_test_before_acquire", lookup_len),
+        |b| {
+            let path = dataset.path().to_string();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let path = path.clone();
+                async move {
+                    let pool = open_pool_no_test_before_acquire(&path)
+                        .await
+                        .expect("create sqlx pool");
+
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let start = Instant::now();
+                        let conn = pool.acquire().await.expect("acquire connection");
+                        drop(conn);
+                        total += start.elapsed();
+                    }
+
+                    pool.close().await;
+
+                    total
+                }
+            });
+        },
+    );
+}
+
+fn benchmark_sqlx_prepare(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let runtime = &*TOKIO_RUNTIME;
+    let lookup_len = dataset.ids().len();
+
+    group.bench_function(BenchmarkId::new("sqlx_prepare", lookup_len), |b| {
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let path = path.clone();
+            async move {
+                let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
+                    let start = Instant::now();
+                    let statement = conn
+                        .prepare(SqlStr::from_static(SQLITE_SELECT))
+                        .await
+                        .expect("prepare statement");
+                    total += start.elapsed();
+                    drop(statement);
+                    drop(conn);
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_query_raw(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(BenchmarkId::new("sqlx_query_raw", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let path = path.clone();
+            async move {
+                let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
+                    // Prepare once per iteration to match the middleware flow, even though most SQLx code leans on implicit caching.
+                    let stmt = conn
+                        .prepare(SqlStr::from_static(SQLITE_SELECT))
+                        .await
+                        .expect("prepare statement");
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let row = stmt
+                            .query()
+                            .bind(id)
+                            .fetch_one(&mut *conn)
+                            .await
+                            .expect("sqlx fetch");
+                        // Leave this variant focused on raw row materialisation so we can see the driver-only cost.
+                        black_box(row);
+                    }
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_decode(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(BenchmarkId::new("sqlx_decode", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let path = path.clone();
+            async move {
+                let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
+                    let statement = conn
+                        .prepare(SqlStr::from_static(SQLITE_SELECT))
+                        .await
+                        .expect("prepare statement");
+
+                    let mut rows = Vec::with_capacity(ids.len());
+                    for &id in &ids {
+                        let row = statement
+                            .query()
+                            .bind(id)
+                            .fetch_one(&mut *conn)
+                            .await
+                            .expect("fetch row for decode benchmark");
+                        rows.push(row);
+                    }
+
+                    let start = Instant::now();
+                    for row in rows {
+                        let decoded = bench_row_from_sqlite_row(&row);
+                        black_box(decoded.into_tuple());
+                    }
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_cached_query(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(BenchmarkId::new("sqlx_cached_query", ids.len()), |b| {
+        let ids = ids.clone();
+        let path = dataset.path().to_string();
+        b.to_async(runtime).iter_custom(move |iters| {
+            let ids = ids.clone();
+            let path = path.clone();
+            async move {
+                let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                let mut total = Duration::default();
+                for _ in 0..iters {
+                    let mut conn = pool.acquire().await.expect("acquire connection");
+                    let start = Instant::now();
+                    for &id in &ids {
+                        let row = sqlx::query(SQLITE_SELECT)
+                            .bind(id)
+                            .fetch_one(&mut *conn)
+                            .await
+                            .expect("sqlx fetch");
+                        let row = bench_row_from_sqlite_row(&row);
+                        black_box(row.into_tuple());
+                    }
+                    total += start.elapsed();
+                }
+
+                pool.close().await;
+
+                total
+            }
+        });
+    });
+}
+
+fn benchmark_sqlx_cached_query_persistent_false(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(
+        BenchmarkId::new("sqlx_cached_query_persistent_false", ids.len()),
+        |b| {
+            let ids = ids.clone();
+            let path = dataset.path().to_string();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let ids = ids.clone();
+                let path = path.clone();
+                async move {
+                    let pool = open_pool(&path).await.expect("create sqlx pool");
+
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let mut conn = pool.acquire().await.expect("acquire connection");
+                        let start = Instant::now();
+                        for &id in &ids {
+                            let row = sqlx::query(SQLITE_SELECT)
+                                .persistent(false)
+                                .bind(id)
+                                .fetch_one(&mut *conn)
+                                .await
+                                .expect("sqlx fetch");
+                            let row = bench_row_from_sqlite_row(&row);
+                            black_box(row.into_tuple());
+                        }
+                        total += start.elapsed();
+                    }
+
+                    pool.close().await;
+
+                    total
+                }
+            });
+        },
+    );
+}
+
+fn benchmark_sqlx_cached_query_tuned(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let dataset = &*DATASET;
+    let ids = dataset.ids().to_vec();
+    let runtime = &*TOKIO_RUNTIME;
+
+    group.bench_function(
+        BenchmarkId::new("sqlx_cached_query_tuned", ids.len()),
+        |b| {
+            let ids = ids.clone();
+            let path = dataset.path().to_string();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let ids = ids.clone();
+                let path = path.clone();
+                async move {
+                    let pool = open_tuned_pool(&path).await.expect("create sqlx pool");
+
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let mut conn = pool.acquire().await.expect("acquire connection");
+                        let start = Instant::now();
+                        for &id in &ids {
+                            let row = sqlx::query(SQLITE_SELECT)
+                                .bind(id)
+                                .fetch_one(&mut *conn)
+                                .await
+                                .expect("sqlx fetch");
+                            let row = bench_row_from_sqlite_row(&row);
+                            black_box(row.into_tuple());
+                        }
+                        total += start.elapsed();
+                    }
+
+                    pool.close().await;
+
+                    total
+                }
+            });
+        },
+    );
+}
+
+fn benchmark_sqlx_param_bind(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let ids = DATASET.ids().to_vec();
+    let lookup_len = ids.len();
+
+    group.bench_function(BenchmarkId::new("sqlx_param_bind", lookup_len), |b| {
+        let ids = ids.clone();
+        b.iter_custom(move |iters| {
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let start = Instant::now();
+                for &id in &ids {
+                    let query = sqlx::query(SQLITE_SELECT);
+                    let bound = query.bind(id);
+                    let _ = std::hint::black_box(bound);
+                }
+                total += start.elapsed();
+            }
+            total
+        });
+    });
+}
+
+fn sqlite_single_row_lookup_sqlx(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sqlite_single_row_lookup_sqlx_alpha");
+    group.throughput(Throughput::Elements(DATASET.ids().len() as u64));
+
+    benchmark_sqlx_manual_decode(&mut group);
+    benchmark_sqlx_pool_acquire(&mut group);
+    benchmark_sqlx_pool_acquire_no_test_before_acquire(&mut group);
+    benchmark_sqlx_prepare(&mut group);
+    benchmark_sqlx_query_raw(&mut group);
+    benchmark_sqlx_decode(&mut group);
+    benchmark_sqlx_cached_query(&mut group);
+    benchmark_sqlx_cached_query_persistent_false(&mut group);
+    benchmark_sqlx_cached_query_tuned(&mut group);
+    benchmark_sqlx_param_bind(&mut group);
+
+    group.finish();
+}
+
+criterion_group!(benches, sqlite_single_row_lookup_sqlx);
+criterion_main!(benches);
