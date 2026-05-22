@@ -1,8 +1,4 @@
-# Refactor TODOs (Length Targets)
-
-Targets
-- Keep files ≤ 200 LOC where practical.
-- Keep functions ≤ 50 LOC where practical.
+# Refactor TODOs
 
 Backend Duplication Hotspots
 - Repeated `ConfigAndPool::new_*` constructors across backends (`src/sqlite/config.rs`, `src/postgres/config.rs`, `src/mssql/config.rs`, `src/turso/config.rs`) follow the same pool-init + smoke-test pattern with backend-specific wiring.
@@ -18,137 +14,18 @@ Proposed Next Steps
 - Consolidate result-set assembly into backend-agnostic utilities (parameterised by column/value extractor) to trim repeated loops.
 - Explore a lightweight macro or template to cut down on the identical `mod.rs` re-export boilerplate per backend.
 
-Scan Summary
-- Files > 200 LOC
-  - 493 lines — `tests/test04_AnyConnWrapper.rs`
-- Near-threshold files (watch for growth)
-  - 193 lines — `tests/test02_postgres.rs`
-  - 192 lines — `src/benchmark/postgres.rs`
+## Perf ideas
 
-- Functions > 50 lines (approx)
-  - `tests/test04_AnyConnWrapper.rs`
-    - 374 lines — `async fn run_test_logic(...)`
-    - 91 lines — `fn test4_trait(...)`
-  - `tests/test02_postgres.rs`
-    - 171 lines — `fn test2_postgres_cr_and_del_tbls(...)`
-  - `tests/test03_sqlite.rs`
-    - 142 lines — `fn sqlite_and_turso_multiple_column_test_db2(...)`
-  - `tests/test01.rs`
-    - 95 lines — `fn sqlite_and_turso_core_logic(...)`
-    - 91 lines — `pub fn setup_postgres_embedded(...)`
-  - `src/benchmark/postgres.rs`
-    - 89 lines — `async fn setup_postgres_db(...)`
-  - `src/benchmark/common.rs`
-    - 72 lines — `pub fn generate_postgres_insert_statements(...)`
-    - 72 lines — `pub fn generate_insert_statements(...)`
-  - `benches/common.rs`
-    - 72 lines — mirror of the above
-  - `src/mssql/query.rs`
-    - 58 lines — `pub async fn build_result_set(...)`
-    - 58 lines — `fn extract_value(...)`
+### Hot session / batch worker hop API
 
-Notes
-- Detector may miscount trait signatures; list above filters to concrete fns.
-- Test files can exceed targets, but still worth splitting for readability.
+We already have with_blocking_sqlite, which is powerful but raw. A more structured safe wrapper could let users run a
+     whole hot loop in one worker hop while still using middleware-ish types:
 
-Recommended Refactor Order (highest impact first)
-1) `tests/test04_AnyConnWrapper.rs`
-   - Split into smaller helpers:
-     - `setup_db(db_type)`, `apply_schema(conn)`, `seed_basic(conn)`,
-       `bulk_insert_mw(conn, params)`, `bulk_insert_tx_postgres(...)`,
-       `bulk_insert_tx_sqlite(...)`, `verify_counts(conn, expected)`.
-   - Keep top-level tests thin; group backend-specific branches into dedicated helpers.
+     conn.sqlite_hot_session(|session| {
+         let stmt = session.prepare_cached(SQL)?;
+         for id in ids {
+             ...
+         }
+     }).await?
 
-2) `src/mssql/query.rs`
-   - Extract helpers from `build_result_set`:
-     - `mssql_column_names(stmt) -> Arc<Vec<String>>`
-     - `mssql_row_to_values(row, col_count) -> Vec<RowValues>`
-   - Consider moving `extract_value` per-type mapping into a small focused module function.
-
-4) `tests/test02_postgres.rs`
-   - Factor monolithic test into multiple `#[test]`s or helper functions:
-     - `create_tables()`, `seed_data()`, `verify_rows()`, `drop_tables()`.
-
-5) `tests/test03_sqlite.rs`, `tests/test01.rs`
-   - Already table-driven; extract shared helpers into a small test util (e.g., `tests/util/sqlite_like.rs`):
-     - `create_test_table(conn)`, `seed_from_sql(conn, &str)`, `select_and_assert(...)`.
-
-6) Bench code (`src/benchmark/common.rs`, `benches/common.rs`)
-   - Reduce `generate_*_insert_statements` length by:
-     - Extract `render_row(i) -> String`, `join_statements(rows) -> String`.
-
-Acceptance Criteria
-- After refactors, longest functions in src/ should be ≤ 50 LOC.
-- `tests/test04_AnyConnWrapper.rs` reduced below ~200–250 lines, or split into multiple files under `tests/`.
-- No public API changes in library modules; refactors are internal.
-
-Nice-to-Haves
-- Add a simple `tests/util/mod.rs` for cross-backend test helpers.
-- Where possible, prefer small async helpers over large inlined blocks in tests.
-
-Turso Parity and Follow-ups
----------------------------
-
-Context
-- Added Turso transaction helpers: `turso::Tx`, `begin_transaction`, `with_transaction`.
-- Extended `test4` to cover Turso using a Turso-specific DDL set derived from SQLite’s.
-- Current `turso_core` (0.1.5) translation gaps required relaxing some SQL types/constraints to pass.
-
-Implemented now
-- tests/turso/test4 DDL (relaxed where needed):
-  - 00_event.sql: DATETIME -> TEXT for `ins_ts`, default literal timestamp; removed AUTOINCREMENT.
-  - 02_golfer.sql: DATETIME -> TEXT, default literal timestamp; removed AUTOINCREMENT.
-  - 03_bettor.sql: DATETIME -> TEXT, default literal timestamp.
-  - 04_event_user_player.sql: prepared with FK/REFERENCES removed and DATETIME -> TEXT, but NOT executed yet.
-  - 05_eup_statistic.sql: prepared with JSON affinity -> TEXT and FK removed, but NOT executed yet.
-  - setup.sql: currently a no-op; main data setup still uses tests/test04.sql for other backends.
-
-Test adjustments
-- For Turso, DDL is applied per-file (other backends batch join).
-- For Turso, middleware-based operations mirror SQLite in test4 while DDL converges.
-
-TODOs (as Turso evolves)
-- Re-enable tests/turso/test4/04_event_user_player.sql in Turso DDL list; restore FK REFERENCES and DATETIME defaults.
-- Re-enable tests/turso/test4/05_eup_statistic.sql in Turso DDL list; restore JSON affinity, FK REFERENCES, DATETIME defaults.
-- Switch Turso DDL execution back to a single batched `execute_batch(ddl.join("\n"))` once stable.
-- Expand tests/turso/test4/setup.sql to match tests/test04.sql as constraints become supported.
-- Add a dedicated Turso integration test that exercises `with_transaction` end-to-end.
-- Clean up `unused mut` warning in `src/turso/transaction.rs`.
-
-- ✅ Added `MiddlewarePoolConnection::with_blocking_sqlite` so callers can hold a `rusqlite::Connection` guard for batched work. Benchmarks/tests updated to use the helper.
-- ✅ Introduced `prepare_sqlite_statement` + `SqlitePreparedStatement` for explicit prepared-statement reuse via the worker queue.
-- If we add the guard, benchmark loops would switch from repeated `execute_select`
-  calls to something like:
-  ```rust
-  MiddlewarePool::with_blocking_sqlite(&pool, |conn| {
-      let mut stmt = conn.prepare_cached(query)?;
-      let mut params = [RowValues::Int(0)];
-      for &id in &ids {
-          params[0] = RowValues::Int(id);
-          let result = sqlite_execute_select_sync(&mut stmt, &params)?;
-          let row = result.results.first().unwrap();
-          let data = BenchRow::from_result_row(row);
-          std::hint::black_box(data);
-      }
-      Ok(())
-  }).await?
-  ```
-  so the async↔blocking hand-off happens once per batch instead of once per
-  lookup.
-- ✅ Swapped `deadpool_sqlite::Object::interact` for a per-connection worker task
-  (see `src/sqlite/worker.rs`). `ConfigAndPool::new_sqlite` now wraps pooled
-  objects in `SqliteConnection`, and `execute_*` routes through the worker queue.
-  Added `with_connection` helper for bulk callers.
-- Investigate the pool layer in `MiddlewarePool::get_connection` to see if we can
-  approach SQLx’s ~8 µs checkout cost.
-  - Idea: profile the checkout hot path with Criterion’s `--profile-time` and a
-    `perf` flamegraph; *pro*: immediately shows where time is spent in worker vs
-    `tokio`; *con*: needs Linux tooling and careful interpretation of async
-    frames.
-  - Idea: add lightweight timing spans inside the pool checkout/drop code
-    (bench-only build flag); *pro*: portable and quick to iterate; *con*: adds
-    instrumentation overhead that can skew very short measurements.
-  - Idea: prototype a fast-path that bypasses the worker queue for cached
-    statements using `try_acquire` on the underlying deadpool object; *pro*:
-    could cut scheduler hops entirely; *con*: risks starving other tasks and
-    needs careful error/backoff handling.
+     This is less ergonomic than normal middleware calls, but it directly attacks worker-hop overhead for tight loops.
