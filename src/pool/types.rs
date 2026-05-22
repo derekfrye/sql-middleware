@@ -14,7 +14,9 @@ use bb8::Pool as Bb8MssqlPool;
 use bb8_tiberius::ConnectionManager;
 
 #[cfg(feature = "turso")]
-use turso::Database as TursoDatabase;
+use crate::turso::typed::TursoManager;
+#[cfg(feature = "turso")]
+use bb8::Pool as Bb8TursoPool;
 
 use crate::error::SqlMiddlewareDbError;
 
@@ -33,9 +35,9 @@ pub enum MiddlewarePool {
     /// SQL Server connection pool
     #[cfg(feature = "mssql")]
     Mssql(Bb8MssqlPool<ConnectionManager>),
-    /// `Turso` pseudo-pool (Database handle)
+    /// `Turso` connection pool
     #[cfg(feature = "turso")]
-    Turso(TursoDatabase),
+    Turso(Bb8TursoPool<TursoManager>),
 }
 
 // Manual Debug implementation because not all pool types expose `Debug`
@@ -49,7 +51,7 @@ impl std::fmt::Debug for MiddlewarePool {
             #[cfg(feature = "mssql")]
             Self::Mssql(_) => f.debug_tuple("Mssql").field(&"<TiberiusPool>").finish(),
             #[cfg(feature = "turso")]
-            Self::Turso(_) => f.debug_tuple("Turso").field(&"<Database>").finish(),
+            Self::Turso(pool) => f.debug_tuple("Turso").field(pool).finish(),
         }
     }
 }

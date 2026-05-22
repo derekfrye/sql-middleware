@@ -6,7 +6,6 @@ use sql_middleware::prelude::*;
 fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
-        // Turso isn't pooled in via deadpool yet; `get_connection` creates a fresh connection each time.
         let cap = ConfigAndPool::turso_builder(":memory:".to_string())
             .build()
             .await?;

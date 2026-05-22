@@ -6,7 +6,7 @@ use std::thread;
 use bb8::{ManageConnection, Pool, PooledConnection};
 use crossbeam_channel::{Sender, unbounded};
 
-use crate::middleware::SqlMiddlewareDbError;
+use crate::middleware::{MiddlewarePoolOptions, SqlMiddlewareDbError};
 
 /// Type alias for the pooled `SQLite` connection wrapper.
 pub type SqlitePooledConnection = PooledConnection<'static, SqliteManager>;
@@ -151,6 +151,7 @@ impl Drop for SqliteWorker {
 /// bb8 manager for `SQLite` connections.
 pub struct SqliteManager {
     db_path: PathBuf,
+    pool_options: MiddlewarePoolOptions,
 }
 
 impl SqliteManager {
@@ -158,6 +159,7 @@ impl SqliteManager {
     pub fn new(db_path: String) -> Self {
         Self {
             db_path: db_path.into(),
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
@@ -165,7 +167,14 @@ impl SqliteManager {
     pub fn from_path(db_path: impl Into<PathBuf>) -> Self {
         Self {
             db_path: db_path.into(),
+            pool_options: MiddlewarePoolOptions::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.pool_options = pool_options;
+        self
     }
 
     /// Build a pool from this manager.
@@ -173,7 +182,8 @@ impl SqliteManager {
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build_pool(self) -> Result<Pool<SqliteManager>, SqlMiddlewareDbError> {
-        Pool::builder()
+        self.pool_options
+            .apply_to(Pool::builder())
             .build(self)
             .await
             .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("sqlite pool error: {e}")))

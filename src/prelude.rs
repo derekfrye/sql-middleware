@@ -3,6 +3,13 @@
 //! This module re-exports the most commonly used types and functions
 //! to make it easier to get started with the library.
 
+#[cfg(any(
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "mssql",
+    feature = "turso"
+))]
+pub use crate::middleware::MiddlewarePoolOptions;
 pub use crate::middleware::{
     AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
     MiddlewarePool, MiddlewarePoolConnection, QueryAndParams, QueryBuilder, QueryTarget, ResultSet,

@@ -1,10 +1,24 @@
 pub mod any_conn_wrapper;
 pub mod connection;
 pub mod interaction;
+#[cfg(any(
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "mssql",
+    feature = "turso"
+))]
+pub mod options;
 pub mod types;
 
 pub use any_conn_wrapper::AnyConnWrapper;
 pub use connection::MiddlewarePoolConnection;
+#[cfg(any(
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "mssql",
+    feature = "turso"
+))]
+pub use options::MiddlewarePoolOptions;
 pub use types::MiddlewarePool;
 
 use crate::SqlMiddlewareDbError;

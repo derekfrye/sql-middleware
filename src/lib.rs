@@ -51,6 +51,13 @@ pub mod sqlite;
 pub mod turso;
 
 // Direct exports for frequently used types
+#[cfg(any(
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "mssql",
+    feature = "turso"
+))]
+pub use middleware::MiddlewarePoolOptions;
 pub use middleware::{
     AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
     MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder,

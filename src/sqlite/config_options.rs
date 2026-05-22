@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolOptions, SqlMiddlewareDbError,
+};
 
 use super::config::SqliteManager;
 
@@ -9,6 +11,7 @@ use super::config::SqliteManager;
 pub struct SqliteOptions {
     pub db_path: PathBuf,
     pub translate_placeholders: bool,
+    pub pool_options: MiddlewarePoolOptions,
 }
 
 impl SqliteOptions {
@@ -17,6 +20,7 @@ impl SqliteOptions {
         Self {
             db_path: db_path.into(),
             translate_placeholders: false,
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
@@ -25,12 +29,25 @@ impl SqliteOptions {
         Self {
             db_path: db_path.into(),
             translate_placeholders: false,
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
     #[must_use]
     pub fn with_translation(mut self, translate_placeholders: bool) -> Self {
         self.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 }
@@ -59,6 +76,18 @@ impl SqliteOptionsBuilder {
     #[must_use]
     pub fn translation(mut self, translate_placeholders: bool) -> Self {
         self.opts.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.opts.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.opts.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 
@@ -93,7 +122,9 @@ impl ConfigAndPool {
     /// # Errors
     /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
     pub async fn new_sqlite(opts: SqliteOptions) -> Result<Self, SqlMiddlewareDbError> {
-        let manager = SqliteManager::from_path(opts.db_path.clone());
+        let pool_options = opts.pool_options;
+        let manager =
+            SqliteManager::from_path(opts.db_path.clone()).with_pool_options(pool_options);
         let pool = manager.build_pool().await?;
 
         {

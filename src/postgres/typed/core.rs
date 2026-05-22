@@ -3,7 +3,7 @@ use std::{future::Future, marker::PhantomData, sync::atomic::AtomicBool};
 use bb8::{ManageConnection, Pool, PooledConnection};
 use tokio_postgres::{Client, NoTls};
 
-use crate::middleware::SqlMiddlewareDbError;
+use crate::middleware::{MiddlewarePoolOptions, SqlMiddlewareDbError};
 
 /// Marker types for typestate
 pub enum Idle {}
@@ -12,12 +12,22 @@ pub enum InTx {}
 /// bb8 manager for Postgres clients.
 pub struct PgManager {
     pub(crate) config: tokio_postgres::Config,
+    pub(crate) pool_options: MiddlewarePoolOptions,
 }
 
 impl PgManager {
     #[must_use]
     pub fn new(config: tokio_postgres::Config) -> Self {
-        Self { config }
+        Self {
+            config,
+            pool_options: MiddlewarePoolOptions::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.pool_options = pool_options;
+        self
     }
 
     /// Build a pool from this manager.
@@ -25,7 +35,8 @@ impl PgManager {
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if pool creation fails.
     pub async fn build_pool(self) -> Result<Pool<PgManager>, SqlMiddlewareDbError> {
-        Pool::builder()
+        self.pool_options
+            .apply_to(Pool::builder())
             .build(self)
             .await
             .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("postgres pool error: {e}")))

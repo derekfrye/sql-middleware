@@ -65,6 +65,25 @@ static MIDDLEWARE_CONFIG: LazyLock<ConfigAndPool> = LazyLock::new(|| {
         .expect("create Turso middleware pool")
 });
 
+static MIDDLEWARE_CONFIG_NO_CHECKOUT_TEST: LazyLock<ConfigAndPool> = LazyLock::new(|| {
+    TOKIO_RUNTIME
+        .block_on(
+            ConfigAndPool::turso_builder(DATASET.path().to_string())
+                .test_on_check_out(false)
+                .build(),
+        )
+        .expect("create Turso middleware pool without checkout validation")
+});
+
+static DIRECT_TURSO_DB: LazyLock<Arc<turso::Database>> = LazyLock::new(|| {
+    Arc::new(TOKIO_RUNTIME.block_on(async {
+        turso::Builder::new_local(DATASET.path())
+            .build()
+            .await
+            .expect("create direct Turso database handle")
+    }))
+});
+
 static TRACE_MIDDLEWARE_QUERY: LazyLock<bool> =
     LazyLock::new(|| std::env::var("BENCH_TRACE").is_ok_and(|value| value != "0"));
 
@@ -341,12 +360,24 @@ fn benchmark_turso_raw(
 fn benchmark_middleware(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
+    benchmark_middleware_with_config(group, "middleware", MIDDLEWARE_CONFIG.clone());
+    benchmark_middleware_with_config(
+        group,
+        "middleware_no_test_on_check_out",
+        MIDDLEWARE_CONFIG_NO_CHECKOUT_TEST.clone(),
+    );
+}
+
+fn benchmark_middleware_with_config(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    name: &'static str,
+    config_and_pool: ConfigAndPool,
+) {
     let dataset = &*DATASET;
     let ids = dataset.ids().to_vec();
     let runtime = &*TOKIO_RUNTIME;
-    let config_and_pool = MIDDLEWARE_CONFIG.clone();
 
-    group.bench_function(BenchmarkId::new("middleware", ids.len()), |b| {
+    group.bench_function(BenchmarkId::new(name, ids.len()), |b| {
         let ids = ids.clone();
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
@@ -412,15 +443,71 @@ fn benchmark_middleware(
     });
 }
 
+/// Measure the cost of Turso's public `Database::connect()` path without the middleware pool.
+fn benchmark_database_connect(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
+    let runtime = &*TOKIO_RUNTIME;
+    let db_handle = DIRECT_TURSO_DB.clone();
+    let lookup_len = DATASET.ids().len();
+
+    group.bench_function(BenchmarkId::new("database_connect", lookup_len), |b| {
+        let db_handle = db_handle.clone();
+        b.iter_custom(move |iters| {
+            let db_handle = db_handle.clone();
+            let mut total = Duration::default();
+            for _ in 0..iters {
+                let start = Instant::now();
+                let conn = db_handle.connect().expect("connect direct Turso database");
+                drop(conn);
+                total += start.elapsed();
+            }
+            total
+        });
+    });
+
+    group.bench_function(
+        BenchmarkId::new("database_connect_async_shell", lookup_len),
+        |b| {
+            let db_handle = db_handle.clone();
+            b.to_async(runtime).iter_custom(move |iters| {
+                let db_handle = db_handle.clone();
+                async move {
+                    let mut total = Duration::default();
+                    for _ in 0..iters {
+                        let start = Instant::now();
+                        let conn = db_handle.connect().expect("connect direct Turso database");
+                        drop(conn);
+                        total += start.elapsed();
+                    }
+                    total
+                }
+            });
+        },
+    );
+}
+
 /// Measure the cost of checking out and dropping a middleware connection.
 fn benchmark_pool_acquire(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
 ) {
+    benchmark_pool_acquire_with_config(group, "pool_acquire", MIDDLEWARE_CONFIG.clone());
+    benchmark_pool_acquire_with_config(
+        group,
+        "pool_acquire_no_test_on_check_out",
+        MIDDLEWARE_CONFIG_NO_CHECKOUT_TEST.clone(),
+    );
+}
+
+fn benchmark_pool_acquire_with_config(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    name: &'static str,
+    config_and_pool: ConfigAndPool,
+) {
     let runtime = &*TOKIO_RUNTIME;
-    let config_and_pool = MIDDLEWARE_CONFIG.clone();
     let lookup_len = DATASET.ids().len();
 
-    group.bench_function(BenchmarkId::new("pool_acquire", lookup_len), |b| {
+    group.bench_function(BenchmarkId::new(name, lookup_len), |b| {
         let config_and_pool = config_and_pool.clone();
         b.to_async(runtime).iter_custom(move |iters| {
             let pool = config_and_pool.clone();
@@ -623,6 +710,7 @@ fn turso_single_row_lookup(c: &mut Criterion) {
 
     benchmark_turso_raw(&mut group);
     benchmark_middleware(&mut group);
+    benchmark_database_connect(&mut group);
     benchmark_pool_acquire(&mut group);
     benchmark_middleware_prepare(&mut group);
     benchmark_middleware_interact_only(&mut group);

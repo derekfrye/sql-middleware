@@ -35,9 +35,15 @@ impl MssqlTypedConnection<Idle> {
             ))
         })?;
 
-        Pool::builder().build(manager).await.map_err(|e| {
-            SqlMiddlewareDbError::ConnectionError(format!("Failed to create SQL Server pool: {e}"))
-        })
+        opts.pool_options
+            .apply_to(Pool::builder())
+            .build(manager)
+            .await
+            .map_err(|e| {
+                SqlMiddlewareDbError::ConnectionError(format!(
+                    "Failed to create SQL Server pool: {e}"
+                ))
+            })
     }
 
     /// Checkout a connection from the pool.

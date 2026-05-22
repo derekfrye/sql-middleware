@@ -1,5 +1,7 @@
 use super::typed::PgManager;
-use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolOptions, SqlMiddlewareDbError,
+};
 
 /// Minimal Postgres configuration (keeps the public API backward-compatible
 /// with the old `deadpool_postgres::Config` usage).
@@ -45,6 +47,7 @@ impl PgConfig {
 pub struct PostgresOptions {
     pub config: PgConfig,
     pub translate_placeholders: bool,
+    pub pool_options: MiddlewarePoolOptions,
 }
 
 impl PostgresOptions {
@@ -53,12 +56,25 @@ impl PostgresOptions {
         Self {
             config,
             translate_placeholders: false,
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
     #[must_use]
     pub fn with_translation(mut self, translate_placeholders: bool) -> Self {
         self.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 }
@@ -80,6 +96,18 @@ impl PostgresOptionsBuilder {
     #[must_use]
     pub fn translation(mut self, translate_placeholders: bool) -> Self {
         self.opts.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.opts.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.opts.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 
@@ -112,6 +140,7 @@ impl ConfigAndPool {
     pub async fn new_postgres(opts: PostgresOptions) -> Result<Self, SqlMiddlewareDbError> {
         let pg_config = opts.config;
         let translate_placeholders = opts.translate_placeholders;
+        let pool_options = opts.pool_options;
 
         // Validate all required config fields are present
         if pg_config.dbname.is_none() {
@@ -142,7 +171,7 @@ impl ConfigAndPool {
         }
 
         // Attempt to create connection pool
-        let manager = PgManager::new(pg_config.to_tokio_config());
+        let manager = PgManager::new(pg_config.to_tokio_config()).with_pool_options(pool_options);
         let pg_pool = manager.build_pool().await?;
 
         Ok(ConfigAndPool {

@@ -9,7 +9,7 @@ mod turso;
 
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::PgManager;
-#[cfg(any(feature = "postgres", feature = "mssql"))]
+#[cfg(any(feature = "postgres", feature = "mssql", feature = "turso"))]
 use bb8::PooledConnection;
 #[cfg(feature = "mssql")]
 use bb8_tiberius::ConnectionManager;
@@ -20,7 +20,7 @@ use crate::error::SqlMiddlewareDbError;
 use crate::sqlite::SqliteConnection;
 
 #[cfg(feature = "turso")]
-use ::turso::Connection as TursoConnection;
+use crate::turso::typed::TursoManager;
 
 pub enum MiddlewarePoolConnection {
     #[cfg(feature = "postgres")]
@@ -40,7 +40,7 @@ pub enum MiddlewarePoolConnection {
     },
     #[cfg(feature = "turso")]
     Turso {
-        conn: TursoConnection,
+        conn: PooledConnection<'static, TursoManager>,
         translate_placeholders: bool,
     },
 }
@@ -87,7 +87,9 @@ impl MiddlewarePool {
                 mssql::get_connection(pool, translate_placeholders).await
             }
             #[cfg(feature = "turso")]
-            MiddlewarePool::Turso(db) => turso::get_connection(db, translate_placeholders),
+            MiddlewarePool::Turso(pool) => {
+                turso::get_connection(pool, translate_placeholders).await
+            }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "This database type is not enabled in the current build".to_string(),

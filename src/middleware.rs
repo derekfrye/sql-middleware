@@ -1,6 +1,13 @@
 // Re-export all the types and traits from the sub-modules
 pub use crate::error::SqlMiddlewareDbError;
 pub use crate::executor::{BatchTarget, QueryTarget, execute_batch, query};
+#[cfg(any(
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "mssql",
+    feature = "turso"
+))]
+pub use crate::pool::MiddlewarePoolOptions;
 pub use crate::pool::{AnyConnWrapper, ConfigAndPool, MiddlewarePool, MiddlewarePoolConnection};
 pub use crate::query::QueryAndParams;
 pub use crate::query_builder::QueryBuilder;

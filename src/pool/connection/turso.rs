@@ -1,21 +1,22 @@
 #[cfg(feature = "turso")]
 use crate::error::SqlMiddlewareDbError;
 #[cfg(feature = "turso")]
-use crate::turso::TursoNonTxPreparedStatement;
+use crate::turso::{TursoNonTxPreparedStatement, typed::TursoManager};
 #[cfg(feature = "turso")]
-use turso::Connection as TursoConnection;
-#[cfg(feature = "turso")]
-use turso::Database;
+use bb8::Pool;
 
 #[cfg(feature = "turso")]
 use super::MiddlewarePoolConnection;
 
 #[cfg(feature = "turso")]
-pub(super) fn get_connection(
-    db: &Database,
+pub(super) async fn get_connection(
+    pool: &Pool<TursoManager>,
     translate_placeholders: bool,
 ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
-    let conn: TursoConnection = db.connect().map_err(SqlMiddlewareDbError::from)?;
+    let conn = pool
+        .get_owned()
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ConnectionError(format!("turso checkout error: {e}")))?;
     Ok(MiddlewarePoolConnection::Turso {
         conn,
         translate_placeholders,
@@ -35,7 +36,7 @@ impl MiddlewarePoolConnection {
         match self {
             MiddlewarePoolConnection::Turso {
                 conn: turso_conn, ..
-            } => TursoNonTxPreparedStatement::prepare(turso_conn.clone(), query).await,
+            } => TursoNonTxPreparedStatement::prepare((**turso_conn).clone(), query).await,
             #[cfg(any(feature = "postgres", feature = "sqlite", feature = "mssql"))]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
                 "prepare_turso_statement is only available for Turso connections".to_string(),

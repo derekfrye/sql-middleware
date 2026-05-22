@@ -2,7 +2,9 @@ use bb8::Pool;
 use bb8_tiberius::{ConnectionManager, rt};
 use tiberius::{AuthMethod, Config as TiberiusConfig};
 
-use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolOptions, SqlMiddlewareDbError,
+};
 
 /// Type alias for SQL Server client
 pub type MssqlClient = rt::Client;
@@ -17,6 +19,7 @@ pub struct MssqlOptions {
     pub port: Option<u16>,
     pub instance_name: Option<String>,
     pub translate_placeholders: bool,
+    pub pool_options: MiddlewarePoolOptions,
 }
 
 impl MssqlOptions {
@@ -38,6 +41,7 @@ impl MssqlOptions {
             port,
             instance_name,
             translate_placeholders: false,
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
@@ -56,6 +60,18 @@ impl MssqlOptions {
     #[must_use]
     pub fn with_instance_name(mut self, instance_name: Option<String>) -> Self {
         self.instance_name = instance_name;
+        self
+    }
+
+    #[must_use]
+    pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 }
@@ -97,6 +113,18 @@ impl MssqlOptionsBuilder {
     #[must_use]
     pub fn instance_name(mut self, instance_name: Option<String>) -> Self {
         self.opts.instance_name = instance_name;
+        self
+    }
+
+    #[must_use]
+    pub fn pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.opts.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.opts.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 
@@ -145,6 +173,7 @@ impl ConfigAndPool {
 
         let pool = Pool::builder()
             .max_size(20)
+            .test_on_check_out(opts.pool_options.test_on_check_out)
             .build(manager)
             .await
             .map_err(|e| {

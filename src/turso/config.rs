@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 
-use crate::middleware::{ConfigAndPool, DatabaseType, MiddlewarePool, SqlMiddlewareDbError};
+use crate::middleware::{
+    ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolOptions, SqlMiddlewareDbError,
+};
+use crate::turso::typed::TursoManager;
 
 /// Options for configuring a Turso database.
 #[derive(Debug, Clone)]
 pub struct TursoOptions {
     pub db_path: PathBuf,
     pub translate_placeholders: bool,
+    pub pool_options: MiddlewarePoolOptions,
 }
 
 impl TursoOptions {
@@ -15,6 +19,7 @@ impl TursoOptions {
         Self {
             db_path: db_path.into(),
             translate_placeholders: false,
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
@@ -23,12 +28,25 @@ impl TursoOptions {
         Self {
             db_path: db_path.into(),
             translate_placeholders: false,
+            pool_options: MiddlewarePoolOptions::default(),
         }
     }
 
     #[must_use]
     pub fn with_translation(mut self, translate_placeholders: bool) -> Self {
         self.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 }
@@ -57,6 +75,18 @@ impl TursoOptionsBuilder {
     #[must_use]
     pub fn translation(mut self, translate_placeholders: bool) -> Self {
         self.opts.translate_placeholders = translate_placeholders;
+        self
+    }
+
+    #[must_use]
+    pub fn pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
+        self.opts.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
+        self.opts.pool_options.test_on_check_out = test_on_check_out;
         self
     }
 
@@ -93,6 +123,7 @@ impl ConfigAndPool {
     pub async fn new_turso(opts: TursoOptions) -> Result<Self, SqlMiddlewareDbError> {
         let db_path = opts.db_path;
         let translate_placeholders = opts.translate_placeholders;
+        let pool_options = opts.pool_options;
         let db_path = db_path.to_str().ok_or_else(|| {
             SqlMiddlewareDbError::ConnectionError(
                 "Turso local database paths must be valid UTF-8".into(),
@@ -116,8 +147,11 @@ impl ConfigAndPool {
         // Best-effort pragmas for concurrency (ignore failure on in-memory/unsupported)
         let _ = conn.execute("PRAGMA journal_mode = WAL", ()).await;
 
+        let manager = TursoManager::new(db).with_pool_options(pool_options);
+        let pool = manager.build_pool().await?;
+
         Ok(ConfigAndPool {
-            pool: MiddlewarePool::Turso(db),
+            pool: MiddlewarePool::Turso(pool),
             db_type: DatabaseType::Turso,
             translate_placeholders,
         })
