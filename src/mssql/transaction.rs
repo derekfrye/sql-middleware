@@ -39,7 +39,7 @@ pub async fn begin_transaction(client: &mut MssqlClient) -> Result<Tx<'_>, SqlMi
     Ok(Tx { client, open: true })
 }
 
-impl Tx<'_> {
+impl<'conn> Tx<'conn> {
     /// Prepare a SQL statement tied to this transaction.
     ///
     /// # Errors
@@ -48,6 +48,32 @@ impl Tx<'_> {
         Ok(Prepared {
             sql: sql.to_string(),
         })
+    }
+
+    /// Start configuring a prepared SELECT execution.
+    #[must_use]
+    pub fn select<'tx, 'prepared>(
+        &'tx mut self,
+        prepared: &'prepared Prepared,
+    ) -> PreparedSelect<'tx, 'prepared, 'static, 'conn> {
+        PreparedSelect {
+            tx: self,
+            prepared,
+            params: &[],
+        }
+    }
+
+    /// Start configuring a prepared DML execution.
+    #[must_use]
+    pub fn execute<'tx, 'prepared>(
+        &'tx mut self,
+        prepared: &'prepared Prepared,
+    ) -> PreparedExecute<'tx, 'prepared, 'static, 'conn> {
+        PreparedExecute {
+            tx: self,
+            prepared,
+            params: &[],
+        }
     }
 
     /// Execute a batch of SQL statements inside the transaction.
@@ -85,7 +111,7 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError::ExecutionError` if execution fails or the affected row count cannot be converted.
-    pub async fn execute_prepared(
+    pub(crate) async fn execute_prepared(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -104,7 +130,7 @@ impl Tx<'_> {
     /// # Errors
     ///
     /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
-    pub async fn query_prepared(
+    pub(crate) async fn query_prepared(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -116,7 +142,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
-    pub async fn query_prepared_optional(
+    pub(crate) async fn query_prepared_optional(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -130,7 +156,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if execution fails or no row is returned.
-    pub async fn query_prepared_one(
+    pub(crate) async fn query_prepared_one(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -145,7 +171,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if execution fails, no row is returned, or the mapper fails.
-    pub async fn query_prepared_map_one<T, F>(
+    pub(crate) async fn query_prepared_map_one<T, F>(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -164,7 +190,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if execution or the mapper fails.
-    pub async fn query_prepared_map_optional<T, F>(
+    pub(crate) async fn query_prepared_map_optional<T, F>(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -222,5 +248,109 @@ impl Tx<'_> {
             self.open = false;
         }
         Ok(TxOutcome::without_restored_connection())
+    }
+}
+
+/// Builder for executing a prepared SQL Server DML statement inside a transaction.
+pub struct PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx mut Tx<'conn>,
+    prepared: &'prepared Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedExecute<'tx, 'prepared, 'next, 'conn> {
+        PreparedExecute {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute the DML statement and return affected rows.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution fails or the affected row count cannot be converted.
+    pub async fn run(self) -> Result<usize, SqlMiddlewareDbError> {
+        self.tx.execute_prepared(self.prepared, self.params).await
+    }
+}
+
+/// Builder for executing a prepared SQL Server SELECT inside a transaction.
+pub struct PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx mut Tx<'conn>,
+    prepared: &'prepared Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedSelect<'tx, 'prepared, 'next, 'conn> {
+        PreparedSelect {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute and return all rows as a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
+    pub async fn all(self) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.tx.query_prepared(self.prepared, self.params).await
+    }
+
+    /// Execute and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
+    pub async fn optional(self) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.tx
+            .query_prepared_optional(self.prepared, self.params)
+            .await
+    }
+
+    /// Execute and return exactly one row.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution fails or no row is returned.
+    pub async fn one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.tx.query_prepared_one(self.prepared, self.params).await
+    }
+
+    /// Execute and map exactly one native SQL Server row.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution fails, no row is returned, or the mapper fails.
+    pub async fn map_one<T, F>(self, mapper: F) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.tx
+            .query_prepared_map_one(self.prepared, self.params, mapper)
+            .await
+    }
+
+    /// Execute and map the first native SQL Server row, if present.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution or the mapper fails.
+    pub async fn map_optional<T, F>(self, mapper: F) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.tx
+            .query_prepared_map_optional(self.prepared, self.params, mapper)
+            .await
     }
 }

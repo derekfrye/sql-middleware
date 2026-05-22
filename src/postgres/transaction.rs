@@ -31,7 +31,7 @@ where
     Ok(Tx { tx })
 }
 
-impl Tx<'_> {
+impl<'conn> Tx<'conn> {
     /// Prepare a SQL statement tied to this transaction.
     ///
     /// # Errors
@@ -41,11 +41,37 @@ impl Tx<'_> {
         Ok(Prepared { stmt })
     }
 
+    /// Start configuring a prepared SELECT execution.
+    #[must_use]
+    pub fn select<'tx, 'prepared>(
+        &'tx self,
+        prepared: &'prepared Prepared,
+    ) -> PreparedSelect<'tx, 'prepared, 'static, 'conn> {
+        PreparedSelect {
+            tx: self,
+            prepared,
+            params: &[],
+        }
+    }
+
+    /// Start configuring a prepared DML execution.
+    #[must_use]
+    pub fn execute<'tx, 'prepared>(
+        &'tx self,
+        prepared: &'prepared Prepared,
+    ) -> PreparedExecute<'tx, 'prepared, 'static, 'conn> {
+        PreparedExecute {
+            tx: self,
+            prepared,
+            params: &[],
+        }
+    }
+
     /// Execute a parameterized DML statement and return the affected row count.
     ///
     /// # Errors
     /// Returns an error if parameter conversion, execution, or row-count conversion fails.
-    pub async fn execute_prepared(
+    pub(crate) async fn execute_prepared(
         &self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -75,7 +101,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if parameter conversion, execution, or result building fails.
-    pub async fn query_prepared(
+    pub(crate) async fn query_prepared(
         &self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -88,7 +114,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if parameter conversion, execution, or result building fails.
-    pub async fn query_prepared_optional(
+    pub(crate) async fn query_prepared_optional(
         &self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -102,7 +128,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if execution fails or no row is returned.
-    pub async fn query_prepared_one(
+    pub(crate) async fn query_prepared_one(
         &self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -117,7 +143,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if execution fails, no row is returned, or the mapper fails.
-    pub async fn query_prepared_map_one<T, F>(
+    pub(crate) async fn query_prepared_map_one<T, F>(
         &self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -136,7 +162,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns an error if execution or the mapper fails.
-    pub async fn query_prepared_map_optional<T, F>(
+    pub(crate) async fn query_prepared_map_optional<T, F>(
         &self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -192,5 +218,109 @@ impl Tx<'_> {
     pub async fn rollback(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         self.tx.rollback().await?;
         Ok(TxOutcome::without_restored_connection())
+    }
+}
+
+/// Builder for executing a prepared Postgres DML statement inside a transaction.
+pub struct PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx Tx<'conn>,
+    prepared: &'prepared Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedExecute<'tx, 'prepared, 'next, 'conn> {
+        PreparedExecute {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute the DML statement and return affected rows.
+    ///
+    /// # Errors
+    /// Returns an error if parameter conversion, execution, or row-count conversion fails.
+    pub async fn run(self) -> Result<usize, SqlMiddlewareDbError> {
+        self.tx.execute_prepared(self.prepared, self.params).await
+    }
+}
+
+/// Builder for executing a prepared Postgres SELECT inside a transaction.
+pub struct PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx Tx<'conn>,
+    prepared: &'prepared Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedSelect<'tx, 'prepared, 'next, 'conn> {
+        PreparedSelect {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute and return all rows as a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns an error if parameter conversion, execution, or result building fails.
+    pub async fn all(self) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.tx.query_prepared(self.prepared, self.params).await
+    }
+
+    /// Execute and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns an error if parameter conversion, execution, or result building fails.
+    pub async fn optional(self) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.tx
+            .query_prepared_optional(self.prepared, self.params)
+            .await
+    }
+
+    /// Execute and return exactly one row.
+    ///
+    /// # Errors
+    /// Returns an error if execution fails or no row is returned.
+    pub async fn one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.tx.query_prepared_one(self.prepared, self.params).await
+    }
+
+    /// Execute and map exactly one native Postgres row.
+    ///
+    /// # Errors
+    /// Returns an error if execution fails, no row is returned, or the mapper fails.
+    pub async fn map_one<T, F>(self, mapper: F) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&tokio_postgres::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.tx
+            .query_prepared_map_one(self.prepared, self.params, mapper)
+            .await
+    }
+
+    /// Execute and map the first native Postgres row, if present.
+    ///
+    /// # Errors
+    /// Returns an error if execution or the mapper fails.
+    pub async fn map_optional<T, F>(self, mapper: F) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&tokio_postgres::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.tx
+            .query_prepared_map_optional(self.prepared, self.params, mapper)
+            .await
     }
 }

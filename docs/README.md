@@ -334,24 +334,18 @@ impl<'conn> BackendTx<'conn> {
 }
 
 impl PreparedStmt {
-    async fn query_prepared(
+    async fn select_all(
         &mut self,
         tx: &mut BackendTx<'_>,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
         match (tx, self) {
             #[cfg(feature = "turso")]
-            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt)) => {
-                tx.query_prepared(stmt, params).await
-            }
+            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt)) => tx.select(stmt).params(params).all().await,
             #[cfg(feature = "postgres")]
-            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
-                tx.query_prepared(stmt, params).await
-            }
+            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => tx.select(stmt).params(params).all().await,
             #[cfg(feature = "sqlite")]
-            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
-                tx.query_prepared(stmt, params).await
-            }
+            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => tx.select(stmt).params(params).all().await,
             _ => unreachable!("transaction and prepared variants should align"),
         }
     }
@@ -362,7 +356,7 @@ async fn run_prepared_with_finalize<'conn>(
     mut stmt: PreparedStmt,
     params: Vec<RowValues>,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    let result = stmt.query_prepared(&mut tx, &params).await;
+    let result = stmt.select_all(&mut tx, &params).await;
     match result {
         Ok(rows) => {
             tx.commit().await?;

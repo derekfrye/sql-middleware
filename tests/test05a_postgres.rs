@@ -87,16 +87,16 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             let tx = sql_middleware::postgres::begin_transaction(pg_obj).await?;
             let prepared = tx.prepare("SELECT name FROM t WHERE id = $1").await?;
             let mapped_name = tx
-                .query_prepared_map_one(&prepared, &[RowValues::Int(1)], |row| {
-                    row.try_get::<_, String>(0).map_err(Into::into)
-                })
+                .select(&prepared)
+                .params(&[RowValues::Int(1)])
+                .map_one(|row| row.try_get::<_, String>(0).map_err(Into::into))
                 .await?;
             assert_eq!(mapped_name, "alice");
 
             let mapped_missing = tx
-                .query_prepared_map_optional(&prepared, &[RowValues::Int(2)], |row| {
-                    row.try_get::<_, String>(0).map_err(Into::into)
-                })
+                .select(&prepared)
+                .params(&[RowValues::Int(2)])
+                .map_optional(|row| row.try_get::<_, String>(0).map_err(Into::into))
                 .await?;
             assert!(mapped_missing.is_none());
             tx.commit().await?;

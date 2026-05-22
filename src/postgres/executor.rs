@@ -51,7 +51,7 @@ where
 {
     let tx: Tx<'_> = begin_transaction(pg_client).await?;
     let prepared = tx.prepare(query).await?;
-    let rows = tx.execute_prepared(&prepared, params).await?;
+    let rows = tx.execute(&prepared).params(params).run().await?;
     tx.commit().await?;
     Ok(rows)
 }

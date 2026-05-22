@@ -52,7 +52,7 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         let mut prepared = conn
             .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
             .await?;
-        let result_set = prepared.query(&[RowValues::Int(1)]).await?;
+        let result_set = prepared.select().params(&[RowValues::Int(1)]).all().await?;
         assert_eq!(
             result_set.results[0]
                 .get("name")
@@ -62,14 +62,20 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             "alice"
         );
 
-        let row = prepared.query_one(&[RowValues::Int(1)]).await?;
+        let row = prepared.select().params(&[RowValues::Int(1)]).one().await?;
         assert_eq!(row.get("name").unwrap().as_text().unwrap(), "alice");
 
-        let missing = prepared.query_optional(&[RowValues::Int(2)]).await?;
+        let missing = prepared
+            .select()
+            .params(&[RowValues::Int(2)])
+            .optional()
+            .await?;
         assert!(missing.is_none());
 
         let mapped_name = prepared
-            .query_map_one(&[RowValues::Int(1)], |row| {
+            .select()
+            .params(&[RowValues::Int(1)])
+            .map_one(|row| {
                 row.get::<_, String>(0)
                     .map_err(SqlMiddlewareDbError::SqliteError)
             })
@@ -77,7 +83,9 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(mapped_name, "alice");
 
         let mapped_missing = prepared
-            .query_map_optional(&[RowValues::Int(2)], |row| {
+            .select()
+            .params(&[RowValues::Int(2)])
+            .map_optional(|row| {
                 row.get::<_, String>(0)
                     .map_err(SqlMiddlewareDbError::SqliteError)
             })
@@ -86,12 +94,14 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut params_buf = SqliteParamsBuf::with_capacity(1);
         params_buf.set_int(0, 1);
-        let row = prepared.query_one_params(&params_buf).await?;
+        let row = prepared.select().params_buf(&params_buf).one().await?;
         assert_eq!(row.get("name").unwrap().as_text().unwrap(), "alice");
 
         params_buf.set_int(0, 2);
         let mapped_missing = prepared
-            .query_map_optional_params(&params_buf, |row| {
+            .select()
+            .params_buf(&params_buf)
+            .map_optional(|row| {
                 row.get::<_, String>(0)
                     .map_err(SqlMiddlewareDbError::SqliteError)
             })

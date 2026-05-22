@@ -51,7 +51,7 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
             let mut tx = begin_transaction(&mut conn).await?;
             let stmt = tx.prepare("INSERT INTO stress (id, val) VALUES (?1, ?2)")?;
             let params = [RowValues::Int(i), RowValues::Text(format!("ok-{i}"))];
-            tx.execute_prepared(&stmt, &params).await?;
+            tx.execute(&stmt).params(&params).run().await?;
             tx.commit().await?;
             Ok::<(), SqlMiddlewareDbError>(())
         }));
@@ -67,7 +67,7 @@ async fn sqlite_tx_concurrency_and_rollbacks() -> Result<(), Box<dyn std::error:
             let mut tx = begin_transaction(&mut conn).await?;
             let stmt = tx.prepare("INSERT INTO stress (id, val) VALUES (?1, ?2)")?;
             let params = [RowValues::Int(0), RowValues::Text("dupe".into())];
-            let res = tx.execute_prepared(&stmt, &params).await;
+            let res = tx.execute(&stmt).params(&params).run().await;
             if res.is_ok() {
                 // Unexpected; ensure rollback anyway
                 let _ = tx.rollback().await;
@@ -156,7 +156,7 @@ async fn sqlite_tx_drop_rolls_back() -> Result<(), Box<dyn std::error::Error>> {
         let stmt = tx.prepare("INSERT INTO t3 (id) VALUES (?1)")?;
         let params = [RowValues::Int(1)];
         // Ignore result; drop without explicit commit/rollback should auto-rollback.
-        let _ = tx.execute_prepared(&stmt, &params).await;
+        let _ = tx.execute(&stmt).params(&params).run().await;
     } // drop tx triggers rollback
 
     // Fetch a fresh connection to verify rollback completed.
@@ -191,7 +191,7 @@ async fn sqlite_tx_rejects_second_begin() -> Result<(), Box<dyn std::error::Erro
 
     let mut tx = begin_transaction(&mut conn).await?;
     let stmt = tx.prepare("INSERT INTO t4 (id) VALUES (?1)")?;
-    tx.execute_prepared(&stmt, &[RowValues::Int(1)]).await?;
+    tx.execute(&stmt).params(&[RowValues::Int(1)]).run().await?;
     tx.commit().await?;
     let rs = conn
         .query("SELECT COUNT(*) AS cnt FROM t4")

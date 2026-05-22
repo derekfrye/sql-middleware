@@ -142,7 +142,9 @@ async fn assert_mssql_native_row_mapping(
     let mut tx = sql_middleware::mssql::begin_transaction(mssql_client).await?;
     let prepared = tx.prepare(&format!("SELECT name FROM {test_table} WHERE id = @p1"))?;
     let mapped_name = tx
-        .query_prepared_map_one(&prepared, &[sql_middleware::RowValues::Int(1)], |row| {
+        .select(&prepared)
+        .params(&[sql_middleware::RowValues::Int(1)])
+        .map_one(|row| {
             let value = row
                 .try_get::<&str, _>(0)?
                 .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("name was NULL".into()))?;
@@ -152,7 +154,9 @@ async fn assert_mssql_native_row_mapping(
     assert_eq!(mapped_name, "name_1");
 
     let mapped_missing = tx
-        .query_prepared_map_optional(&prepared, &[sql_middleware::RowValues::Int(-1)], |row| {
+        .select(&prepared)
+        .params(&[sql_middleware::RowValues::Int(-1)])
+        .map_optional(|row| {
             let value = row
                 .try_get::<&str, _>(0)?
                 .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("name was NULL".into()))?;

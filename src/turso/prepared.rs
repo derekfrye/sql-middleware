@@ -62,12 +62,33 @@ impl TursoNonTxPreparedStatement {
         })
     }
 
+    /// Start configuring a prepared SELECT execution.
+    #[must_use]
+    pub fn select(&self) -> TursoPreparedSelect<'_, '_> {
+        TursoPreparedSelect {
+            statement: self,
+            params: TursoPreparedParams::None,
+        }
+    }
+
+    /// Start configuring a prepared DML execution.
+    #[must_use]
+    pub fn execute(&self) -> TursoPreparedExecute<'_, '_> {
+        TursoPreparedExecute {
+            statement: self,
+            params: TursoPreparedParams::None,
+        }
+    }
+
     /// Execute the prepared statement as a query and materialise the rows into a [`ResultSet`].
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if parameter conversion fails, the Turso client reports an
     /// execution error, or result decoding cannot be completed.
-    pub async fn query(&self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
+    pub(crate) async fn query(
+        &self,
+        params: &[RowValues],
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
         let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
         self.query_driver_params(converted.0).await
     }
@@ -76,7 +97,7 @@ impl TursoNonTxPreparedStatement {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or result decoding cannot be completed.
-    pub async fn query_params(
+    pub(crate) async fn query_params(
         &self,
         params: &TursoParamsBuf,
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
@@ -105,7 +126,7 @@ impl TursoNonTxPreparedStatement {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if parameter conversion, execution, or result decoding
     /// fails.
-    pub async fn query_optional(
+    pub(crate) async fn query_optional(
         &self,
         params: &[RowValues],
     ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
@@ -118,7 +139,7 @@ impl TursoNonTxPreparedStatement {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if parameter conversion, execution, or result decoding
     /// fails.
-    pub async fn query_optional_params(
+    pub(crate) async fn query_optional_params(
         &self,
         params: &TursoParamsBuf,
     ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
@@ -131,7 +152,7 @@ impl TursoNonTxPreparedStatement {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or no row is returned.
-    pub async fn query_one(
+    pub(crate) async fn query_one(
         &self,
         params: &[RowValues],
     ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
@@ -142,7 +163,7 @@ impl TursoNonTxPreparedStatement {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or no row is returned.
-    pub async fn query_one_params(
+    pub(crate) async fn query_one_params(
         &self,
         params: &TursoParamsBuf,
     ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
@@ -157,7 +178,7 @@ impl TursoNonTxPreparedStatement {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, no row is returned, or the mapper
     /// fails.
-    pub async fn query_map_one<T, F>(
+    pub(crate) async fn query_map_one<T, F>(
         &self,
         params: &[RowValues],
         mapper: F,
@@ -176,7 +197,7 @@ impl TursoNonTxPreparedStatement {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, no row is returned, or the mapper
     /// fails.
-    pub async fn query_map_one_params<T, F>(
+    pub(crate) async fn query_map_one_params<T, F>(
         &self,
         params: &TursoParamsBuf,
         mapper: F,
@@ -194,7 +215,7 @@ impl TursoNonTxPreparedStatement {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
-    pub async fn query_map_optional<T, F>(
+    pub(crate) async fn query_map_optional<T, F>(
         &self,
         params: &[RowValues],
         mapper: F,
@@ -212,7 +233,7 @@ impl TursoNonTxPreparedStatement {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
-    pub async fn query_map_optional_params<T, F>(
+    pub(crate) async fn query_map_optional_params<T, F>(
         &self,
         params: &TursoParamsBuf,
         mapper: F,
@@ -249,7 +270,10 @@ impl TursoNonTxPreparedStatement {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if parameter conversion fails, Turso returns an execution
     /// error, or the affected-row count cannot be converted into `usize`.
-    pub async fn execute(&self, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
+    pub(crate) async fn execute_values(
+        &self,
+        params: &[RowValues],
+    ) -> Result<usize, SqlMiddlewareDbError> {
         let converted = convert_params::<TursoParams>(params, ConversionMode::Execute)?;
         self.execute_driver_params(converted.0).await
     }
@@ -259,7 +283,7 @@ impl TursoNonTxPreparedStatement {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if Turso returns an execution error, or the affected-row
     /// count cannot be converted into `usize`.
-    pub async fn execute_params(
+    pub(crate) async fn execute_params(
         &self,
         params: &TursoParamsBuf,
     ) -> Result<usize, SqlMiddlewareDbError> {
@@ -298,5 +322,159 @@ impl TursoNonTxPreparedStatement {
         let stmt = self.statement.lock().await;
         stmt.reset()
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso reset error: {e}")))
+    }
+}
+
+/// Builder for executing a prepared Turso DML statement.
+pub struct TursoPreparedExecute<'stmt, 'params> {
+    statement: &'stmt TursoNonTxPreparedStatement,
+    params: TursoPreparedParams<'params>,
+}
+
+impl<'stmt, 'params> TursoPreparedExecute<'stmt, 'params> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(self, params: &'next [RowValues]) -> TursoPreparedExecute<'stmt, 'next> {
+        TursoPreparedExecute {
+            statement: self.statement,
+            params: TursoPreparedParams::RowValues(params),
+        }
+    }
+
+    /// Use a reusable Turso parameter buffer.
+    #[must_use]
+    pub fn params_buf<'next>(
+        self,
+        params: &'next TursoParamsBuf,
+    ) -> TursoPreparedExecute<'stmt, 'next> {
+        TursoPreparedExecute {
+            statement: self.statement,
+            params: TursoPreparedParams::Buffer(params),
+        }
+    }
+
+    /// Execute the DML statement and return affected rows.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or the row count cannot be converted.
+    pub async fn run(self) -> Result<usize, SqlMiddlewareDbError> {
+        match self.params {
+            TursoPreparedParams::None => self.statement.execute_values(&[]).await,
+            TursoPreparedParams::RowValues(params) => self.statement.execute_values(params).await,
+            TursoPreparedParams::Buffer(params) => self.statement.execute_params(params).await,
+        }
+    }
+}
+
+enum TursoPreparedParams<'params> {
+    None,
+    RowValues(&'params [RowValues]),
+    Buffer(&'params TursoParamsBuf),
+}
+
+/// Builder for executing a prepared Turso SELECT.
+pub struct TursoPreparedSelect<'stmt, 'params> {
+    statement: &'stmt TursoNonTxPreparedStatement,
+    params: TursoPreparedParams<'params>,
+}
+
+impl<'stmt, 'params> TursoPreparedSelect<'stmt, 'params> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(self, params: &'next [RowValues]) -> TursoPreparedSelect<'stmt, 'next> {
+        TursoPreparedSelect {
+            statement: self.statement,
+            params: TursoPreparedParams::RowValues(params),
+        }
+    }
+
+    /// Use a reusable Turso parameter buffer.
+    #[must_use]
+    pub fn params_buf<'next>(
+        self,
+        params: &'next TursoParamsBuf,
+    ) -> TursoPreparedSelect<'stmt, 'next> {
+        TursoPreparedSelect {
+            statement: self.statement,
+            params: TursoPreparedParams::Buffer(params),
+        }
+    }
+
+    /// Execute and return all rows as a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or result decoding cannot be completed.
+    pub async fn all(self) -> Result<ResultSet, SqlMiddlewareDbError> {
+        match self.params {
+            TursoPreparedParams::None => self.statement.query(&[]).await,
+            TursoPreparedParams::RowValues(params) => self.statement.query(params).await,
+            TursoPreparedParams::Buffer(params) => self.statement.query_params(params).await,
+        }
+    }
+
+    /// Execute and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution or result decoding fails.
+    pub async fn optional(self) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        match self.params {
+            TursoPreparedParams::None => self.statement.query_optional(&[]).await,
+            TursoPreparedParams::RowValues(params) => self.statement.query_optional(params).await,
+            TursoPreparedParams::Buffer(params) => {
+                self.statement.query_optional_params(params).await
+            }
+        }
+    }
+
+    /// Execute and return exactly one row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or no row is returned.
+    pub async fn one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        match self.params {
+            TursoPreparedParams::None => self.statement.query_one(&[]).await,
+            TursoPreparedParams::RowValues(params) => self.statement.query_one(params).await,
+            TursoPreparedParams::Buffer(params) => self.statement.query_one_params(params).await,
+        }
+    }
+
+    /// Execute and map exactly one native Turso row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails, no row is returned, or the mapper fails.
+    pub async fn map_one<T, F>(self, mapper: F) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        match self.params {
+            TursoPreparedParams::None => self.statement.query_map_one(&[], mapper).await,
+            TursoPreparedParams::RowValues(params) => {
+                self.statement.query_map_one(params, mapper).await
+            }
+            TursoPreparedParams::Buffer(params) => {
+                self.statement.query_map_one_params(params, mapper).await
+            }
+        }
+    }
+
+    /// Execute and map the first native Turso row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
+    pub async fn map_optional<T, F>(self, mapper: F) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        match self.params {
+            TursoPreparedParams::None => self.statement.query_map_optional(&[], mapper).await,
+            TursoPreparedParams::RowValues(params) => {
+                self.statement.query_map_optional(params, mapper).await
+            }
+            TursoPreparedParams::Buffer(params) => {
+                self.statement
+                    .query_map_optional_params(params, mapper)
+                    .await
+            }
+        }
     }
 }

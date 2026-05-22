@@ -31,23 +31,22 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             .prepare("INSERT INTO t (id, name) VALUES (?1, ?2)")
             .await?;
         let _ = tx
-            .execute_prepared(
-                &mut stmt,
-                &[RowValues::Int(1), RowValues::Text("alice".into())],
-            )
+            .execute(&mut stmt)
+            .params(&[RowValues::Int(1), RowValues::Text("alice".into())])
+            .run()
             .await?;
         let mut stmt = tx.prepare("SELECT name FROM t WHERE id = ?1").await?;
         let mapped_name = tx
-            .query_prepared_map_one(&mut stmt, &[RowValues::Int(1)], |row| {
-                row.get::<String>(0).map_err(Into::into)
-            })
+            .select(&mut stmt)
+            .params(&[RowValues::Int(1)])
+            .map_one(|row| row.get::<String>(0).map_err(Into::into))
             .await?;
         assert_eq!(mapped_name, "alice");
 
         let mapped_missing = tx
-            .query_prepared_map_optional(&mut stmt, &[RowValues::Int(2)], |row| {
-                row.get::<String>(0).map_err(Into::into)
-            })
+            .select(&mut stmt)
+            .params(&[RowValues::Int(2)])
+            .map_optional(|row| row.get::<String>(0).map_err(Into::into))
             .await?;
         assert!(mapped_missing.is_none());
         tx.commit().await?;
@@ -69,13 +68,17 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
         let mut params_buf = TursoParamsBuf::with_capacity(1);
         params_buf.set_int(0, 1);
         let mapped_name = prepared
-            .query_map_one_params(&params_buf, |row| row.get::<String>(0).map_err(Into::into))
+            .select()
+            .params_buf(&params_buf)
+            .map_one(|row| row.get::<String>(0).map_err(Into::into))
             .await?;
         assert_eq!(mapped_name, "alice");
 
         params_buf.set_int(0, 2);
         let mapped_missing = prepared
-            .query_map_optional_params(&params_buf, |row| row.get::<String>(0).map_err(Into::into))
+            .select()
+            .params_buf(&params_buf)
+            .map_optional(|row| row.get::<String>(0).map_err(Into::into))
             .await?;
         assert!(mapped_missing.is_none());
 

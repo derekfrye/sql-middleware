@@ -20,7 +20,7 @@ pub struct Prepared {
     cols: Arc<Vec<String>>, // cached column names for fast ResultSet builds
 }
 
-impl Tx<'_> {
+impl<'conn> Tx<'conn> {
     /// Prepare a SQL statement tied to this transaction's connection.
     ///
     /// # Errors
@@ -37,6 +37,32 @@ impl Tx<'_> {
             stmt,
             cols: Arc::new(cols),
         })
+    }
+
+    /// Start configuring a prepared SELECT execution.
+    #[must_use]
+    pub fn select<'tx, 'prepared>(
+        &'tx self,
+        prepared: &'prepared mut Prepared,
+    ) -> PreparedSelect<'tx, 'prepared, 'static, 'conn> {
+        PreparedSelect {
+            tx: self,
+            prepared,
+            params: &[],
+        }
+    }
+
+    /// Start configuring a prepared DML execution.
+    #[must_use]
+    pub fn execute<'tx, 'prepared>(
+        &'tx self,
+        prepared: &'prepared mut Prepared,
+    ) -> PreparedExecute<'tx, 'prepared, 'static, 'conn> {
+        PreparedExecute {
+            tx: self,
+            prepared,
+            params: &[],
+        }
     }
 
     /// Execute a batch of SQL statements within the transaction.
@@ -78,7 +104,7 @@ impl Tx<'_> {
     ///
     /// Returns `SqlMiddlewareDbError` when executing the prepared statement fails or the
     /// affected row count cannot be converted to `usize`.
-    pub async fn execute_prepared(
+    pub(crate) async fn execute_prepared(
         &self,
         prepared: &mut Prepared,
         params: &[RowValues],
@@ -128,7 +154,7 @@ impl Tx<'_> {
     ///
     /// Returns `SqlMiddlewareDbError` when running the prepared statement or building the
     /// `ResultSet` fails.
-    pub async fn query_prepared(
+    pub(crate) async fn query_prepared(
         &self,
         prepared: &mut Prepared,
         params: &[RowValues],
@@ -145,7 +171,7 @@ impl Tx<'_> {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] when running the prepared statement or building the row
     /// fails.
-    pub async fn query_prepared_optional(
+    pub(crate) async fn query_prepared_optional(
         &self,
         prepared: &mut Prepared,
         params: &[RowValues],
@@ -159,7 +185,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] when execution fails or no row is returned.
-    pub async fn query_prepared_one(
+    pub(crate) async fn query_prepared_one(
         &self,
         prepared: &mut Prepared,
         params: &[RowValues],
@@ -175,7 +201,7 @@ impl Tx<'_> {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] when execution fails, no row is returned, or the mapper
     /// fails.
-    pub async fn query_prepared_map_one<T, F>(
+    pub(crate) async fn query_prepared_map_one<T, F>(
         &self,
         prepared: &mut Prepared,
         params: &[RowValues],
@@ -194,7 +220,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] when execution or the mapper fails.
-    pub async fn query_prepared_map_optional<T, F>(
+    pub(crate) async fn query_prepared_map_optional<T, F>(
         &self,
         prepared: &mut Prepared,
         params: &[RowValues],
@@ -234,6 +260,114 @@ impl Tx<'_> {
             .await
             .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso rollback error: {e}")))
             .map(|()| TxOutcome::without_restored_connection())
+    }
+}
+
+/// Builder for executing a prepared Turso DML statement inside a transaction.
+pub struct PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx Tx<'conn>,
+    prepared: &'prepared mut Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedExecute<'tx, 'prepared, 'next, 'conn> {
+        PreparedExecute {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute the DML statement and return affected rows.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] when executing the prepared statement fails or the
+    /// affected row count cannot be converted to `usize`.
+    pub async fn run(self) -> Result<usize, SqlMiddlewareDbError> {
+        self.tx.execute_prepared(self.prepared, self.params).await
+    }
+}
+
+/// Builder for executing a prepared Turso SELECT inside a transaction.
+pub struct PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx Tx<'conn>,
+    prepared: &'prepared mut Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedSelect<'tx, 'prepared, 'next, 'conn> {
+        PreparedSelect {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute and return all rows as a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] when running the prepared statement or building the
+    /// `ResultSet` fails.
+    pub async fn all(self) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.tx.query_prepared(self.prepared, self.params).await
+    }
+
+    /// Execute and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] when running the prepared statement or building the row
+    /// fails.
+    pub async fn optional(self) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.tx
+            .query_prepared_optional(self.prepared, self.params)
+            .await
+    }
+
+    /// Execute and return exactly one row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] when execution fails or no row is returned.
+    pub async fn one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.tx.query_prepared_one(self.prepared, self.params).await
+    }
+
+    /// Execute and map exactly one native Turso row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] when execution fails, no row is returned, or the mapper
+    /// fails.
+    pub async fn map_one<T, F>(self, mapper: F) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.tx
+            .query_prepared_map_one(self.prepared, self.params, mapper)
+            .await
+    }
+
+    /// Execute and map the first native Turso row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] when execution or the mapper fails.
+    pub async fn map_optional<T, F>(self, mapper: F) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.tx
+            .query_prepared_map_optional(self.prepared, self.params, mapper)
+            .await
     }
 }
 

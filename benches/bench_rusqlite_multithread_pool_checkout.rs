@@ -240,7 +240,7 @@ async fn middleware_parallel_select(
             let mut params = vec![RowValues::Int(0)];
             for id in chunk {
                 params[0] = RowValues::Int(id);
-                let result = prepared.query(&params).await?;
+                let result = prepared.select().params(&params).all().await?;
                 let row = result.results.first().ok_or_else(|| {
                     SqlMiddlewareDbError::ExecutionError(
                         "expected row from middleware query".to_string(),

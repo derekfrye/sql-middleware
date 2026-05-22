@@ -87,7 +87,9 @@ impl MiddlewarePoolConnection {
     ///     .prepare_sqlite_statement("INSERT INTO t (id, name) VALUES (?1, ?2)")
     ///     .await?;
     /// prepared
-    ///     .execute(&[RowValues::Int(1), RowValues::Text("alice".into())])
+    ///     .execute()
+    ///     .params(&[RowValues::Int(1), RowValues::Text("alice".into())])
+    ///     .run()
     ///     .await?;
     /// # Ok(()) }
     /// ```

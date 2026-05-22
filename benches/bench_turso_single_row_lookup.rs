@@ -95,7 +95,7 @@ static TURSO_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyLock::
                 .prepare_turso_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
                 .await?;
             let params = [RowValues::Int(1)];
-            let result = prepared.query(&params).await?;
+            let result = prepared.select().params(&params).all().await?;
             result.results.into_iter().next().ok_or_else(|| {
                 SqlMiddlewareDbError::ExecutionError(
                     "sample row expected for middleware decode benchmark".to_string(),
@@ -408,7 +408,9 @@ fn benchmark_middleware_with_config(
                         if let Some(stats) = breakdown.as_mut() {
                             let query_start = Instant::now();
                             let result = prepared
-                                .query(&params)
+                                .select()
+                                .params(&params)
+                                .all()
                                 .await
                                 .expect("execute middleware select");
                             let query_elapsed = query_start.elapsed();
@@ -422,7 +424,9 @@ fn benchmark_middleware_with_config(
                             stats.record_row(query_elapsed, decode_elapsed, result.results.len());
                         } else {
                             let result = prepared
-                                .query(&params)
+                                .select()
+                                .params(&params)
+                                .all()
                                 .await
                                 .expect("execute middleware select");
                             let row = result.results.first().expect("expected row in result set");

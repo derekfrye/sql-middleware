@@ -74,7 +74,7 @@ static MIDDLEWARE_SAMPLE_ROW: LazyLock<Arc<sql_middleware::CustomDbRow>> = LazyL
                 .prepare_sqlite_statement("SELECT id, name, score, active FROM test WHERE id = ?1")
                 .await?;
             let params = [RowValues::Int(1)];
-            let result = prepared.query(&params).await?;
+            let result = prepared.select().params(&params).all().await?;
             result.results.into_iter().next().ok_or_else(|| {
                 SqlMiddlewareDbError::ExecutionError(
                     "sample row expected for middleware decode benchmark".to_string(),
@@ -114,7 +114,7 @@ impl MiddlewareQueryBreakdown {
         let decode_per_row = self.total_decode.as_secs_f64() * 1_000_000_000.0 / total_rows;
 
         eprintln!(
-            "bench trace: middleware prepared.query() {:.1} ns/row (decode {:.1} ns/row) across {} rows in {} iterations",
+            "bench trace: middleware prepared.select().all() {:.1} ns/row (decode {:.1} ns/row) across {} rows in {} iterations",
             query_per_row, decode_per_row, self.total_rows, self.iterations,
         );
     }
@@ -306,7 +306,9 @@ fn benchmark_middleware(
                         if let Some(stats) = breakdown.as_mut() {
                             let query_start = Instant::now();
                             let result = prepared
-                                .query(&params)
+                                .select()
+                                .params(&params)
+                                .all()
                                 .await
                                 .expect("execute middleware select");
                             let query_elapsed = query_start.elapsed();
@@ -320,7 +322,9 @@ fn benchmark_middleware(
                             stats.record_row(query_elapsed, decode_elapsed, result.results.len());
                         } else {
                             let result = prepared
-                                .query(&params)
+                                .select()
+                                .params(&params)
+                                .all()
                                 .await
                                 .expect("execute middleware select");
                             let row = result.results.first().expect("expected row in result set");

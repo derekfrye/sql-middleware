@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::adapters::params::convert_params;
-use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{ConversionMode, CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::pool::MiddlewarePoolConnection;
 use crate::tx_outcome::TxOutcome;
 
@@ -61,7 +61,7 @@ pub async fn begin_transaction(
     })
 }
 
-impl Tx<'_> {
+impl<'conn> Tx<'conn> {
     fn conn_mut(&mut self) -> Result<&mut SqliteConnection, SqlMiddlewareDbError> {
         self.conn.as_mut().ok_or_else(|| {
             SqlMiddlewareDbError::ExecutionError("SQLite transaction already completed".into())
@@ -83,11 +83,37 @@ impl Tx<'_> {
         })
     }
 
+    /// Start configuring a prepared SELECT execution.
+    #[must_use]
+    pub fn select<'tx, 'prepared>(
+        &'tx mut self,
+        prepared: &'prepared Prepared,
+    ) -> PreparedSelect<'tx, 'prepared, 'static, 'conn> {
+        PreparedSelect {
+            tx: self,
+            prepared,
+            params: &[],
+        }
+    }
+
+    /// Start configuring a prepared DML execution.
+    #[must_use]
+    pub fn execute<'tx, 'prepared>(
+        &'tx mut self,
+        prepared: &'prepared Prepared,
+    ) -> PreparedExecute<'tx, 'prepared, 'static, 'conn> {
+        PreparedExecute {
+            tx: self,
+            prepared,
+            params: &[],
+        }
+    }
+
     /// Execute a prepared statement as DML within this transaction.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
-    pub async fn execute_prepared(
+    pub(crate) async fn execute_prepared(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -102,7 +128,7 @@ impl Tx<'_> {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
-    pub async fn query_prepared(
+    pub(crate) async fn query_prepared(
         &mut self,
         prepared: &Prepared,
         params: &[RowValues],
@@ -191,6 +217,82 @@ impl Tx<'_> {
         let MiddlewarePoolConnection::Sqlite { conn: slot, .. } = self.conn_slot;
         debug_assert!(slot.is_none(), "sqlite conn slot should be empty during tx");
         *slot = Some(conn);
+    }
+}
+
+/// Builder for executing a prepared SQLite DML statement inside a transaction.
+pub struct PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx mut Tx<'conn>,
+    prepared: &'prepared Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedExecute<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedExecute<'tx, 'prepared, 'next, 'conn> {
+        PreparedExecute {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute the DML statement and return affected rows.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
+    pub async fn run(self) -> Result<usize, SqlMiddlewareDbError> {
+        self.tx.execute_prepared(self.prepared, self.params).await
+    }
+}
+
+/// Builder for executing a prepared SQLite SELECT inside a transaction.
+pub struct PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    tx: &'tx mut Tx<'conn>,
+    prepared: &'prepared Prepared,
+    params: &'params [RowValues],
+}
+
+impl<'tx, 'prepared, 'params, 'conn> PreparedSelect<'tx, 'prepared, 'params, 'conn> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> PreparedSelect<'tx, 'prepared, 'next, 'conn> {
+        PreparedSelect {
+            tx: self.tx,
+            prepared: self.prepared,
+            params,
+        }
+    }
+
+    /// Execute and return all rows as a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
+    pub async fn all(self) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.tx.query_prepared(self.prepared, self.params).await
+    }
+
+    /// Execute and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if parameter conversion or execution fails.
+    pub async fn optional(self) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.all().await.map(ResultSet::into_optional)
+    }
+
+    /// Execute and return exactly one row.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution fails or no row is returned.
+    pub async fn one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.all().await?.into_one()
     }
 }
 

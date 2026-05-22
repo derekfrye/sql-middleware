@@ -280,19 +280,19 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** SQL Server support; public for consumers targeting MSSQL (awaiting tests).
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** **Not covered**.
-  - **Purpose:** Explicit SQL Server transaction + prepared helpers to mirror other backends.
+  - **Purpose:** Explicit SQL Server transaction + prepared helpers to mirror other backends. Prepared SELECT/DML use `select(&prepared).params(...).all()` and `execute(&prepared).params(...).run()`.
 - `transaction::Tx::execute_dml`
   - **Coverage:** **Not covered**.
   - **Purpose:** Execute non-prepared DML within a SQL Server transaction; public for parity with other backends.
 - `transaction::Tx::query`
   - **Coverage:** **Not covered**.
   - **Purpose:** Execute non-prepared SELECT within a SQL Server transaction; public for parity with other backends.
-- `transaction::Tx::query_prepared_map_one` / `query_prepared_map_optional`
+- `transaction::Tx::select(...).params(...).map_one` / `map_optional`
   - **Coverage:** `tests/test04_AnyConnWrapper.rs` when the `mssql` feature and fixture are available.
   - **Purpose:** Map the first native `tiberius::Row` in prepared transaction hot paths without building a `ResultSet`.
 - `prepared::MssqlNonTxPreparedStatement`
   - **Coverage:** Type itself is compile-covered; transaction prepared map equivalent is runtime-covered in `tests/test04_AnyConnWrapper.rs` when the `mssql` feature and fixture are available.
-  - **Purpose:** Non-transaction prepared handle for reuse on a dedicated SQL Server connection; `query_map_*` methods map native `tiberius::Row` values without building a `ResultSet`.
+  - **Purpose:** Non-transaction prepared handle for reuse on a dedicated SQL Server connection; `select().params(...).map_*` maps native `tiberius::Row` values without building a `ResultSet`; `execute().params(...).run()` executes DML.
 
 ### Postgres
 - `execute_batch`, `execute_dml`, `execute_select`
@@ -309,14 +309,14 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Extract a `RowValues` from a single Postgres row/column; public helper for custom result processing.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** `tests/test05a_postgres.rs`.
-  - **Purpose:** Prepared/transaction helpers; public for explicit transaction control.
+  - **Purpose:** Prepared/transaction helpers; public for explicit transaction control. Prepared SELECT/DML use `select(&prepared).params(...).all()` and `execute(&prepared).params(...).run()`.
 - `transaction::Tx::execute_dml`
   - **Coverage:** **Not covered**.
   - **Purpose:** Execute non-prepared DML within a Postgres transaction; public for parity with other backends.
 - `transaction::Tx::query`
   - **Coverage:** **Not covered**.
   - **Purpose:** Execute non-prepared SELECT within a Postgres transaction; public for parity with other backends.
-- `transaction::Tx::query_prepared_map_one` / `query_prepared_map_optional`
+- `transaction::Tx::select(...).params(...).map_one` / `map_optional`
   - **Coverage:** `tests/test05a_postgres.rs`.
   - **Purpose:** Map the first native `tokio_postgres::Row` in prepared transaction hot paths without building a `ResultSet`.
 
@@ -331,8 +331,8 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Used with `SqlitePreparedStatement` in `tests/test05c_sqlite.rs`.
   - **Purpose:** Reusable SQLite parameter buffer for prepared-statement hot paths; borrows driver-native values directly for execution.
 - `SqlitePreparedStatement`
-  - **Coverage:** Used in `tests/test05c_sqlite.rs`, including reusable-buffer `*_params` methods.
-  - **Purpose:** Prepared statement handle; public for reuse. `query_map_*` methods map native `rusqlite::Row` values inside the worker thread without building a `ResultSet`; `*_params` variants accept `SqliteParamsBuf` for hot loops.
+  - **Coverage:** Used in `tests/test05c_sqlite.rs`, including `select().params_buf(...)` paths.
+  - **Purpose:** Prepared statement handle; public for reuse. `select().params(...).map_*` maps native `rusqlite::Row` values inside the worker thread without building a `ResultSet`; `execute().params(...).run()` executes DML; `params_buf` accepts `SqliteParamsBuf` for hot loops.
 - `build_result_set`
   - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Build results from rusqlite rows; public for manual execution.
@@ -350,7 +350,7 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Purpose:** Execute DML inside an existing SQLite transaction; public for advanced transactional control.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test07_new_rusqlite.rs`.
-  - **Purpose:** Transaction helpers on worker; public for explicit transaction control.
+  - **Purpose:** Transaction helpers on worker; public for explicit transaction control. Prepared SELECT/DML use `select(&prepared).params(...).all()` and `execute(&prepared).params(...).run()`.
 
 ### Turso
 - `execute_batch`, `execute_dml`, `execute_select`
@@ -363,11 +363,11 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** Used with `TursoNonTxPreparedStatement` in `tests/test05d_turso.rs`.
   - **Purpose:** Reusable Turso parameter buffer for prepared-statement hot paths; converts to Turso driver params without rebuilding from `RowValues`.
 - `prepared::TursoNonTxPreparedStatement`
-  - **Coverage:** Used in `tests/test05d_turso.rs`, including reusable-buffer `*_params` methods.
-  - **Purpose:** Non-transaction prepared handle; public for prepared execution without transactions. `query_map_*` methods map native `turso::Row` values without building a `ResultSet`; `*_params` variants accept `TursoParamsBuf` for hot loops.
+  - **Coverage:** Used in `tests/test05d_turso.rs`, including `select().params_buf(...)` paths.
+  - **Purpose:** Non-transaction prepared handle; public for prepared execution without transactions. `select().params(...).map_*` maps native `turso::Row` values without building a `ResultSet`; `execute().params(...).run()` executes DML; `params_buf` accepts `TursoParamsBuf` for hot loops.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test05d_turso.rs`.
-  - **Purpose:** Transaction helpers; public for explicit transaction flows.
-- `transaction::Tx::query_prepared_map_one` / `query_prepared_map_optional`
+  - **Purpose:** Transaction helpers; public for explicit transaction flows. Prepared SELECT/DML use `select(&mut prepared).params(...).all()` and `execute(&mut prepared).params(...).run()`.
+- `transaction::Tx::select(...).params(...).map_one` / `map_optional`
   - **Coverage:** `tests/test05d_turso.rs`.
   - **Purpose:** Map the first native `turso::Row` in prepared transaction hot paths without building a `ResultSet`.

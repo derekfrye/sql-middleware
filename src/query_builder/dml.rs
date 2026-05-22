@@ -104,7 +104,10 @@ impl QueryBuilder<'_, '_> {
             } => {
                 if use_prepare {
                     let prepared = tx.prepare(translated.as_ref()).await?;
-                    tx.execute_prepared(&prepared, self.params.as_ref()).await
+                    tx.execute(&prepared)
+                        .params(self.params.as_ref())
+                        .run()
+                        .await
                 } else {
                     tx.execute_dml(translated.as_ref(), self.params.as_ref())
                         .await
@@ -117,7 +120,10 @@ impl QueryBuilder<'_, '_> {
             } => {
                 if use_prepare {
                     let prepared = tx.prepare(translated.as_ref())?;
-                    tx.execute_prepared(&prepared, self.params.as_ref()).await
+                    tx.execute(&prepared)
+                        .params(self.params.as_ref())
+                        .run()
+                        .await
                 } else {
                     tx.execute_dml(translated.as_ref(), self.params.as_ref())
                         .await
@@ -130,7 +136,9 @@ impl QueryBuilder<'_, '_> {
             } => {
                 if use_prepare {
                     let mut prepared = tx.prepare(translated.as_ref()).await?;
-                    tx.execute_prepared(&mut prepared, self.params.as_ref())
+                    tx.execute(&mut prepared)
+                        .params(self.params.as_ref())
+                        .run()
                         .await
                 } else {
                     tx.execute_dml(translated.as_ref(), self.params.as_ref())

@@ -206,7 +206,11 @@ async fn demo() -> Result<(), SqlMiddlewareDbError> {
     let mut prepared = conn
         .prepare_sqlite_statement("SELECT name FROM t WHERE id = ?1")
         .await?;
-    let rows = prepared.query(&[RowValues::Int(1)]).await?;
+    let rows = prepared
+        .select()
+        .params(&[RowValues::Int(1)])
+        .all()
+        .await?;
 
     assert_eq!(rows.results[0].get("name").unwrap().as_text().unwrap(), "alice");
     Ok(())

@@ -28,11 +28,32 @@ impl<'conn> SqlitePreparedStatement<'conn> {
         }
     }
 
+    /// Start configuring a prepared SELECT execution.
+    #[must_use]
+    pub fn select(&mut self) -> SqlitePreparedSelect<'_, 'conn, '_> {
+        SqlitePreparedSelect {
+            statement: self,
+            params: SqlitePreparedParams::None,
+        }
+    }
+
+    /// Start configuring a prepared DML execution.
+    #[must_use]
+    pub fn execute(&mut self) -> SqlitePreparedExecute<'_, 'conn, '_> {
+        SqlitePreparedExecute {
+            statement: self,
+            params: SqlitePreparedParams::None,
+        }
+    }
+
     /// Execute the prepared statement as a query and materialise the rows into a [`ResultSet`].
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or result conversion encounters an issue.
-    pub async fn query(&mut self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
+    pub(crate) async fn query(
+        &mut self,
+        params: &[RowValues],
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
         let params_owned = convert_params::<Params>(params, ConversionMode::Query)?.0;
         self.connection
             .execute_select(
@@ -48,7 +69,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or result conversion encounters an issue.
-    pub async fn query_params(
+    pub(crate) async fn query_params(
         &mut self,
         params: &SqliteParamsBuf,
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
@@ -68,7 +89,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or row conversion fails.
-    pub async fn query_optional(
+    pub(crate) async fn query_optional(
         &mut self,
         params: &[RowValues],
     ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
@@ -81,7 +102,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or row conversion fails.
-    pub async fn query_optional_params(
+    pub(crate) async fn query_optional_params(
         &mut self,
         params: &SqliteParamsBuf,
     ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
@@ -120,7 +141,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, row conversion fails, or no row is
     /// returned.
-    pub async fn query_one(
+    pub(crate) async fn query_one(
         &mut self,
         params: &[RowValues],
     ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
@@ -134,7 +155,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, row conversion fails, or no row is
     /// returned.
-    pub async fn query_one_params(
+    pub(crate) async fn query_one_params(
         &mut self,
         params: &SqliteParamsBuf,
     ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
@@ -151,7 +172,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, the mapper fails, or no row is
     /// returned.
-    pub async fn query_map_one<T, F>(
+    pub(crate) async fn query_map_one<T, F>(
         &mut self,
         params: &[RowValues],
         mapper: F,
@@ -171,7 +192,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, the mapper fails, or no row is
     /// returned.
-    pub async fn query_map_one_params<T, F>(
+    pub(crate) async fn query_map_one_params<T, F>(
         &mut self,
         params: &SqliteParamsBuf,
         mapper: F,
@@ -190,7 +211,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
-    pub async fn query_map_optional<T, F>(
+    pub(crate) async fn query_map_optional<T, F>(
         &mut self,
         params: &[RowValues],
         mapper: F,
@@ -208,7 +229,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
-    pub async fn query_map_optional_params<T, F>(
+    pub(crate) async fn query_map_optional_params<T, F>(
         &mut self,
         params: &SqliteParamsBuf,
         mapper: F,
@@ -256,7 +277,10 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or if the result cannot be converted into the expected row count.
-    pub async fn execute(&mut self, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
+    pub(crate) async fn execute_values(
+        &mut self,
+        params: &[RowValues],
+    ) -> Result<usize, SqlMiddlewareDbError> {
         let params_owned = convert_params::<Params>(params, ConversionMode::Execute)?.0;
         self.connection
             .execute_dml(
@@ -271,7 +295,7 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails or if the result cannot be converted into the expected row count.
-    pub async fn execute_params(
+    pub(crate) async fn execute_params(
         &mut self,
         params: &SqliteParamsBuf,
     ) -> Result<usize, SqlMiddlewareDbError> {
@@ -288,6 +312,168 @@ impl<'conn> SqlitePreparedStatement<'conn> {
     #[must_use]
     pub fn sql(&self) -> &str {
         self.query.as_str()
+    }
+}
+
+/// Builder for executing a prepared SQLite DML statement.
+pub struct SqlitePreparedExecute<'stmt, 'conn, 'params> {
+    statement: &'stmt mut SqlitePreparedStatement<'conn>,
+    params: SqlitePreparedParams<'params>,
+}
+
+impl<'stmt, 'conn, 'params> SqlitePreparedExecute<'stmt, 'conn, 'params> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> SqlitePreparedExecute<'stmt, 'conn, 'next> {
+        SqlitePreparedExecute {
+            statement: self.statement,
+            params: SqlitePreparedParams::RowValues(params),
+        }
+    }
+
+    /// Use a reusable SQLite parameter buffer.
+    #[must_use]
+    pub fn params_buf<'next>(
+        self,
+        params: &'next SqliteParamsBuf,
+    ) -> SqlitePreparedExecute<'stmt, 'conn, 'next> {
+        SqlitePreparedExecute {
+            statement: self.statement,
+            params: SqlitePreparedParams::Buffer(params),
+        }
+    }
+
+    /// Execute the DML statement and return affected rows.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or the row count cannot be converted.
+    pub async fn run(self) -> Result<usize, SqlMiddlewareDbError> {
+        match self.params {
+            SqlitePreparedParams::None => self.statement.execute_values(&[]).await,
+            SqlitePreparedParams::RowValues(params) => self.statement.execute_values(params).await,
+            SqlitePreparedParams::Buffer(params) => self.statement.execute_params(params).await,
+        }
+    }
+}
+
+enum SqlitePreparedParams<'params> {
+    None,
+    RowValues(&'params [RowValues]),
+    Buffer(&'params SqliteParamsBuf),
+}
+
+/// Builder for executing a prepared SQLite SELECT.
+pub struct SqlitePreparedSelect<'stmt, 'conn, 'params> {
+    statement: &'stmt mut SqlitePreparedStatement<'conn>,
+    params: SqlitePreparedParams<'params>,
+}
+
+impl<'stmt, 'conn, 'params> SqlitePreparedSelect<'stmt, 'conn, 'params> {
+    /// Use middleware `RowValues` parameters.
+    #[must_use]
+    pub fn params<'next>(
+        self,
+        params: &'next [RowValues],
+    ) -> SqlitePreparedSelect<'stmt, 'conn, 'next> {
+        SqlitePreparedSelect {
+            statement: self.statement,
+            params: SqlitePreparedParams::RowValues(params),
+        }
+    }
+
+    /// Use a reusable SQLite parameter buffer.
+    #[must_use]
+    pub fn params_buf<'next>(
+        self,
+        params: &'next SqliteParamsBuf,
+    ) -> SqlitePreparedSelect<'stmt, 'conn, 'next> {
+        SqlitePreparedSelect {
+            statement: self.statement,
+            params: SqlitePreparedParams::Buffer(params),
+        }
+    }
+
+    /// Execute and return all rows as a `ResultSet`.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or result conversion encounters an issue.
+    pub async fn all(self) -> Result<ResultSet, SqlMiddlewareDbError> {
+        match self.params {
+            SqlitePreparedParams::None => self.statement.query(&[]).await,
+            SqlitePreparedParams::RowValues(params) => self.statement.query(params).await,
+            SqlitePreparedParams::Buffer(params) => self.statement.query_params(params).await,
+        }
+    }
+
+    /// Execute and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution or row conversion fails.
+    pub async fn optional(self) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        match self.params {
+            SqlitePreparedParams::None => self.statement.query_optional(&[]).await,
+            SqlitePreparedParams::RowValues(params) => self.statement.query_optional(params).await,
+            SqlitePreparedParams::Buffer(params) => {
+                self.statement.query_optional_params(params).await
+            }
+        }
+    }
+
+    /// Execute and return exactly one row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails, row conversion fails, or no row is returned.
+    pub async fn one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        match self.params {
+            SqlitePreparedParams::None => self.statement.query_one(&[]).await,
+            SqlitePreparedParams::RowValues(params) => self.statement.query_one(params).await,
+            SqlitePreparedParams::Buffer(params) => self.statement.query_one_params(params).await,
+        }
+    }
+
+    /// Execute and map exactly one native SQLite row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails, the mapper fails, or no row is returned.
+    pub async fn map_one<T, F>(self, mapper: F) -> Result<T, SqlMiddlewareDbError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Row<'_>) -> Result<T, SqlMiddlewareDbError> + Send + 'static,
+    {
+        match self.params {
+            SqlitePreparedParams::None => self.statement.query_map_one(&[], mapper).await,
+            SqlitePreparedParams::RowValues(params) => {
+                self.statement.query_map_one(params, mapper).await
+            }
+            SqlitePreparedParams::Buffer(params) => {
+                self.statement.query_map_one_params(params, mapper).await
+            }
+        }
+    }
+
+    /// Execute and map the first native SQLite row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
+    pub async fn map_optional<T, F>(self, mapper: F) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Row<'_>) -> Result<T, SqlMiddlewareDbError> + Send + 'static,
+    {
+        match self.params {
+            SqlitePreparedParams::None => self.statement.query_map_optional(&[], mapper).await,
+            SqlitePreparedParams::RowValues(params) => {
+                self.statement.query_map_optional(params, mapper).await
+            }
+            SqlitePreparedParams::Buffer(params) => {
+                self.statement
+                    .query_map_optional_params(params, mapper)
+                    .await
+            }
+        }
     }
 }
 
