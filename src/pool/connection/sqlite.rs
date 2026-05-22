@@ -40,7 +40,9 @@ impl MiddlewarePoolConnection {
     /// use sql_middleware::prelude::*;
     ///
     /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
-    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+    ///     .build()
+    ///     .await?;
     /// let mut conn = cap.get_connection().await?;
     /// conn.with_blocking_sqlite(|raw| {
     ///     raw.execute_batch("CREATE TABLE t (id INTEGER, name TEXT);")?;
@@ -72,11 +74,13 @@ impl MiddlewarePoolConnection {
     /// use sql_middleware::prelude::*;
     ///
     /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
-    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+    ///     .build()
+    ///     .await?;
     /// let mut conn = cap.get_connection().await?;
     /// conn.execute_batch("CREATE TABLE t (id INTEGER, name TEXT)").await?;
     ///
-    /// let prepared = conn
+    /// let mut prepared = conn
     ///     .prepare_sqlite_statement("INSERT INTO t (id, name) VALUES (?1, ?2)")
     ///     .await?;
     /// prepared

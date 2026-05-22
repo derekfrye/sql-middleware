@@ -64,7 +64,10 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     /// END;
     /// $function$"#,
     ///     MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
-    ///         include_str!("../sql/functions/sqlite/03_sp_get_scores.sql")
+    ///         "SELECT regexp_replace(body, ?1, ?2) FROM rules"
+    ///     }
+    ///     MiddlewarePoolConnection::Mssql { .. } => {
+    ///         "SELECT REPLACE(body, @P1, @P2) FROM rules"
     ///     }
     /// };
     /// # let _ = query;

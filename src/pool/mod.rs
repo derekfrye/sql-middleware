@@ -26,13 +26,15 @@ use crate::types::DatabaseType;
 
 /// Configuration plus connection pool for a database backend.
 ///
-/// Construct with the backend-specific `new_*` helpers on `ConfigAndPool` (e.g., `new_sqlite`,
-/// `new_postgres`), then borrow connections as needed:
+/// Construct with the backend-specific builders on `ConfigAndPool` (e.g., `sqlite_builder`,
+/// `postgres_builder`), then borrow connections as needed:
 /// ```rust,no_run
 /// use sql_middleware::prelude::*;
 ///
 /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
-/// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+/// let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+///     .build()
+///     .await?;
 /// let mut conn = cap.get_connection().await?;
 /// let rows = conn.query("SELECT 1").select().await?;
 /// assert_eq!(rows.results.len(), 1);
@@ -59,7 +61,9 @@ impl ConfigAndPool {
     /// use sql_middleware::prelude::*;
     ///
     /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
-    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+    ///     .build()
+    ///     .await?;
     /// let mut conn = cap.get_connection().await?;
     /// conn.execute_batch("CREATE TABLE t (id INTEGER)").await?;
     /// # Ok(()) }

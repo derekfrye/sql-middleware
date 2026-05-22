@@ -2,7 +2,7 @@
 
 ![Unsafe Forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)
 
-Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with bb8-backed pools for Postgres, SQLite, Turso, and SQL Server (via bb8-tiberius). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent api.
+Sql-middleware is a lightweight async wrapper for [tokio-postgres](https://crates.io/crates/tokio-postgres), [rusqlite](https://crates.io/crates/rusqlite), [turso](https://crates.io/crates/turso), and [tiberius](https://crates.io/crates/tiberius) (SQL Server), with bb8-backed pools for Postgres, SQLite, Turso, and SQL Server (via bb8-tiberius). A slim alternative to [SQLx](https://crates.io/crates/sqlx); fewer features, but striving toward a consistent API.
 
 Motivated from trying SQLx and not liking some issue [others already noted](https://www.reddit.com/r/rust/comments/16cfcgt/seeking_advice_considering_abandoning_sqlx_after/?rdt=44192). 
 
@@ -10,7 +10,7 @@ Current benches vs. SQLx are about 30% faster on the single-row SQLite lookup be
 
 ## Goals
 * Convenience functions for common async SQL query patterns
-* Keep underlying flexibility of connection pooling (`bb8` for Postgres/SQLite, `deadpool` where available)
+* Keep underlying flexibility of connection pooling (`bb8` for Postgres/SQLite/Turso and `bb8-tiberius` for SQL Server)
 * Minimal overhead (ideally, just syntax sugar/wrapper fns)
 * See [Benchmarks](/docs/Benchmarks.md) for details on performance testing.
 
@@ -31,7 +31,7 @@ Available features:
 - `sqlite`: Enables SQLite support
 - `postgres`: Enables PostgreSQL support
 - `mssql`: Enables SQL Server support
-- `turso`: Enables Turso (in-process, SQLite-compatible). Uses direct handles by default (no pool backend yet).
+- `turso`: Enables Turso (in-process, SQLite-compatible) with a bb8-backed pool.
 - `default`: Enables common backends (sqlite, postgres). Enable others as needed.
 
 ### Parameterized queries for reading or changing data
@@ -101,8 +101,16 @@ pub async fn get_scores_from_db(
         MiddlewarePoolConnection::Postgres { .. } => {
             "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names($1) ORDER BY grp, eup_id"
         }
-        MiddlewarePoolConnection::Sqlite { .. } | MiddlewarePoolConnection::Turso { .. } => {
+        MiddlewarePoolConnection::Sqlite { .. } => {
             "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names(?1) ORDER BY grp, eup_id"
+        }
+        #[cfg(feature = "turso")]
+        MiddlewarePoolConnection::Turso { .. } => {
+            "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names(?1) ORDER BY grp, eup_id"
+        }
+        #[cfg(feature = "mssql")]
+        MiddlewarePoolConnection::Mssql { .. } => {
+            "SELECT grp, golfername, playername, eup_id, espn_id FROM sp_get_player_names(@P1) ORDER BY grp, eup_id"
         }
     };
     let params = vec![RowValues::Int(i64::from(event_id))];
@@ -113,7 +121,7 @@ pub async fn get_scores_from_db(
 
 ### Batch query w/o params
 
-Same API regardless of db backend. Full setup, including imports and pool creation. See test8 for compile-ready example.
+Same API regardless of db backend. Full setup, including imports and pool creation.
 
 ```rust
 use sql_middleware::middleware::ConfigAndPool;
@@ -130,6 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "sqlite" => ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
             .build()
             .await?,
+        #[cfg(feature = "turso")]
         "turso" => ConfigAndPool::turso_builder(":memory:".to_string())
             .build()
             .await?,
@@ -137,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut conn = cap.get_connection().await?;
 
-    // simple api for batch queries
+    // simple API for batch queries
     let ddl_query = "CREATE TABLE demo (id INTEGER PRIMARY KEY, name TEXT);";
     // on a pooled connection (auto BEGIN/COMMIT per backend helper)
     conn.execute_batch(&ddl_query).await?;
@@ -203,25 +212,34 @@ Here, because the underlying libraries are different, the snippets can get chatt
 
 ```rust
 use sql_middleware::prelude::*;
+#[cfg(feature = "postgres")]
 use sql_middleware::postgres::{
     begin_transaction as begin_postgres_tx, Prepared as PostgresPrepared, Tx as PostgresTx,
 };
+#[cfg(feature = "sqlite")]
 use sql_middleware::sqlite::{
     begin_transaction as begin_sqlite_tx, Prepared as SqlitePrepared, Tx as SqliteTx,
 };
+#[cfg(feature = "turso")]
 use sql_middleware::turso::{
     begin_transaction as begin_turso_tx, Prepared as TursoPrepared, Tx as TursoTx,
 };
 
 enum BackendTx<'conn> {
+    #[cfg(feature = "turso")]
     Turso(TursoTx<'conn>),
+    #[cfg(feature = "postgres")]
     Postgres(PostgresTx<'conn>),
+    #[cfg(feature = "sqlite")]
     Sqlite(SqliteTx<'conn>),
 }
 
 enum PreparedStmt {
+    #[cfg(feature = "turso")]
     Turso(TursoPrepared),
+    #[cfg(feature = "postgres")]
     Postgres(PostgresPrepared),
+    #[cfg(feature = "sqlite")]
     Sqlite(SqlitePrepared),
 }
 
@@ -234,55 +252,82 @@ pub async fn get_scores_from_db(
     // Author once; translate for SQLite-family backends when preparing.
     let base_query = "SELECT grp, golfername, playername, eup_id, espn_id \
                       FROM sp_get_player_names($1) ORDER BY grp, eup_id";
-    let (tx, stmt) = match &mut conn {
+    let (tx, stmt) = prepare_backend_tx_and_stmt(&mut conn, base_query).await?;
+
+    // The transaction is open now. This is ordinary Rust code, so you can validate inputs,
+    // call domain helpers, update in-memory state, emit metrics, or decide which statement
+    // to run before the eventual commit/rollback.
+    let dynamic_params = build_score_params(event_id)?;
+    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params).await?;
+    Ok(rows)
+}
+
+async fn prepare_backend_tx_and_stmt<'conn>(
+    conn: &'conn mut MiddlewarePoolConnection,
+    base_query: &str,
+) -> Result<(BackendTx<'conn>, PreparedStmt), SqlMiddlewareDbError> {
+    match conn {
+        #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso { conn: client, .. } => {
             let tx = begin_turso_tx(client).await?;
             let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, true);
             let stmt = tx.prepare(q.as_ref()).await?;
-            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt))
+            Ok((BackendTx::Turso(tx), PreparedStmt::Turso(stmt)))
         }
+        #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {
             client: pg_conn, ..
         } => {
             let tx = begin_postgres_tx(pg_conn).await?;
             let stmt = tx.prepare(base_query).await?;
-            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt))
+            Ok((BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)))
         }
+        #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite {
             translate_placeholders: translate_default,
             ..
         } => {
-            let mut tx = begin_sqlite_tx(conn).await?;
-            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, *translate_default);
+            let translate_default = *translate_default;
+            let tx = begin_sqlite_tx(conn).await?;
+            let q = translate_placeholders(base_query, PlaceholderStyle::Sqlite, translate_default);
             let stmt = tx.prepare(q.as_ref())?;
-            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt))
+            Ok((BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)))
         }
-        _ => {
-            return Err(SqlMiddlewareDbError::Unimplemented(
-                "expected Turso, Postgres, or SQLite connection".to_string(),
-            ));
-        }
-    };
+        _ => Err(SqlMiddlewareDbError::Unimplemented(
+            "expected Turso, Postgres, or SQLite connection".to_string(),
+        )),
+    }
+}
 
-    // Build params however you like in your business logic.
-    let dynamic_params = vec![RowValues::Int(event_id)];
-    let rows = run_prepared_with_finalize(tx, stmt, dynamic_params).await?;
-    Ok(rows)
+fn build_score_params(event_id: i64) -> Result<Vec<RowValues>, SqlMiddlewareDbError> {
+    if event_id <= 0 {
+        return Err(SqlMiddlewareDbError::ConfigError(
+            "event_id must be positive".to_string(),
+        ));
+    }
+
+    Ok(vec![RowValues::Int(event_id)])
 }
 
 impl<'conn> BackendTx<'conn> {
     async fn commit(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         match self {
+            #[cfg(feature = "turso")]
             BackendTx::Turso(tx) => tx.commit().await,
+            #[cfg(feature = "postgres")]
             BackendTx::Postgres(tx) => tx.commit().await,
+            #[cfg(feature = "sqlite")]
             BackendTx::Sqlite(tx) => tx.commit().await,
         }
     }
 
     async fn rollback(self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         match self {
+            #[cfg(feature = "turso")]
             BackendTx::Turso(tx) => tx.rollback().await,
+            #[cfg(feature = "postgres")]
             BackendTx::Postgres(tx) => tx.rollback().await,
+            #[cfg(feature = "sqlite")]
             BackendTx::Sqlite(tx) => tx.rollback().await,
         }
     }
@@ -295,15 +340,19 @@ impl PreparedStmt {
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
         match (tx, self) {
-            (&BackendTx::Turso(tx), PreparedStmt::Turso(stmt)) => {
+            #[cfg(feature = "turso")]
+            (BackendTx::Turso(tx), PreparedStmt::Turso(stmt)) => {
                 tx.query_prepared(stmt, params).await
             }
-            (&BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
+            #[cfg(feature = "postgres")]
+            (BackendTx::Postgres(tx), PreparedStmt::Postgres(stmt)) => {
                 tx.query_prepared(stmt, params).await
             }
-            (&mut BackendTx::Sqlite(ref mut tx), PreparedStmt::Sqlite(stmt)) => {
+            #[cfg(feature = "sqlite")]
+            (BackendTx::Sqlite(tx), PreparedStmt::Sqlite(stmt)) => {
                 tx.query_prepared(stmt, params).await
             }
+            _ => unreachable!("transaction and prepared variants should align"),
         }
     }
 }
@@ -364,11 +413,11 @@ See further examples in the tests directory:
 
 ## Placeholder Translation
 
-- Default off. Enable at pool creation via backend options/builders (e.g., `PostgresOptions::new(cfg).with_translation(true)` or `ConfigAndPool::sqlite_builder(path).translation(true)`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterised calls.
+- Default off. Enable at pool creation via backend options/builders (e.g., `PostgresOptions::new(cfg).with_translation(true)` or `ConfigAndPool::sqlite_builder(path).translation(true)`) to translate SQLite-style `?1` to Postgres `$1` (or the inverse) automatically for parameterized calls.
 - Override per call via the query builder: `.translation(TranslationMode::ForceOff | ForceOn)` or `.options(...)`.
 - Manual path: `translate_placeholders(sql, PlaceholderStyle::{Postgres, Sqlite}, enabled)` to reuse translated SQL with your own prepare/execute flow.
 - *Limitations*: Translation runs only when parameters are non-empty and skips quoted strings, identifiers, comments, and dollar-quoted blocks; MSSQL is left untouched. Basically, don't rely on this to try to translate `?X` to `$X` in complicated, per-dialect specific stuff (like `$tag$...$tag$` in postgres, this translation is meant to cover 90% of use cases).
-- More design notes and edge cases live in [documentation of the feature](./docs/feat_translation.md).
+- The scanner skips quoted strings, identifiers, comments, and dollar-quoted blocks. See the crate-level docs and translation module docs for examples and edge cases.
 
 ```rust
 use sql_middleware::prelude::*;
@@ -398,9 +447,9 @@ let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string()
 - Build with defaults (sqlite, postgres): `cargo build`
 - Include Turso backend: `cargo build --features turso`
 - Run tests (defaults): `cargo test` or `cargo nextest run`
-    - Notice that `test4_trait` does have hard-coded testing postgres connection strings. I can't get codex to work with postgres embedded anymore, so when working on this test w codex I've hardcoded those values so I can work around it's lack of network connectivity. You'll have to change them if you want that test to compile in your environment. 
+    - Several PostgreSQL tests use the configured test host at `10.3.0.201` and `TESTING_PG_PASSWORD`; SQL Server tests require `tests/sql_server_pwd.txt`.
 - Run with Turso: `cargo test --features turso`
-- See also: [API test coverage](docs/api_test_coverage.md) for a map of the public surface to current tests.
+- See also: [API test coverage](api_test_coverage.md) for a map of the public surface to current tests.
 
 ### Our use of `[allow(...)]`s
 

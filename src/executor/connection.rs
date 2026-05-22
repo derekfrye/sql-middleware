@@ -49,7 +49,9 @@ impl MiddlewarePoolConnection {
     /// use sql_middleware::prelude::*;
     ///
     /// # async fn demo() -> Result<(), SqlMiddlewareDbError> {
-    /// let cap = ConfigAndPool::new_sqlite("file::memory:?cache=shared".into()).await?;
+    /// let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+    ///     .build()
+    ///     .await?;
     /// let mut conn = cap.get_connection().await?;
     /// conn.execute_batch("CREATE TABLE t (id INTEGER)").await?;
     ///
