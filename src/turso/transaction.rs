@@ -167,7 +167,10 @@ impl Tx<'_> {
         self.query_prepared(prepared, params).await?.into_one()
     }
 
-    /// Execute a prepared SELECT and map the first row.
+    /// Execute a prepared SELECT and map the first native Turso row.
+    ///
+    /// Use this for hot paths that only need one row and can decode directly from
+    /// `turso::Row`, avoiding `ResultSet` materialisation.
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] when execution fails, no row is returned, or the mapper
@@ -179,12 +182,15 @@ impl Tx<'_> {
         mapper: F,
     ) -> Result<T, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query_prepared(prepared, params).await?.map_one(mapper)
+        self.query_prepared_map_optional(prepared, params, mapper)
+            .await?
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
     }
 
-    /// Execute a prepared SELECT and map the first row, returning `None` if no row exists.
+    /// Execute a prepared SELECT and map the first native Turso row, returning `None` if no row
+    /// exists.
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] when execution or the mapper fails.
@@ -195,11 +201,13 @@ impl Tx<'_> {
         mapper: F,
     ) -> Result<Option<T>, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query_prepared(prepared, params)
-            .await?
-            .map_optional(mapper)
+        let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
+        let rows = prepared.stmt.query(converted.0).await.map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("Turso tx query(prepared) error: {e}"))
+        })?;
+        crate::turso::query::query_map_optional(rows, mapper).await
     }
 
     /// Commit the transaction.

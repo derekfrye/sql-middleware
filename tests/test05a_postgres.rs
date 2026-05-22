@@ -24,20 +24,22 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
         conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id BIGINT, name TEXT);")
             .await?;
 
-        // Get Postgres-specific client and start a transaction
-        let MiddlewarePoolConnection::Postgres { client: pg_obj, .. } = &mut conn else {
-            panic!("Expected Postgres connection");
-        };
-        let tx = pg_obj.transaction().await?;
+        {
+            // Get Postgres-specific client and start a transaction
+            let MiddlewarePoolConnection::Postgres { client: pg_obj, .. } = &mut conn else {
+                panic!("Expected Postgres connection");
+            };
+            let tx = pg_obj.transaction().await?;
 
-        // Prepare + convert + execute
-        let insert = "INSERT INTO t (id, name) VALUES ($1, $2)";
-        let stmt = tx.prepare(insert).await?;
-        let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
-        // - Explicit convert_sql_params call req'd; underlying tokio_postgres needs our RowValues converted
-        let converted = convert_sql_params::<PostgresParams>(&params, ConversionMode::Execute)?;
-        let _ = tx.execute(&stmt, converted.as_refs()).await?;
-        tx.commit().await?;
+            // Prepare + convert + execute
+            let insert = "INSERT INTO t (id, name) VALUES ($1, $2)";
+            let stmt = tx.prepare(insert).await?;
+            let params = vec![RowValues::Int(1), RowValues::Text("alice".into())];
+            // - Explicit convert_sql_params call req'd; underlying tokio_postgres needs our RowValues converted
+            let converted = convert_sql_params::<PostgresParams>(&params, ConversionMode::Execute)?;
+            let _ = tx.execute(&stmt, converted.as_refs()).await?;
+            tx.commit().await?;
+        }
 
         // Verify
         let rs = conn
@@ -49,6 +51,28 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             rs.results[0].get("name").unwrap().as_text().unwrap(),
             "alice"
         );
+
+        {
+            let MiddlewarePoolConnection::Postgres { client: pg_obj, .. } = &mut conn else {
+                panic!("Expected Postgres connection");
+            };
+            let tx = sql_middleware::postgres::begin_transaction(pg_obj).await?;
+            let prepared = tx.prepare("SELECT name FROM t WHERE id = $1").await?;
+            let mapped_name = tx
+                .query_prepared_map_one(&prepared, &[RowValues::Int(1)], |row| {
+                    row.try_get::<_, String>(0).map_err(Into::into)
+                })
+                .await?;
+            assert_eq!(mapped_name, "alice");
+
+            let mapped_missing = tx
+                .query_prepared_map_optional(&prepared, &[RowValues::Int(2)], |row| {
+                    row.try_get::<_, String>(0).map_err(Into::into)
+                })
+                .await?;
+            assert!(mapped_missing.is_none());
+            tx.commit().await?;
+        }
 
         conn.execute_batch("DROP TABLE IF EXISTS t;").await?;
 

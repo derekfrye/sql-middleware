@@ -110,7 +110,10 @@ impl Tx<'_> {
         self.query_prepared(prepared, params).await?.into_one()
     }
 
-    /// Execute a prepared SELECT and map the first row.
+    /// Execute a prepared SELECT and map the first native Postgres row.
+    ///
+    /// Use this for hot paths that only need one row and can decode directly from
+    /// `tokio_postgres::Row`, avoiding `ResultSet` materialisation.
     ///
     /// # Errors
     /// Returns an error if execution fails, no row is returned, or the mapper fails.
@@ -121,12 +124,15 @@ impl Tx<'_> {
         mapper: F,
     ) -> Result<T, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&tokio_postgres::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query_prepared(prepared, params).await?.map_one(mapper)
+        self.query_prepared_map_optional(prepared, params, mapper)
+            .await?
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
     }
 
-    /// Execute a prepared SELECT and map the first row, returning `None` if no row exists.
+    /// Execute a prepared SELECT and map the first native Postgres row, returning `None` if no row
+    /// exists.
     ///
     /// # Errors
     /// Returns an error if execution or the mapper fails.
@@ -137,11 +143,14 @@ impl Tx<'_> {
         mapper: F,
     ) -> Result<Option<T>, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&tokio_postgres::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query_prepared(prepared, params)
-            .await?
-            .map_optional(mapper)
+        let converted = convert_params::<Params>(params, ConversionMode::Query)?;
+        let row = self
+            .tx
+            .query_opt(&prepared.stmt, converted.as_refs())
+            .await?;
+        row.as_ref().map(mapper).transpose()
     }
 
     /// Execute a parameterized SELECT without preparing and return a `ResultSet`.

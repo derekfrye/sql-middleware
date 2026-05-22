@@ -55,6 +55,9 @@ pub(crate) async fn execute_select_dispatch(
     params: &[RowValues],
     statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
+    #[cfg(not(any(feature = "sqlite", feature = "turso")))]
+    let _ = statement_cache_mode;
+
     match conn {
         #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {
@@ -86,6 +89,9 @@ pub(crate) async fn execute_select_prepared_dispatch(
     params: &[RowValues],
     statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
+    #[cfg(not(any(feature = "sqlite", feature = "turso")))]
+    let _ = statement_cache_mode;
+
     match conn {
         #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {

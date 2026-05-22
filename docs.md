@@ -75,6 +75,7 @@ Column values use [`RowValues`]:
 - `Text(String)`
 - `Bool(bool)`
 - `Timestamp(chrono::NaiveDateTime)`
+- `JSON(serde_json::Value)`
 - `Blob(Vec<u8>)`
 
 Convenience accessors such as `as_int`, `as_text`, `as_bool`, `as_timestamp`,
@@ -229,4 +230,3 @@ The crate root and [`prelude`] re-export the common API:
 
 Backend modules also expose lower-level helpers for callers that already manage
 native backend clients or need backend-specific prepared/transaction handles.
-

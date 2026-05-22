@@ -36,6 +36,20 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
                 &[RowValues::Int(1), RowValues::Text("alice".into())],
             )
             .await?;
+        let mut stmt = tx.prepare("SELECT name FROM t WHERE id = ?1").await?;
+        let mapped_name = tx
+            .query_prepared_map_one(&mut stmt, &[RowValues::Int(1)], |row| {
+                row.get::<String>(0).map_err(Into::into)
+            })
+            .await?;
+        assert_eq!(mapped_name, "alice");
+
+        let mapped_missing = tx
+            .query_prepared_map_optional(&mut stmt, &[RowValues::Int(2)], |row| {
+                row.get::<String>(0).map_err(Into::into)
+            })
+            .await?;
+        assert!(mapped_missing.is_none());
         tx.commit().await?;
 
         // Same SELECT placeholder style as SQLite
@@ -48,6 +62,7 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             rs.results[0].get("name").unwrap().as_text().unwrap(),
             "alice"
         );
+
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
     Ok(())

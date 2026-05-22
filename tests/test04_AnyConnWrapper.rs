@@ -100,6 +100,7 @@ async fn run_test_logic(
 
     batches::insert_individual(conn, &parameterized_query).await?;
     assert_count(conn, &count_query, 100).await?;
+    assert_mssql_native_row_mapping(conn, &db_type, &test_table).await?;
     batches::insert_backend_tx(conn, &db_type, &parameterized_query).await?;
     assert_count(conn, &count_query, 200).await?;
     batches::insert_backend_tx_with_count_check(conn, &db_type, &parameterized_query, &count_query)
@@ -118,5 +119,57 @@ async fn run_test_logic(
         cases::reset_backend(conn, &db_type).await?;
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "mssql")]
+async fn assert_mssql_native_row_mapping(
+    conn: &mut MiddlewarePoolConnection,
+    db_type: &DatabaseType,
+    test_table: &str,
+) -> Result<(), SqlMiddlewareDbError> {
+    if db_type != &DatabaseType::Mssql {
+        return Ok(());
+    }
+
+    let MiddlewarePoolConnection::Mssql {
+        conn: mssql_client, ..
+    } = conn
+    else {
+        return Ok(());
+    };
+
+    let mut tx = sql_middleware::mssql::begin_transaction(mssql_client).await?;
+    let prepared = tx.prepare(&format!("SELECT name FROM {test_table} WHERE id = @p1"))?;
+    let mapped_name = tx
+        .query_prepared_map_one(&prepared, &[sql_middleware::RowValues::Int(1)], |row| {
+            let value = row
+                .try_get::<&str, _>(0)?
+                .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("name was NULL".into()))?;
+            Ok(value.to_string())
+        })
+        .await?;
+    assert_eq!(mapped_name, "name_1");
+
+    let mapped_missing = tx
+        .query_prepared_map_optional(&prepared, &[sql_middleware::RowValues::Int(-1)], |row| {
+            let value = row
+                .try_get::<&str, _>(0)?
+                .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("name was NULL".into()))?;
+            Ok(value.to_string())
+        })
+        .await?;
+    assert!(mapped_missing.is_none());
+    tx.commit().await?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "mssql"))]
+async fn assert_mssql_native_row_mapping(
+    _conn: &mut MiddlewarePoolConnection,
+    _db_type: &DatabaseType,
+    _test_table: &str,
+) -> Result<(), SqlMiddlewareDbError> {
     Ok(())
 }

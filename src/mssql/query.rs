@@ -62,6 +62,36 @@ pub async fn build_result_set(
     Ok(result_set)
 }
 
+/// Execute a SQL Server query and map the first native row, if present.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError::ExecutionError` if query execution or row fetching fails, or
+/// any error returned by the mapper.
+pub(crate) async fn query_map_optional<T, F>(
+    client: &mut MssqlClient,
+    query: &str,
+    params: &[RowValues],
+    mapper: F,
+) -> Result<Option<T>, SqlMiddlewareDbError>
+where
+    F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
+{
+    let query_builder = bind_query_params(query, params);
+    let stream = query_builder.query(client).await.map_err(|e| {
+        SqlMiddlewareDbError::ExecutionError(format!("SQL Server query error: {e}"))
+    })?;
+    let mut rows_stream = stream.into_row_stream();
+    rows_stream
+        .try_next()
+        .await
+        .map_err(|e| {
+            SqlMiddlewareDbError::ExecutionError(format!("SQL Server row fetch error: {e}"))
+        })?
+        .as_ref()
+        .map(mapper)
+        .transpose()
+}
+
 /// Extract a value from a row at a specific index
 fn extract_value(row: &tiberius::Row, idx: usize) -> Option<RowValues> {
     // Since Tiberius Row API is a bit complex and varies by version,

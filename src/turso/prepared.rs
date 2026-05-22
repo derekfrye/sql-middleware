@@ -106,7 +106,10 @@ impl TursoNonTxPreparedStatement {
         self.query(params).await?.into_one()
     }
 
-    /// Execute the prepared statement and map the first row.
+    /// Execute the prepared statement and map the first native Turso row.
+    ///
+    /// Use this for hot paths that only need one row and can decode directly from
+    /// `turso::Row`, avoiding `ResultSet` materialisation.
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution fails, no row is returned, or the mapper
@@ -117,12 +120,15 @@ impl TursoNonTxPreparedStatement {
         mapper: F,
     ) -> Result<T, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query(params).await?.map_one(mapper)
+        self.query_map_optional(params, mapper)
+            .await?
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
     }
 
-    /// Execute the prepared statement and map the first row, returning `None` if no row exists.
+    /// Execute the prepared statement and map the first native Turso row, returning `None` if no
+    /// row exists.
     ///
     /// # Errors
     /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
@@ -132,9 +138,20 @@ impl TursoNonTxPreparedStatement {
         mapper: F,
     ) -> Result<Option<T>, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query(params).await?.map_optional(mapper)
+        let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
+
+        let rows = {
+            let mut stmt = self.statement.lock().await;
+            stmt.query(converted.0).await.map_err(|e| {
+                SqlMiddlewareDbError::ExecutionError(format!("Turso prepared query error: {e}"))
+            })?
+        };
+
+        let result = crate::turso::query::query_map_optional(rows, mapper).await;
+        self.reset().await?;
+        result
     }
 
     /// Execute the prepared statement as a DML (INSERT/UPDATE/DELETE) returning rows affected.

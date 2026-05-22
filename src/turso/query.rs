@@ -45,3 +45,22 @@ pub async fn build_result_set(
 
     Ok(result_set)
 }
+
+/// Map the first native Turso row from a row stream, if present.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if fetching the row fails or if the mapper returns an error.
+pub(crate) async fn query_map_optional<T, F>(
+    mut rows: turso::Rows,
+    mapper: F,
+) -> Result<Option<T>, SqlMiddlewareDbError>
+where
+    F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+{
+    rows.next()
+        .await
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso row fetch error: {e}")))?
+        .as_ref()
+        .map(mapper)
+        .transpose()
+}

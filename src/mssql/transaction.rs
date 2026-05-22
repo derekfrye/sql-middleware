@@ -4,7 +4,7 @@ use crate::middleware::{CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError}
 use crate::tx_outcome::TxOutcome;
 
 use super::config::MssqlClient;
-use super::query::{build_result_set, convert_affected_rows};
+use super::query::{build_result_set, convert_affected_rows, query_map_optional};
 
 /// Lightweight transaction wrapper for SQL Server.
 ///
@@ -29,8 +29,8 @@ pub struct Prepared {
 ///
 /// Returns `SqlMiddlewareDbError::ExecutionError` if issuing the BEGIN statement fails.
 pub async fn begin_transaction(client: &mut MssqlClient) -> Result<Tx<'_>, SqlMiddlewareDbError> {
-    Query::new("BEGIN TRANSACTION")
-        .execute(client)
+    client
+        .simple_query("BEGIN TRANSACTION")
         .await
         .map_err(|e| {
             SqlMiddlewareDbError::ExecutionError(format!("MSSQL begin transaction error: {e}"))
@@ -138,7 +138,10 @@ impl Tx<'_> {
         self.query_prepared(prepared, params).await?.into_one()
     }
 
-    /// Execute a prepared SELECT and map the first row.
+    /// Execute a prepared SELECT and map the first native SQL Server row.
+    ///
+    /// Use this for hot paths that only need one row and can decode directly from
+    /// `tiberius::Row`, avoiding `ResultSet` materialisation.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if execution fails, no row is returned, or the mapper fails.
@@ -149,12 +152,15 @@ impl Tx<'_> {
         mapper: F,
     ) -> Result<T, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query_prepared(prepared, params).await?.map_one(mapper)
+        self.query_prepared_map_optional(prepared, params, mapper)
+            .await?
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
     }
 
-    /// Execute a prepared SELECT and map the first row, returning `None` if no row exists.
+    /// Execute a prepared SELECT and map the first native SQL Server row, returning `None` if no
+    /// row exists.
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if execution or the mapper fails.
@@ -165,11 +171,9 @@ impl Tx<'_> {
         mapper: F,
     ) -> Result<Option<T>, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query_prepared(prepared, params)
-            .await?
-            .map_optional(mapper)
+        query_map_optional(self.client, &prepared.sql, params, mapper).await
     }
 
     /// Execute a SELECT inside the transaction.
@@ -191,8 +195,8 @@ impl Tx<'_> {
     /// Returns `SqlMiddlewareDbError` if commit fails.
     pub async fn commit(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         if self.open {
-            Query::new("COMMIT TRANSACTION")
-                .execute(self.client)
+            self.client
+                .simple_query("COMMIT TRANSACTION")
                 .await
                 .map_err(|e| {
                     SqlMiddlewareDbError::ExecutionError(format!("MSSQL commit error: {e}"))
@@ -209,8 +213,8 @@ impl Tx<'_> {
     /// Returns `SqlMiddlewareDbError` if rollback fails.
     pub async fn rollback(mut self) -> Result<TxOutcome, SqlMiddlewareDbError> {
         if self.open {
-            Query::new("ROLLBACK TRANSACTION")
-                .execute(self.client)
+            self.client
+                .simple_query("ROLLBACK TRANSACTION")
                 .await
                 .map_err(|e| {
                     SqlMiddlewareDbError::ExecutionError(format!("MSSQL rollback error: {e}"))

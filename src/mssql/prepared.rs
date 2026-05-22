@@ -4,7 +4,10 @@ use tokio::sync::Mutex;
 
 use crate::middleware::{CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError};
 
-use super::{config::MssqlClient, query::build_result_set};
+use super::{
+    config::MssqlClient,
+    query::{build_result_set, query_map_optional},
+};
 
 /// Prepared statement wrapper for SQL Server that holds onto a single connection.
 ///
@@ -74,7 +77,10 @@ impl MssqlNonTxPreparedStatement {
         self.query(params).await?.into_one()
     }
 
-    /// Execute the prepared statement and map the first row.
+    /// Execute the prepared statement and map the first native SQL Server row.
+    ///
+    /// Use this for hot paths that only need one row and can decode directly from
+    /// `tiberius::Row`, avoiding `ResultSet` materialisation.
     ///
     /// # Errors
     /// Returns an error if execution fails, no row is returned, or the mapper fails.
@@ -84,12 +90,15 @@ impl MssqlNonTxPreparedStatement {
         mapper: F,
     ) -> Result<T, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query(params).await?.map_one(mapper)
+        self.query_map_optional(params, mapper)
+            .await?
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
     }
 
-    /// Execute the prepared statement and map the first row, returning `None` if no row exists.
+    /// Execute the prepared statement and map the first native SQL Server row, returning `None` if
+    /// no row exists.
     ///
     /// # Errors
     /// Returns an error if execution or the mapper fails.
@@ -99,9 +108,10 @@ impl MssqlNonTxPreparedStatement {
         mapper: F,
     ) -> Result<Option<T>, SqlMiddlewareDbError>
     where
-        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+        F: FnOnce(&tiberius::Row) -> Result<T, SqlMiddlewareDbError>,
     {
-        self.query(params).await?.map_optional(mapper)
+        let mut client = self.client.lock().await;
+        query_map_optional(&mut client, &self.sql, params, mapper).await
     }
 
     /// Execute the prepared statement as DML and return affected rows.
