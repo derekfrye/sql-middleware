@@ -63,6 +63,22 @@ fn test5d_turso_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
             "alice"
         );
 
+        let prepared = conn
+            .prepare_turso_statement("SELECT name FROM t WHERE id = ?1")
+            .await?;
+        let mut params_buf = TursoParamsBuf::with_capacity(1);
+        params_buf.set_int(0, 1);
+        let mapped_name = prepared
+            .query_map_one_params(&params_buf, |row| row.get::<String>(0).map_err(Into::into))
+            .await?;
+        assert_eq!(mapped_name, "alice");
+
+        params_buf.set_int(0, 2);
+        let mapped_missing = prepared
+            .query_map_optional_params(&params_buf, |row| row.get::<String>(0).map_err(Into::into))
+            .await?;
+        assert!(mapped_missing.is_none());
+
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
     Ok(())

@@ -73,6 +73,10 @@ pub use middleware::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
 pub use middleware::{SqliteOptions, SqliteOptionsBuilder};
 #[cfg(feature = "turso")]
 pub use middleware::{TursoOptions, TursoOptionsBuilder};
+#[cfg(feature = "sqlite")]
+pub use sqlite::SqliteParamsBuf;
+#[cfg(feature = "turso")]
+pub use turso::TursoParamsBuf;
 
 // Re-export from modules for convenience
 pub use conversion::convert_sql_params;

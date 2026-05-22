@@ -30,7 +30,7 @@ pub use connection::{SqliteConnection, apply_wal_pragmas};
 #[allow(unused_imports)]
 pub use executor::{execute_batch, execute_dml, execute_select};
 #[allow(unused_imports)]
-pub use params::Params;
+pub use params::{Params, SqliteParamsBuf};
 pub use prepared::SqlitePreparedStatement;
 #[allow(unused_imports)]
 pub use query::build_result_set;

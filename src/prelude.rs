@@ -22,9 +22,9 @@ pub use crate::mssql::{MssqlOptions, MssqlOptionsBuilder};
 #[cfg(feature = "postgres")]
 pub use crate::postgres::{PgConfig, PostgresOptions, PostgresOptionsBuilder};
 #[cfg(feature = "sqlite")]
-pub use crate::sqlite::{SqliteOptions, SqliteOptionsBuilder};
+pub use crate::sqlite::{SqliteOptions, SqliteOptionsBuilder, SqliteParamsBuf};
 pub use crate::translation::{
     PlaceholderStyle, PrepareMode, QueryOptions, TranslationMode, translate_placeholders,
 };
 #[cfg(feature = "turso")]
-pub use crate::turso::{TursoOptions, TursoOptionsBuilder};
+pub use crate::turso::{TursoOptions, TursoOptionsBuilder, TursoParamsBuf};

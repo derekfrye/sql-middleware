@@ -36,6 +36,9 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `StatementCacheMode`
   - **Coverage:** Used via SQLite/Turso builders and `QueryBuilder::statement_cache` in `tests/test01.rs`.
   - **Purpose:** Per-pool/per-call switch between cached and uncached statement execution for SQLite/Turso; default remains cached.
+- `SqliteParamsBuf` / `TursoParamsBuf`
+  - **Coverage:** Used with prepared statements in `tests/test05c_sqlite.rs` and `tests/test05d_turso.rs`.
+  - **Purpose:** Reusable backend-native parameter buffers for hot SQLite/Turso prepared-statement loops; callers can mutate values in place without rebuilding params from `RowValues` each iteration.
 - `translation::TranslationMode`
   - **Coverage:** Used via `QueryBuilder::translation` in `tests/test06_postgres_translation.rs`, `tests/test06_turso_translation.rs`.
   - **Purpose:** Per-call toggle relative to pool default; public to let callers force on/off.
@@ -324,9 +327,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `Params`
   - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test07_new_rusqlite.rs`.
   - **Purpose:** SQLite param wrapper; public for conversion.
+- `SqliteParamsBuf`
+  - **Coverage:** Used with `SqlitePreparedStatement` in `tests/test05c_sqlite.rs`.
+  - **Purpose:** Reusable SQLite parameter buffer for prepared-statement hot paths; borrows driver-native values directly for execution.
 - `SqlitePreparedStatement`
-  - **Coverage:** Used in `tests/test05c_sqlite.rs`.
-  - **Purpose:** Prepared statement handle; public for reuse. `query_map_*` methods map native `rusqlite::Row` values inside the worker thread without building a `ResultSet`.
+  - **Coverage:** Used in `tests/test05c_sqlite.rs`, including reusable-buffer `*_params` methods.
+  - **Purpose:** Prepared statement handle; public for reuse. `query_map_*` methods map native `rusqlite::Row` values inside the worker thread without building a `ResultSet`; `*_params` variants accept `SqliteParamsBuf` for hot loops.
 - `build_result_set`
   - **Coverage:** Used in `tests/test04_AnyConnWrapper.rs`.
   - **Purpose:** Build results from rusqlite rows; public for manual execution.
@@ -353,9 +359,12 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
 - `Params`
   - **Coverage:** **Not covered**.
   - **Purpose:** Param wrapper for parity; public for manual conversions.
+- `TursoParamsBuf`
+  - **Coverage:** Used with `TursoNonTxPreparedStatement` in `tests/test05d_turso.rs`.
+  - **Purpose:** Reusable Turso parameter buffer for prepared-statement hot paths; converts to Turso driver params without rebuilding from `RowValues`.
 - `prepared::TursoNonTxPreparedStatement`
-  - **Coverage:** **Not covered**.
-  - **Purpose:** Non-transaction prepared handle; public for prepared execution without transactions. `query_map_*` methods map native `turso::Row` values without building a `ResultSet`.
+  - **Coverage:** Used in `tests/test05d_turso.rs`, including reusable-buffer `*_params` methods.
+  - **Purpose:** Non-transaction prepared handle; public for prepared execution without transactions. `query_map_*` methods map native `turso::Row` values without building a `ResultSet`; `*_params` variants accept `TursoParamsBuf` for hot loops.
 - `transaction::{Prepared, Tx, begin_transaction}`
   - **Coverage:** Used in `tests/test05d_turso.rs`.
   - **Purpose:** Transaction helpers; public for explicit transaction flows.

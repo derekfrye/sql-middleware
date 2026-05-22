@@ -6,7 +6,7 @@ use crate::adapters::params::convert_params;
 use crate::middleware::{ConversionMode, CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::types::StatementCacheMode;
 
-use super::params::Params as TursoParams;
+use super::params::{Params as TursoParams, TursoParamsBuf};
 
 /// Handle to a prepared Turso statement owned by a pooled connection.
 ///
@@ -69,10 +69,27 @@ impl TursoNonTxPreparedStatement {
     /// execution error, or result decoding cannot be completed.
     pub async fn query(&self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
         let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
+        self.query_driver_params(converted.0).await
+    }
 
+    /// Execute the prepared statement as a query using a reusable Turso parameter buffer.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or result decoding cannot be completed.
+    pub async fn query_params(
+        &self,
+        params: &TursoParamsBuf,
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
+        self.query_driver_params(params.to_params()).await
+    }
+
+    async fn query_driver_params(
+        &self,
+        params: turso::params::Params,
+    ) -> Result<ResultSet, SqlMiddlewareDbError> {
         let rows = {
             let mut stmt = self.statement.lock().await;
-            stmt.query(converted.0).await.map_err(|e| {
+            stmt.query(params).await.map_err(|e| {
                 SqlMiddlewareDbError::ExecutionError(format!("Turso prepared query error: {e}"))
             })?
         };
@@ -95,6 +112,21 @@ impl TursoNonTxPreparedStatement {
         self.query(params).await.map(ResultSet::into_optional)
     }
 
+    /// Execute the prepared statement with a reusable parameter buffer and return the first row,
+    /// if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if parameter conversion, execution, or result decoding
+    /// fails.
+    pub async fn query_optional_params(
+        &self,
+        params: &TursoParamsBuf,
+    ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.query_params(params)
+            .await
+            .map(ResultSet::into_optional)
+    }
+
     /// Execute the prepared statement as a query and return the first row.
     ///
     /// # Errors
@@ -104,6 +136,17 @@ impl TursoNonTxPreparedStatement {
         params: &[RowValues],
     ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
         self.query(params).await?.into_one()
+    }
+
+    /// Execute the prepared statement with a reusable parameter buffer and return the first row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or no row is returned.
+    pub async fn query_one_params(
+        &self,
+        params: &TursoParamsBuf,
+    ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.query_params(params).await?.into_one()
     }
 
     /// Execute the prepared statement and map the first native Turso row.
@@ -127,6 +170,25 @@ impl TursoNonTxPreparedStatement {
             .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
     }
 
+    /// Execute the prepared statement with a reusable parameter buffer and map the first native
+    /// Turso row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails, no row is returned, or the mapper
+    /// fails.
+    pub async fn query_map_one_params<T, F>(
+        &self,
+        params: &TursoParamsBuf,
+        mapper: F,
+    ) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query_map_optional_params(params, mapper)
+            .await?
+            .ok_or_else(|| SqlMiddlewareDbError::ExecutionError("query returned no rows".into()))
+    }
+
     /// Execute the prepared statement and map the first native Turso row, returning `None` if no
     /// row exists.
     ///
@@ -141,10 +203,38 @@ impl TursoNonTxPreparedStatement {
         F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
     {
         let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
+        self.query_map_optional_driver_params(converted.0, mapper)
+            .await
+    }
 
+    /// Execute the prepared statement with a reusable parameter buffer and map the first native
+    /// Turso row, returning `None` if no row exists.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
+    pub async fn query_map_optional_params<T, F>(
+        &self,
+        params: &TursoParamsBuf,
+        mapper: F,
+    ) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query_map_optional_driver_params(params.to_params(), mapper)
+            .await
+    }
+
+    async fn query_map_optional_driver_params<T, F>(
+        &self,
+        params: turso::params::Params,
+        mapper: F,
+    ) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&turso::Row) -> Result<T, SqlMiddlewareDbError>,
+    {
         let rows = {
             let mut stmt = self.statement.lock().await;
-            stmt.query(converted.0).await.map_err(|e| {
+            stmt.query(params).await.map_err(|e| {
                 SqlMiddlewareDbError::ExecutionError(format!("Turso prepared query error: {e}"))
             })?
         };
@@ -161,10 +251,28 @@ impl TursoNonTxPreparedStatement {
     /// error, or the affected-row count cannot be converted into `usize`.
     pub async fn execute(&self, params: &[RowValues]) -> Result<usize, SqlMiddlewareDbError> {
         let converted = convert_params::<TursoParams>(params, ConversionMode::Execute)?;
+        self.execute_driver_params(converted.0).await
+    }
 
+    /// Execute the prepared statement as DML using a reusable Turso parameter buffer.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if Turso returns an execution error, or the affected-row
+    /// count cannot be converted into `usize`.
+    pub async fn execute_params(
+        &self,
+        params: &TursoParamsBuf,
+    ) -> Result<usize, SqlMiddlewareDbError> {
+        self.execute_driver_params(params.to_params()).await
+    }
+
+    async fn execute_driver_params(
+        &self,
+        params: turso::params::Params,
+    ) -> Result<usize, SqlMiddlewareDbError> {
         let affected = {
             let mut stmt = self.statement.lock().await;
-            let affected = stmt.execute(converted.0).await.map_err(|e| {
+            let affected = stmt.execute(params).await.map_err(|e| {
                 SqlMiddlewareDbError::ExecutionError(format!("Turso prepared execute error: {e}"))
             })?;
             stmt.reset().map_err(|e| {
