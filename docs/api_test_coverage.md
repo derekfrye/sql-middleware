@@ -90,11 +90,11 @@ Public API surface exported via `src/lib.rs` and re-exported backend modules. Ea
   - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test07_new_rusqlite.rs`.
   - **Purpose:** Primary SQLite constructor taking `SqliteOptions`; public for consumer setup.
 - `ConfigAndPool::sqlite_builder`
-  - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test07_new_rusqlite.rs`; statement-cache option covered in `tests/test01.rs`.
-  - **Purpose:** Fluent builder for `SqliteOptions` to set defaults (e.g., translation, statement cache mode) without constructor variants.
+  - **Coverage:** `tests/test01.rs`, `tests/test03_sqlite.rs`, `tests/test04_AnyConnWrapper.rs`, `tests/test05c_sqlite.rs`, `tests/test07_new_rusqlite.rs`; statement-cache mode/capacity options covered in `tests/test01.rs`.
+  - **Purpose:** Fluent builder for `SqliteOptions` to set defaults (e.g., translation, statement cache mode/capacity) without constructor variants.
 - `SqliteOptions`
   - **Coverage:** Indirect via builder; not constructed directly in tests.
-  - **Purpose:** SQLite config (path + translation default + statement cache mode) for pool creation.
+  - **Purpose:** SQLite config (path + translation default + statement cache mode/capacity) for pool creation.
 - `SqliteOptionsBuilder`
   - **Coverage:** **Not covered** directly; exercised via `ConfigAndPool::sqlite_builder`.
   - **Purpose:** Fluent builder for `SqliteOptions`; public for ergonomic construction and parity with other backends.

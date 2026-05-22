@@ -1,7 +1,9 @@
 #![cfg(any(feature = "sqlite", feature = "turso"))]
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sql_middleware::middleware::{ConfigAndPool, RowValues, StatementCacheMode};
+use sql_middleware::middleware::{
+    ConfigAndPool, RowValues, SqlMiddlewareDbError, StatementCacheMode,
+};
 use tokio::runtime::Runtime;
 
 enum TestCase {
@@ -177,6 +179,39 @@ fn sqlite_and_turso_statement_cache_modes() -> Result<(), Box<dyn std::error::Er
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
 
+    Ok(())
+}
+
+#[test]
+fn sqlite_statement_cache_capacity_builder() -> Result<(), Box<dyn std::error::Error>> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let cap = ConfigAndPool::sqlite_builder(
+            "file:sqlite-cache-capacity?mode=memory&cache=shared".to_string(),
+        )
+        .statement_cache_capacity(0)
+        .build()
+        .await?;
+        let mut conn = cap.get_connection().await?;
+
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, name TEXT);")
+            .await?;
+        conn.query("INSERT INTO t (id, name) VALUES (?1, ?2)")
+            .params(&[RowValues::Int(1), RowValues::Text("alice".into())])
+            .dml()
+            .await?;
+        let rs = conn
+            .query("SELECT name FROM t WHERE id = ?1")
+            .params(&[RowValues::Int(1)])
+            .select()
+            .await?;
+        assert_eq!(
+            rs.results[0].get("name").unwrap().as_text().unwrap(),
+            "alice"
+        );
+
+        Ok::<(), SqlMiddlewareDbError>(())
+    })?;
     Ok(())
 }
 

@@ -14,6 +14,7 @@ pub struct SqliteOptions {
     pub translate_placeholders: bool,
     pub pool_options: MiddlewarePoolOptions,
     pub statement_cache_mode: StatementCacheMode,
+    pub statement_cache_capacity: Option<usize>,
 }
 
 impl SqliteOptions {
@@ -24,6 +25,7 @@ impl SqliteOptions {
             translate_placeholders: false,
             pool_options: MiddlewarePoolOptions::default(),
             statement_cache_mode: StatementCacheMode::Cached,
+            statement_cache_capacity: None,
         }
     }
 
@@ -34,6 +36,7 @@ impl SqliteOptions {
             translate_placeholders: false,
             pool_options: MiddlewarePoolOptions::default(),
             statement_cache_mode: StatementCacheMode::Cached,
+            statement_cache_capacity: None,
         }
     }
 
@@ -52,6 +55,12 @@ impl SqliteOptions {
     #[must_use]
     pub fn with_statement_cache(mut self, statement_cache_mode: StatementCacheMode) -> Self {
         self.statement_cache_mode = statement_cache_mode;
+        self
+    }
+
+    #[must_use]
+    pub fn with_statement_cache_capacity(mut self, capacity: usize) -> Self {
+        self.statement_cache_capacity = Some(capacity);
         self
     }
 
@@ -102,6 +111,12 @@ impl SqliteOptionsBuilder {
     }
 
     #[must_use]
+    pub fn statement_cache_capacity(mut self, capacity: usize) -> Self {
+        self.opts.statement_cache_capacity = Some(capacity);
+        self
+    }
+
+    #[must_use]
     pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
         self.opts.pool_options.test_on_check_out = test_on_check_out;
         self
@@ -139,8 +154,9 @@ impl ConfigAndPool {
     /// Returns `SqlMiddlewareDbError::ConnectionError` if pool creation or connection test fails.
     pub async fn new_sqlite(opts: SqliteOptions) -> Result<Self, SqlMiddlewareDbError> {
         let pool_options = opts.pool_options;
-        let manager =
-            SqliteManager::from_path(opts.db_path.clone()).with_pool_options(pool_options);
+        let manager = SqliteManager::from_path(opts.db_path.clone())
+            .with_pool_options(pool_options)
+            .with_statement_cache_capacity(opts.statement_cache_capacity);
         let pool = manager.build_pool().await?;
 
         {

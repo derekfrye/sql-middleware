@@ -152,6 +152,7 @@ impl Drop for SqliteWorker {
 pub struct SqliteManager {
     db_path: PathBuf,
     pool_options: MiddlewarePoolOptions,
+    statement_cache_capacity: Option<usize>,
 }
 
 impl SqliteManager {
@@ -160,6 +161,7 @@ impl SqliteManager {
         Self {
             db_path: db_path.into(),
             pool_options: MiddlewarePoolOptions::default(),
+            statement_cache_capacity: None,
         }
     }
 
@@ -168,12 +170,19 @@ impl SqliteManager {
         Self {
             db_path: db_path.into(),
             pool_options: MiddlewarePoolOptions::default(),
+            statement_cache_capacity: None,
         }
     }
 
     #[must_use]
     pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
         self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_statement_cache_capacity(mut self, capacity: Option<usize>) -> Self {
+        self.statement_cache_capacity = capacity;
         self
     }
 
@@ -198,9 +207,13 @@ impl ManageConnection for SqliteManager {
         &self,
     ) -> impl std::future::Future<Output = Result<Self::Connection, Self::Error>> + Send {
         let path = self.db_path.clone();
+        let statement_cache_capacity = self.statement_cache_capacity;
         async move {
             let conn =
                 rusqlite::Connection::open(path).map_err(SqlMiddlewareDbError::SqliteError)?;
+            if let Some(capacity) = statement_cache_capacity {
+                conn.set_prepared_statement_cache_capacity(capacity);
+            }
             Ok(SqliteWorker::start(conn))
         }
     }

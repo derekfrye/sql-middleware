@@ -446,6 +446,15 @@ let rows = conn
     .await?;
 ```
 
+SQLite also exposes the underlying `rusqlite` prepared-statement cache capacity at pool construction:
+
+```rust
+let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+    .statement_cache_capacity(256)
+    .build()
+    .await?;
+```
+
 ## Pool Checkout Validation
 
 All `bb8`-backed backend builders expose `test_on_check_out(bool)`. The default is `true`, which validates a pooled connection before returning it. Hot paths can disable that validation and handle stale connections on first real use:
