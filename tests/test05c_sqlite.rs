@@ -61,6 +61,28 @@ fn test5c_sqlite_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap(),
             "alice"
         );
+
+        let row = prepared.query_one(&[RowValues::Int(1)]).await?;
+        assert_eq!(row.get("name").unwrap().as_text().unwrap(), "alice");
+
+        let missing = prepared.query_optional(&[RowValues::Int(2)]).await?;
+        assert!(missing.is_none());
+
+        let mapped_name = prepared
+            .query_map_one(&[RowValues::Int(1)], |row| {
+                row.get::<_, String>(0)
+                    .map_err(SqlMiddlewareDbError::SqliteError)
+            })
+            .await?;
+        assert_eq!(mapped_name, "alice");
+
+        let mapped_missing = prepared
+            .query_map_optional(&[RowValues::Int(2)], |row| {
+                row.get::<_, String>(0)
+                    .map_err(SqlMiddlewareDbError::SqliteError)
+            })
+            .await?;
+        assert!(mapped_missing.is_none());
         Ok::<(), SqlMiddlewareDbError>(())
     })?;
     Ok(())

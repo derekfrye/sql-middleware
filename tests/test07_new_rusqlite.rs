@@ -105,7 +105,7 @@ async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Er
     apply_pragmas(&mut conn).await?;
     conn.execute_batch("CREATE TABLE t1 (id INTEGER)").await?;
 
-    let (mut raw, translate) = conn.into_sqlite()?;
+    let (mut raw, translate, statement_cache_mode) = conn.into_sqlite()?;
     raw.begin().await?;
     // While tx flag is active, auto-commit commands are rejected.
     let err = raw
@@ -116,7 +116,8 @@ async fn sqlite_tx_blocks_non_tx_commands() -> Result<(), Box<dyn std::error::Er
     assert!(format!("{err}").contains("SQLite transaction in progress; operation not permitted"));
 
     // Connection should be usable again after rollback.
-    let mut conn = MiddlewarePoolConnection::from_sqlite_parts(raw, translate);
+    let mut conn =
+        MiddlewarePoolConnection::from_sqlite_parts(raw, translate, statement_cache_mode);
     conn.execute_batch("INSERT INTO t1 (id) VALUES (1)").await?;
 
     Ok(())
@@ -132,7 +133,7 @@ async fn sqlite_tx_id_mismatch_errors_cleanly() -> Result<(), Box<dyn std::error
     apply_pragmas(&mut conn).await?;
     conn.execute_batch("CREATE TABLE t2 (id INTEGER)").await?;
 
-    let (mut raw, _) = conn.into_sqlite()?;
+    let (mut raw, _, _) = conn.into_sqlite()?;
     // Committing without BEGIN should fail cleanly.
     let err = raw.commit().await.unwrap_err();
     assert!(format!("{err}").contains("transaction not active"));

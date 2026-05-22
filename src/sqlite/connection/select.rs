@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::adapters::params::convert_params;
 use crate::executor::QueryTarget;
-use crate::middleware::{ConversionMode, ResultSet, SqlMiddlewareDbError};
+use crate::middleware::{ConversionMode, ResultSet, SqlMiddlewareDbError, StatementCacheMode};
 use crate::query_builder::QueryBuilder;
 use crate::types::RowValues;
 
@@ -20,6 +20,7 @@ impl SqliteConnection {
         query: &str,
         params: &[rusqlite::types::Value],
         builder: F,
+        statement_cache_mode: StatementCacheMode,
     ) -> Result<ResultSet, SqlMiddlewareDbError>
     where
         F: FnOnce(
@@ -31,12 +32,23 @@ impl SqliteConnection {
     {
         let sql_owned = query.to_owned();
         let params_owned = params.to_vec();
-        run_blocking(self.conn_handle(), move |guard| {
-            let mut stmt = guard
-                .prepare_cached(&sql_owned)
-                .map_err(SqlMiddlewareDbError::SqliteError)?;
-            builder(&mut stmt, &params_owned)
-        })
+        run_blocking(
+            self.conn_handle(),
+            move |guard| match statement_cache_mode {
+                StatementCacheMode::Cached => {
+                    let mut stmt = guard
+                        .prepare_cached(&sql_owned)
+                        .map_err(SqlMiddlewareDbError::SqliteError)?;
+                    builder(&mut stmt, &params_owned)
+                }
+                StatementCacheMode::Uncached => {
+                    let mut stmt = guard
+                        .prepare(&sql_owned)
+                        .map_err(SqlMiddlewareDbError::SqliteError)?;
+                    builder(&mut stmt, &params_owned)
+                }
+            },
+        )
         .await
     }
 
@@ -89,15 +101,36 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
+    select_with_cache_mode(conn, query, params, StatementCacheMode::Cached).await
+}
+
+/// Adapter for query builder select with explicit statement cache mode.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if converting parameters or executing the query fails.
+pub async fn select_with_cache_mode(
+    conn: &mut bb8::PooledConnection<'static, SqliteManager>,
+    query: &str,
+    params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
+) -> Result<ResultSet, SqlMiddlewareDbError> {
     let converted = convert_params::<Params>(params, ConversionMode::Query)?.0;
     let sql_owned = query.to_owned();
     let params_owned = converted.clone();
     let handle = Arc::clone(&*conn);
-    run_blocking(handle, move |guard| {
-        let mut stmt = guard
-            .prepare_cached(&sql_owned)
-            .map_err(SqlMiddlewareDbError::SqliteError)?;
-        super::super::query::build_result_set(&mut stmt, &params_owned)
+    run_blocking(handle, move |guard| match statement_cache_mode {
+        StatementCacheMode::Cached => {
+            let mut stmt = guard
+                .prepare_cached(&sql_owned)
+                .map_err(SqlMiddlewareDbError::SqliteError)?;
+            super::super::query::build_result_set(&mut stmt, &params_owned)
+        }
+        StatementCacheMode::Uncached => {
+            let mut stmt = guard
+                .prepare(&sql_owned)
+                .map_err(SqlMiddlewareDbError::SqliteError)?;
+            super::super::query::build_result_set(&mut stmt, &params_owned)
+        }
     })
     .await
 }

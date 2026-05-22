@@ -431,6 +431,27 @@ let rows = conn
     .await?;
 ```
 
+## Statement Cache Mode
+
+SQLite and Turso use cached statements by default. For high-cardinality dynamic SQL, you can opt out at pool construction and override individual calls when a known hot statement should still use the cache:
+
+```rust
+use sql_middleware::prelude::*;
+
+let cap = ConfigAndPool::sqlite_builder("file::memory:?cache=shared".to_string())
+    .statement_cache(StatementCacheMode::Uncached)
+    .build()
+    .await?;
+let mut conn = cap.get_connection().await?;
+
+let rows = conn
+    .query("select * from t where id = ?1")
+    .params(&[RowValues::Int(1)])
+    .statement_cache(StatementCacheMode::Cached)
+    .select()
+    .await?;
+```
+
 ## Pool Checkout Validation
 
 All `bb8`-backed backend builders expose `test_on_check_out(bool)`. The default is `true`, which validates a pooled connection before returning it. Hot paths can disable that validation and handle stale connections on first real use:

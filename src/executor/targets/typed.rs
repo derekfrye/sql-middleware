@@ -1,4 +1,5 @@
 use super::{QueryTarget, QueryTargetKind};
+use crate::types::StatementCacheMode;
 
 #[cfg(feature = "mssql")]
 use crate::mssql::typed::MssqlManager;
@@ -29,6 +30,7 @@ impl<'a> QueryTarget<'a> {
         };
         QueryTarget {
             translation_default: false,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind,
         }
     }
@@ -47,6 +49,7 @@ impl<'a> QueryTarget<'a> {
         };
         QueryTarget {
             translation_default: false,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind,
         }
     }
@@ -65,6 +68,7 @@ impl<'a> QueryTarget<'a> {
         };
         QueryTarget {
             translation_default: false,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind,
         }
     }
@@ -83,6 +87,7 @@ impl<'a> QueryTarget<'a> {
         };
         QueryTarget {
             translation_default: true,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind,
         }
     }

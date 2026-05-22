@@ -4,6 +4,7 @@ use crate::middleware::{
     ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolOptions, SqlMiddlewareDbError,
 };
 use crate::turso::typed::TursoManager;
+use crate::types::StatementCacheMode;
 
 /// Options for configuring a Turso database.
 #[derive(Debug, Clone)]
@@ -11,6 +12,7 @@ pub struct TursoOptions {
     pub db_path: PathBuf,
     pub translate_placeholders: bool,
     pub pool_options: MiddlewarePoolOptions,
+    pub statement_cache_mode: StatementCacheMode,
 }
 
 impl TursoOptions {
@@ -20,6 +22,7 @@ impl TursoOptions {
             db_path: db_path.into(),
             translate_placeholders: false,
             pool_options: MiddlewarePoolOptions::default(),
+            statement_cache_mode: StatementCacheMode::Cached,
         }
     }
 
@@ -29,6 +32,7 @@ impl TursoOptions {
             db_path: db_path.into(),
             translate_placeholders: false,
             pool_options: MiddlewarePoolOptions::default(),
+            statement_cache_mode: StatementCacheMode::Cached,
         }
     }
 
@@ -41,6 +45,12 @@ impl TursoOptions {
     #[must_use]
     pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
         self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_statement_cache(mut self, statement_cache_mode: StatementCacheMode) -> Self {
+        self.statement_cache_mode = statement_cache_mode;
         self
     }
 
@@ -85,6 +95,12 @@ impl TursoOptionsBuilder {
     }
 
     #[must_use]
+    pub fn statement_cache(mut self, statement_cache_mode: StatementCacheMode) -> Self {
+        self.opts.statement_cache_mode = statement_cache_mode;
+        self
+    }
+
+    #[must_use]
     pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Self {
         self.opts.pool_options.test_on_check_out = test_on_check_out;
         self
@@ -124,6 +140,7 @@ impl ConfigAndPool {
         let db_path = opts.db_path;
         let translate_placeholders = opts.translate_placeholders;
         let pool_options = opts.pool_options;
+        let statement_cache_mode = opts.statement_cache_mode;
         let db_path = db_path.to_str().ok_or_else(|| {
             SqlMiddlewareDbError::ConnectionError(
                 "Turso local database paths must be valid UTF-8".into(),
@@ -154,6 +171,7 @@ impl ConfigAndPool {
             pool: MiddlewarePool::Turso(pool),
             db_type: DatabaseType::Turso,
             translate_placeholders,
+            statement_cache_mode,
         })
     }
 }

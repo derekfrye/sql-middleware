@@ -2,7 +2,7 @@ use crate::error::SqlMiddlewareDbError;
 use crate::pool::MiddlewarePoolConnection;
 use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
-use crate::types::RowValues;
+use crate::types::{RowValues, StatementCacheMode};
 
 #[cfg(feature = "mssql")]
 use crate::mssql;
@@ -53,6 +53,7 @@ pub(crate) async fn execute_select_dispatch(
     conn: &mut MiddlewarePoolConnection,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     match conn {
         #[cfg(feature = "postgres")]
@@ -62,7 +63,7 @@ pub(crate) async fn execute_select_dispatch(
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => {
             let sqlite_client = conn.sqlite_conn_mut()?;
-            sqlite::execute_select(sqlite_client, query, params).await
+            sqlite::execute_select(sqlite_client, query, params, statement_cache_mode).await
         }
         #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql {
@@ -71,7 +72,7 @@ pub(crate) async fn execute_select_dispatch(
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso {
             conn: turso_conn, ..
-        } => turso::execute_select(turso_conn, query, params).await,
+        } => turso::execute_select(turso_conn, query, params, statement_cache_mode).await,
         #[allow(unreachable_patterns)]
         _ => Err(SqlMiddlewareDbError::Unimplemented(
             "This database type is not enabled in the current build".to_string(),
@@ -83,6 +84,7 @@ pub(crate) async fn execute_select_prepared_dispatch(
     conn: &mut MiddlewarePoolConnection,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     match conn {
         #[cfg(feature = "postgres")]
@@ -92,7 +94,7 @@ pub(crate) async fn execute_select_prepared_dispatch(
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => {
             let sqlite_client = conn.sqlite_conn_mut()?;
-            sqlite::execute_select(sqlite_client, query, params).await
+            sqlite::execute_select(sqlite_client, query, params, statement_cache_mode).await
         }
         #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql {
@@ -101,7 +103,7 @@ pub(crate) async fn execute_select_prepared_dispatch(
         #[cfg(feature = "turso")]
         MiddlewarePoolConnection::Turso {
             conn: turso_conn, ..
-        } => turso::execute_select(turso_conn, query, params).await,
+        } => turso::execute_select(turso_conn, query, params, statement_cache_mode).await,
         #[allow(unreachable_patterns)]
         _ => Err(SqlMiddlewareDbError::Unimplemented(
             "This database type is not enabled in the current build".to_string(),
@@ -113,7 +115,11 @@ pub(crate) async fn execute_dml_dispatch(
     conn: &mut MiddlewarePoolConnection,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<usize, SqlMiddlewareDbError> {
+    #[cfg(not(feature = "sqlite"))]
+    let _ = statement_cache_mode;
+
     match conn {
         #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {
@@ -125,7 +131,7 @@ pub(crate) async fn execute_dml_dispatch(
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => {
             let sqlite_client = conn.sqlite_conn_mut()?;
-            sqlite::execute_dml(sqlite_client, query, params).await
+            sqlite::execute_dml(sqlite_client, query, params, statement_cache_mode).await
         }
         #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql {
@@ -146,7 +152,11 @@ pub(crate) async fn execute_dml_prepared_dispatch(
     conn: &mut MiddlewarePoolConnection,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<usize, SqlMiddlewareDbError> {
+    #[cfg(not(feature = "sqlite"))]
+    let _ = statement_cache_mode;
+
     match conn {
         #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {
@@ -155,7 +165,7 @@ pub(crate) async fn execute_dml_prepared_dispatch(
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => {
             let sqlite_client = conn.sqlite_conn_mut()?;
-            sqlite::execute_dml(sqlite_client, query, params).await
+            sqlite::execute_dml(sqlite_client, query, params, statement_cache_mode).await
         }
         #[cfg(feature = "mssql")]
         MiddlewarePoolConnection::Mssql {

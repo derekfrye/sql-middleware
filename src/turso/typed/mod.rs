@@ -10,5 +10,5 @@ mod tx;
 
 pub use core::{Idle, InTx, TursoConnection, TursoManager};
 pub use dml::dml;
-pub use select::select;
+pub use select::{select, select_with_cache_mode};
 pub use tx::set_skip_drop_rollback_for_tests;

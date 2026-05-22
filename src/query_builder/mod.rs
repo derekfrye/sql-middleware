@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::executor::QueryTarget;
 use crate::pool::MiddlewarePoolConnection;
 use crate::translation::{PrepareMode, QueryOptions, TranslationMode, translate_placeholders};
-use crate::types::RowValues;
+use crate::types::{RowValues, StatementCacheMode};
 
 mod dml;
 mod select;
@@ -84,6 +84,13 @@ impl<'conn, 'q> QueryBuilder<'conn, 'q> {
     #[must_use]
     pub fn prepare(mut self) -> Self {
         self.options.prepare = PrepareMode::Prepared;
+        self
+    }
+
+    /// Override the statement cache mode for SQLite/Turso execution paths.
+    #[must_use]
+    pub fn statement_cache(mut self, statement_cache: StatementCacheMode) -> Self {
+        self.options.statement_cache = Some(statement_cache);
         self
     }
 }

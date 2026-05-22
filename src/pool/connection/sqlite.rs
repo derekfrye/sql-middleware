@@ -1,6 +1,7 @@
 use crate::error::SqlMiddlewareDbError;
 use crate::sqlite::config::SqliteManager;
 use crate::sqlite::{SqliteConnection, SqlitePreparedStatement};
+use crate::types::StatementCacheMode;
 
 use super::MiddlewarePoolConnection;
 
@@ -8,6 +9,7 @@ use super::MiddlewarePoolConnection;
 pub(super) async fn get_connection(
     pool: &bb8::Pool<SqliteManager>,
     translate_placeholders: bool,
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
     let conn = pool.get_owned().await.map_err(|e| {
         SqlMiddlewareDbError::ConnectionError(format!("sqlite checkout error: {e}"))
@@ -16,6 +18,7 @@ pub(super) async fn get_connection(
     Ok(MiddlewarePoolConnection::Sqlite {
         conn: Some(worker_conn),
         translate_placeholders,
+        statement_cache_mode,
     })
 }
 
@@ -92,8 +95,10 @@ impl MiddlewarePoolConnection {
         &mut self,
         query: &str,
     ) -> Result<SqlitePreparedStatement<'_>, SqlMiddlewareDbError> {
+        let statement_cache_mode = self.statement_cache_mode_default();
         let conn = self.sqlite_conn_mut()?;
-        conn.prepare_statement(query).await
+        conn.prepare_statement_with_cache_mode(query, statement_cache_mode)
+            .await
     }
 
     pub(crate) fn sqlite_conn_mut(
@@ -116,14 +121,17 @@ impl MiddlewarePoolConnection {
     ///
     /// # Errors
     /// Returns `SqlMiddlewareDbError` if the connection is already taken or the enum is not `SQLite`.
-    pub fn into_sqlite(self) -> Result<(SqliteConnection, bool), SqlMiddlewareDbError> {
+    pub fn into_sqlite(
+        self,
+    ) -> Result<(SqliteConnection, bool, StatementCacheMode), SqlMiddlewareDbError> {
         match self {
             MiddlewarePoolConnection::Sqlite {
                 mut conn,
                 translate_placeholders,
+                statement_cache_mode,
             } => conn
                 .take()
-                .map(|conn| (conn, translate_placeholders))
+                .map(|conn| (conn, translate_placeholders, statement_cache_mode))
                 .ok_or_else(|| {
                     SqlMiddlewareDbError::ExecutionError(
                         "SQLite connection already taken from pool wrapper".into(),
@@ -141,10 +149,12 @@ impl MiddlewarePoolConnection {
     pub fn from_sqlite_parts(
         conn: SqliteConnection,
         translate_placeholders: bool,
+        statement_cache_mode: StatementCacheMode,
     ) -> MiddlewarePoolConnection {
         MiddlewarePoolConnection::Sqlite {
             conn: Some(conn),
             translate_placeholders,
+            statement_cache_mode,
         }
     }
 }

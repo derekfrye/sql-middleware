@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::adapters::params::convert_params;
-use crate::middleware::{ConversionMode, SqlMiddlewareDbError};
+use crate::middleware::{ConversionMode, SqlMiddlewareDbError, StatementCacheMode};
 use crate::types::RowValues;
 
 use super::{SqliteConnection, run_blocking};
@@ -42,22 +42,32 @@ impl SqliteConnection {
         &mut self,
         query: &str,
         params: &[rusqlite::types::Value],
+        statement_cache_mode: StatementCacheMode,
     ) -> Result<usize, SqlMiddlewareDbError> {
         self.ensure_not_in_tx("execute dml")?;
         let sql_owned = query.to_owned();
         let params_owned = params.to_vec();
         run_blocking(self.conn_handle(), move |guard| {
-            let mut stmt = guard
-                .prepare_cached(&sql_owned)
-                .map_err(SqlMiddlewareDbError::SqliteError)?;
             let refs: Vec<&dyn rusqlite::ToSql> = params_owned
                 .iter()
                 .map(|v| v as &dyn rusqlite::ToSql)
                 .collect();
-            let affected = stmt
-                .execute(&refs[..])
-                .map_err(SqlMiddlewareDbError::SqliteError)?;
-            Ok(affected)
+            match statement_cache_mode {
+                StatementCacheMode::Cached => {
+                    let mut stmt = guard
+                        .prepare_cached(&sql_owned)
+                        .map_err(SqlMiddlewareDbError::SqliteError)?;
+                    stmt.execute(&refs[..])
+                        .map_err(SqlMiddlewareDbError::SqliteError)
+                }
+                StatementCacheMode::Uncached => {
+                    let mut stmt = guard
+                        .prepare(&sql_owned)
+                        .map_err(SqlMiddlewareDbError::SqliteError)?;
+                    stmt.execute(&refs[..])
+                        .map_err(SqlMiddlewareDbError::SqliteError)
+                }
+            }
         })
         .await
     }
@@ -123,22 +133,44 @@ pub async fn dml(
     query: &str,
     params: &[RowValues],
 ) -> Result<usize, SqlMiddlewareDbError> {
+    dml_with_cache_mode(conn, query, params, StatementCacheMode::Cached).await
+}
+
+/// Adapter for query builder dml with explicit statement cache mode.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if converting parameters or executing the statement fails.
+pub async fn dml_with_cache_mode(
+    conn: &mut PooledConnection<'static, SqliteManager>,
+    query: &str,
+    params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
+) -> Result<usize, SqlMiddlewareDbError> {
     let converted = convert_params::<Params>(params, ConversionMode::Execute)?.0;
     let sql_owned = query.to_owned();
     let params_owned = converted.clone();
     let handle = Arc::clone(&*conn);
     run_blocking(handle, move |guard| {
-        let mut stmt = guard
-            .prepare_cached(&sql_owned)
-            .map_err(SqlMiddlewareDbError::SqliteError)?;
         let refs: Vec<&dyn rusqlite::ToSql> = params_owned
             .iter()
             .map(|v| v as &dyn rusqlite::ToSql)
             .collect();
-        let affected = stmt
-            .execute(&refs[..])
-            .map_err(SqlMiddlewareDbError::SqliteError)?;
-        Ok(affected)
+        match statement_cache_mode {
+            StatementCacheMode::Cached => {
+                let mut stmt = guard
+                    .prepare_cached(&sql_owned)
+                    .map_err(SqlMiddlewareDbError::SqliteError)?;
+                stmt.execute(&refs[..])
+                    .map_err(SqlMiddlewareDbError::SqliteError)
+            }
+            StatementCacheMode::Uncached => {
+                let mut stmt = guard
+                    .prepare(&sql_owned)
+                    .map_err(SqlMiddlewareDbError::SqliteError)?;
+                stmt.execute(&refs[..])
+                    .map_err(SqlMiddlewareDbError::SqliteError)
+            }
+        }
     })
     .await
 }

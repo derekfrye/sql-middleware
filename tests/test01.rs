@@ -1,7 +1,7 @@
 #![cfg(any(feature = "sqlite", feature = "turso"))]
 use chrono::NaiveDateTime;
 use serde_json::json;
-use sql_middleware::middleware::{ConfigAndPool, RowValues};
+use sql_middleware::middleware::{ConfigAndPool, RowValues, StatementCacheMode};
 use tokio::runtime::Runtime;
 
 enum TestCase {
@@ -117,6 +117,65 @@ fn sqlite_and_turso_core_logic() -> Result<(), Box<dyn std::error::Error>> {
             Ok::<(), Box<dyn std::error::Error>>(())
         })?;
     }
+
+    Ok(())
+}
+
+#[test]
+fn sqlite_and_turso_statement_cache_modes() -> Result<(), Box<dyn std::error::Error>> {
+    let rt = Runtime::new()?;
+
+    rt.block_on(async {
+        let sqlite_path = unique_path("cache_mode_sqlite");
+        let _sqlite_cleanup = FileCleanup(vec![sqlite_path.clone()]);
+        let cap = ConfigAndPool::sqlite_builder(sqlite_path)
+            .statement_cache(StatementCacheMode::Uncached)
+            .build()
+            .await?;
+        let mut conn = cap.get_connection().await?;
+        conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+            .await?;
+        conn.query("INSERT INTO t (id, name) VALUES (?1, ?2)")
+            .params(&[RowValues::Int(1), RowValues::Text("sqlite".into())])
+            .statement_cache(StatementCacheMode::Cached)
+            .dml()
+            .await?;
+        let row = conn
+            .query("SELECT name FROM t WHERE id = ?1")
+            .params(&[RowValues::Int(1)])
+            .prepare()
+            .statement_cache(StatementCacheMode::Uncached)
+            .select()
+            .await?
+            .into_one()?;
+        assert_eq!(row.get("name").unwrap().as_text().unwrap(), "sqlite");
+
+        #[cfg(feature = "turso")]
+        {
+            let cap = ConfigAndPool::turso_builder(":memory:".to_string())
+                .statement_cache(StatementCacheMode::Uncached)
+                .build()
+                .await?;
+            let mut conn = cap.get_connection().await?;
+            conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+                .await?;
+            conn.query("INSERT INTO t (id, name) VALUES (?1, ?2)")
+                .params(&[RowValues::Int(1), RowValues::Text("turso".into())])
+                .dml()
+                .await?;
+            let row = conn
+                .query("SELECT name FROM t WHERE id = ?1")
+                .params(&[RowValues::Int(1)])
+                .prepare()
+                .statement_cache(StatementCacheMode::Cached)
+                .select()
+                .await?
+                .into_one()?;
+            assert_eq!(row.get("name").unwrap().as_text().unwrap(), "turso");
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })?;
 
     Ok(())
 }

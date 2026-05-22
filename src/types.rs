@@ -139,6 +139,19 @@ pub enum ConversionMode {
     Execute,
 }
 
+/// Whether SQLite-family backends should use their prepared statement cache.
+///
+/// This currently applies to SQLite and Turso paths that can choose between cached and uncached
+/// prepare calls. Other backends ignore it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StatementCacheMode {
+    /// Reuse backend statement caches where available.
+    #[default]
+    Cached,
+    /// Prepare without inserting the SQL text into the backend statement cache.
+    Uncached,
+}
+
 /// Convert a slice of `RowValues` into database-specific parameters.
 /// This trait provides a unified interface for converting generic `RowValues`
 /// to database-specific parameter types.

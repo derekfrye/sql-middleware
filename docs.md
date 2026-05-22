@@ -104,6 +104,27 @@ pub async fn sqlite_without_checkout_validation() -> Result<ConfigAndPool, SqlMi
 }
 ```
 
+SQLite and Turso default to cached statements. For dynamic SQL workloads, set
+[`StatementCacheMode::Uncached`] at the pool level or override a single query:
+
+```rust,no_run
+use sql_middleware::prelude::*;
+
+pub async fn sqlite_uncached_query() -> Result<ResultSet, SqlMiddlewareDbError> {
+    let cap = ConfigAndPool::sqlite_builder("app.db".to_string())
+        .statement_cache(StatementCacheMode::Uncached)
+        .build()
+        .await?;
+    let mut conn = cap.get_connection().await?;
+
+    conn.query("SELECT id FROM users WHERE name = ?1")
+        .params(&[RowValues::Text("alice".to_string())])
+        .statement_cache(StatementCacheMode::Cached)
+        .select()
+        .await
+}
+```
+
 For lower-level construction, you can use the option structs directly:
 
 ```rust,no_run
@@ -200,7 +221,7 @@ The crate root and [`prelude`] re-export the common API:
   [`BatchTarget`], [`execute_batch`]
 - Values and results: [`RowValues`], [`ResultSet`], [`CustomDbRow`]
 - Translation: [`TranslationMode`], [`PrepareMode`], [`QueryOptions`],
-  [`PlaceholderStyle`], [`translate_placeholders`]
+  [`StatementCacheMode`], [`PlaceholderStyle`], [`translate_placeholders`]
 - Errors and metadata: [`SqlMiddlewareDbError`], [`DatabaseType`],
   [`ConversionMode`], [`TxOutcome`]
 - Typed API: [`typed`], [`typed_api`], and backend modules `typed_postgres`,
@@ -208,5 +229,4 @@ The crate root and [`prelude`] re-export the common API:
 
 Backend modules also expose lower-level helpers for callers that already manage
 native backend clients or need backend-specific prepared/transaction handles.
-
 

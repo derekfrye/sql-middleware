@@ -186,6 +186,7 @@ impl ConfigAndPool {
             pool: MiddlewarePool::Mssql(pool),
             db_type: DatabaseType::Mssql,
             translate_placeholders: opts.translate_placeholders,
+            statement_cache_mode: crate::types::StatementCacheMode::Cached,
         })
     }
 }

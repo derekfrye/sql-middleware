@@ -5,7 +5,7 @@ use crate::executor::{
 use crate::pool::MiddlewarePoolConnection;
 use crate::results::ResultSet;
 use crate::translation::PrepareMode;
-use crate::types::RowValues;
+use crate::types::{RowValues, StatementCacheMode};
 
 #[cfg(feature = "postgres")]
 use crate::postgres::typed::PgManager;
@@ -38,21 +38,39 @@ impl QueryBuilder<'_, '_> {
             self.options,
         );
         let use_prepare = matches!(self.options.prepare, PrepareMode::Prepared);
+        let statement_cache_mode = self
+            .options
+            .statement_cache
+            .unwrap_or(self.target.statement_cache_mode);
 
         match self.target {
             QueryTarget {
                 kind: QueryTargetKind::Connection(conn),
                 ..
             } => {
-                select_on_connection(conn, translated.as_ref(), self.params.as_ref(), use_prepare)
-                    .await
+                select_on_connection(
+                    conn,
+                    translated.as_ref(),
+                    self.params.as_ref(),
+                    use_prepare,
+                    statement_cache_mode,
+                )
+                .await
             }
             #[cfg(feature = "sqlite")]
             QueryTarget {
                 kind:
                     QueryTargetKind::TypedSqlite { conn } | QueryTargetKind::TypedSqliteTx { conn },
                 ..
-            } => select_typed_sqlite(conn, translated.as_ref(), self.params.as_ref()).await,
+            } => {
+                select_typed_sqlite(
+                    conn,
+                    translated.as_ref(),
+                    self.params.as_ref(),
+                    statement_cache_mode,
+                )
+                .await
+            }
             #[cfg(feature = "postgres")]
             QueryTarget {
                 kind:
@@ -66,7 +84,15 @@ impl QueryBuilder<'_, '_> {
             QueryTarget {
                 kind: QueryTargetKind::TypedTurso { conn } | QueryTargetKind::TypedTursoTx { conn },
                 ..
-            } => select_typed_turso(conn, translated.as_ref(), self.params.as_ref()).await,
+            } => {
+                select_typed_turso(
+                    conn,
+                    translated.as_ref(),
+                    self.params.as_ref(),
+                    statement_cache_mode,
+                )
+                .await
+            }
             #[cfg(feature = "mssql")]
             QueryTarget {
                 kind: QueryTargetKind::TypedMssql { conn } | QueryTargetKind::TypedMssqlTx { conn },
@@ -118,11 +144,12 @@ async fn select_on_connection(
     query: &str,
     params: &[RowValues],
     use_prepare: bool,
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     if use_prepare {
-        execute_select_prepared_dispatch(conn, query, params).await
+        execute_select_prepared_dispatch(conn, query, params, statement_cache_mode).await
     } else {
-        execute_select_dispatch(conn, query, params).await
+        execute_select_dispatch(conn, query, params, statement_cache_mode).await
     }
 }
 
@@ -131,8 +158,10 @@ async fn select_typed_sqlite(
     conn: &mut PooledConnection<'static, SqliteManager>,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    crate::sqlite::connection::select(conn, query, params).await
+    crate::sqlite::connection::select_with_cache_mode(conn, query, params, statement_cache_mode)
+        .await
 }
 
 #[cfg(feature = "postgres")]
@@ -154,8 +183,9 @@ async fn select_typed_turso(
     conn: &mut PooledConnection<'static, TursoManager>,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    crate::typed_turso::select(conn, query, params).await
+    crate::typed_turso::select_with_cache_mode(conn, query, params, statement_cache_mode).await
 }
 
 #[cfg(feature = "mssql")]

@@ -2,15 +2,18 @@ use crate::pool::MiddlewarePoolConnection;
 
 #[cfg(feature = "sqlite")]
 use crate::sqlite::SqliteConnection;
+#[cfg(feature = "sqlite")]
+use crate::types::StatementCacheMode;
 
 /// Outcome returned by committing or rolling back a backend transaction.
 ///
 /// Most backends do not need to surface anything after commit/rollback, but `SQLite`
 /// consumes the pooled connection for the transaction and needs to hand it back
-/// (with its translation flag) so callers can keep using the pooled wrapper.
+/// (with its translation and statement-cache defaults) so callers can keep using the pooled wrapper.
 ///
 /// If you started a raw `SQLite` transaction, continue using the connection from the returned
-/// outcome instead of the pre-transaction wrapper to preserve the translation flag and pool state.
+/// outcome instead of the pre-transaction wrapper to preserve the translation/cache flags and
+/// pool state.
 #[derive(Debug, Default)]
 pub struct TxOutcome {
     restored_connection: Option<MiddlewarePoolConnection>,
@@ -55,14 +58,17 @@ impl TxOutcome {
         }
     }
 
-    /// Consume the outcome and unwrap the `SQLite` connection + translation flag.
+    /// Consume the outcome and unwrap the `SQLite` connection plus wrapper defaults.
     #[cfg(feature = "sqlite")]
-    pub fn into_sqlite_parts(self) -> Option<(SqliteConnection, bool)> {
+    pub fn into_sqlite_parts(self) -> Option<(SqliteConnection, bool, StatementCacheMode)> {
         match self.restored_connection {
             Some(MiddlewarePoolConnection::Sqlite {
                 mut conn,
                 translate_placeholders,
-            }) => conn.take().map(|conn| (conn, translate_placeholders)),
+                statement_cache_mode,
+            }) => conn
+                .take()
+                .map(|conn| (conn, translate_placeholders, statement_cache_mode)),
             _ => None,
         }
     }

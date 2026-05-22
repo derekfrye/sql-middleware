@@ -1,4 +1,5 @@
 use crate::pool::MiddlewarePoolConnection;
+use crate::types::StatementCacheMode;
 
 mod typed;
 
@@ -47,6 +48,7 @@ pub enum BatchTarget<'a> {
 pub struct QueryTarget<'a> {
     pub(crate) kind: QueryTargetKind<'a>,
     pub(crate) translation_default: bool,
+    pub(crate) statement_cache_mode: StatementCacheMode,
 }
 
 pub(crate) enum QueryTargetKind<'a> {
@@ -122,6 +124,7 @@ impl<'a> From<&'a mut MiddlewarePoolConnection> for QueryTarget<'a> {
     fn from(conn: &'a mut MiddlewarePoolConnection) -> Self {
         QueryTarget {
             translation_default: conn.translation_default(),
+            statement_cache_mode: conn.statement_cache_mode_default(),
             kind: QueryTargetKind::Connection(conn),
         }
     }
@@ -132,6 +135,7 @@ impl<'a> From<&'a postgres::transaction::Tx<'a>> for QueryTarget<'a> {
     fn from(tx: &'a postgres::transaction::Tx<'a>) -> Self {
         QueryTarget {
             translation_default: false,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind: QueryTargetKind::PostgresTx(tx),
         }
     }
@@ -142,6 +146,7 @@ impl<'a> From<&'a mut mssql::transaction::Tx<'a>> for QueryTarget<'a> {
     fn from(tx: &'a mut mssql::transaction::Tx<'a>) -> Self {
         QueryTarget {
             translation_default: false,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind: QueryTargetKind::MssqlTx(tx),
         }
     }
@@ -152,6 +157,7 @@ impl<'a> From<&'a turso::transaction::Tx<'a>> for QueryTarget<'a> {
     fn from(tx: &'a turso::transaction::Tx<'a>) -> Self {
         QueryTarget {
             translation_default: false,
+            statement_cache_mode: StatementCacheMode::Cached,
             kind: QueryTargetKind::TursoTx(tx),
         }
     }

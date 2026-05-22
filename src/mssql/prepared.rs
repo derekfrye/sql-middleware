@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError};
 
 use super::{config::MssqlClient, query::build_result_set};
 
@@ -50,6 +50,58 @@ impl MssqlNonTxPreparedStatement {
     pub async fn query(&self, params: &[RowValues]) -> Result<ResultSet, SqlMiddlewareDbError> {
         let mut client = self.client.lock().await;
         build_result_set(&mut client, &self.sql, params).await
+    }
+
+    /// Execute the prepared statement as a query and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns an error if parameter conversion, execution, or result construction fails.
+    pub async fn query_optional(
+        &self,
+        params: &[RowValues],
+    ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.query(params).await.map(ResultSet::into_optional)
+    }
+
+    /// Execute the prepared statement as a query and return the first row.
+    ///
+    /// # Errors
+    /// Returns an error if execution fails or no row is returned.
+    pub async fn query_one(
+        &self,
+        params: &[RowValues],
+    ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.query(params).await?.into_one()
+    }
+
+    /// Execute the prepared statement and map the first row.
+    ///
+    /// # Errors
+    /// Returns an error if execution fails, no row is returned, or the mapper fails.
+    pub async fn query_map_one<T, F>(
+        &self,
+        params: &[RowValues],
+        mapper: F,
+    ) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query(params).await?.map_one(mapper)
+    }
+
+    /// Execute the prepared statement and map the first row, returning `None` if no row exists.
+    ///
+    /// # Errors
+    /// Returns an error if execution or the mapper fails.
+    pub async fn query_map_optional<T, F>(
+        &self,
+        params: &[RowValues],
+        mapper: F,
+    ) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query(params).await?.map_optional(mapper)
     }
 
     /// Execute the prepared statement as DML and return affected rows.

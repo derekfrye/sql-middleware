@@ -22,7 +22,7 @@ pub use options::MiddlewarePoolOptions;
 pub use types::MiddlewarePool;
 
 use crate::SqlMiddlewareDbError;
-use crate::types::DatabaseType;
+use crate::types::{DatabaseType, StatementCacheMode};
 
 /// Configuration plus connection pool for a database backend.
 ///
@@ -48,6 +48,8 @@ pub struct ConfigAndPool {
     pub db_type: DatabaseType,
     /// Whether placeholder translation is enabled by default for this pool
     pub translate_placeholders: bool,
+    /// Default statement cache mode for SQLite/Turso paths.
+    pub statement_cache_mode: StatementCacheMode,
 }
 
 impl ConfigAndPool {
@@ -70,6 +72,11 @@ impl ConfigAndPool {
     /// ```
     pub async fn get_connection(&self) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         let pool_ref = self.pool.get().await?;
-        MiddlewarePool::get_connection(pool_ref, self.translate_placeholders).await
+        MiddlewarePool::get_connection(
+            pool_ref,
+            self.translate_placeholders,
+            self.statement_cache_mode,
+        )
+        .await
     }
 }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::middleware::{
     ConfigAndPool, DatabaseType, MiddlewarePool, MiddlewarePoolOptions, SqlMiddlewareDbError,
 };
+use crate::types::StatementCacheMode;
 
 use super::config::SqliteManager;
 
@@ -12,6 +13,7 @@ pub struct SqliteOptions {
     pub db_path: PathBuf,
     pub translate_placeholders: bool,
     pub pool_options: MiddlewarePoolOptions,
+    pub statement_cache_mode: StatementCacheMode,
 }
 
 impl SqliteOptions {
@@ -21,6 +23,7 @@ impl SqliteOptions {
             db_path: db_path.into(),
             translate_placeholders: false,
             pool_options: MiddlewarePoolOptions::default(),
+            statement_cache_mode: StatementCacheMode::Cached,
         }
     }
 
@@ -30,6 +33,7 @@ impl SqliteOptions {
             db_path: db_path.into(),
             translate_placeholders: false,
             pool_options: MiddlewarePoolOptions::default(),
+            statement_cache_mode: StatementCacheMode::Cached,
         }
     }
 
@@ -42,6 +46,12 @@ impl SqliteOptions {
     #[must_use]
     pub fn with_pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
         self.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_statement_cache(mut self, statement_cache_mode: StatementCacheMode) -> Self {
+        self.statement_cache_mode = statement_cache_mode;
         self
     }
 
@@ -82,6 +92,12 @@ impl SqliteOptionsBuilder {
     #[must_use]
     pub fn pool_options(mut self, pool_options: MiddlewarePoolOptions) -> Self {
         self.opts.pool_options = pool_options;
+        self
+    }
+
+    #[must_use]
+    pub fn statement_cache(mut self, statement_cache_mode: StatementCacheMode) -> Self {
+        self.opts.statement_cache_mode = statement_cache_mode;
         self
     }
 
@@ -139,6 +155,7 @@ impl ConfigAndPool {
             pool: MiddlewarePool::Sqlite(pool),
             db_type: DatabaseType::Sqlite,
             translate_placeholders: opts.translate_placeholders,
+            statement_cache_mode: opts.statement_cache_mode,
         })
     }
 }

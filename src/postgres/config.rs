@@ -178,6 +178,7 @@ impl ConfigAndPool {
             pool: MiddlewarePool::Postgres(pg_pool),
             db_type: DatabaseType::Postgres,
             translate_placeholders,
+            statement_cache_mode: crate::types::StatementCacheMode::Cached,
         })
     }
 }

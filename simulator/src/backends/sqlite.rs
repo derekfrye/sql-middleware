@@ -50,6 +50,7 @@ impl SqliteBackend {
                 pool: MiddlewarePool::Sqlite(pool),
                 db_type: DatabaseType::Sqlite,
                 translate_placeholders: false,
+                statement_cache_mode: sql_middleware::StatementCacheMode::Cached,
             },
         })
     }

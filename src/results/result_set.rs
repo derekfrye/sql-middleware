@@ -1,4 +1,5 @@
 use super::row::CustomDbRow;
+use crate::error::SqlMiddlewareDbError;
 use crate::types::RowValues;
 
 type ColumnCacheMap = std::sync::LazyLock<
@@ -111,5 +112,49 @@ impl ResultSet {
 
         self.results.push(row);
         self.rows_affected += 1;
+    }
+
+    /// Return the first row, if one was returned.
+    #[must_use]
+    pub fn into_optional(mut self) -> Option<CustomDbRow> {
+        if self.results.is_empty() {
+            None
+        } else {
+            Some(self.results.remove(0))
+        }
+    }
+
+    /// Return the first row or an error when the result set is empty.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::ExecutionError`] if no row was returned.
+    pub fn into_one(self) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.into_optional().ok_or_else(|| {
+            SqlMiddlewareDbError::ExecutionError("query returned no rows".to_string())
+        })
+    }
+
+    /// Map the first row, if one was returned.
+    ///
+    /// # Errors
+    /// Returns any error produced by the mapper.
+    pub fn map_optional<T, F>(self, mapper: F) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.into_optional().map(|row| mapper(&row)).transpose()
+    }
+
+    /// Map the first row or return an error when the result set is empty.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError::ExecutionError`] if no row was returned, or any error
+    /// produced by the mapper.
+    pub fn map_one<T, F>(self, mapper: F) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        let row = self.into_one()?;
+        mapper(&row)
     }
 }

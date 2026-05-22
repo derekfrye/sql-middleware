@@ -3,7 +3,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::adapters::params::convert_params;
-use crate::middleware::{ConversionMode, ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{ConversionMode, CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::types::StatementCacheMode;
 
 use super::params::Params as TursoParams;
 
@@ -39,14 +40,17 @@ impl std::fmt::Debug for TursoNonTxPreparedStatement {
 }
 
 impl TursoNonTxPreparedStatement {
-    pub(crate) async fn prepare(
+    pub(crate) async fn prepare_with_cache_mode(
         connection: turso::Connection,
         sql: &str,
+        statement_cache_mode: StatementCacheMode,
     ) -> Result<Self, SqlMiddlewareDbError> {
         let sql_arc = Arc::new(sql.to_owned());
-        let statement = connection.prepare_cached(sql).await.map_err(|e| {
-            SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}"))
-        })?;
+        let statement = match statement_cache_mode {
+            StatementCacheMode::Cached => connection.prepare_cached(sql).await,
+            StatementCacheMode::Uncached => connection.prepare(sql).await,
+        }
+        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("Turso prepare error: {e}")))?;
 
         let columns = statement.column_names();
 
@@ -77,6 +81,60 @@ impl TursoNonTxPreparedStatement {
 
         self.reset().await?;
         result
+    }
+
+    /// Execute the prepared statement as a query and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if parameter conversion, execution, or result decoding
+    /// fails.
+    pub async fn query_optional(
+        &self,
+        params: &[RowValues],
+    ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.query(params).await.map(ResultSet::into_optional)
+    }
+
+    /// Execute the prepared statement as a query and return the first row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails or no row is returned.
+    pub async fn query_one(
+        &self,
+        params: &[RowValues],
+    ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.query(params).await?.into_one()
+    }
+
+    /// Execute the prepared statement and map the first row.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution fails, no row is returned, or the mapper
+    /// fails.
+    pub async fn query_map_one<T, F>(
+        &self,
+        params: &[RowValues],
+        mapper: F,
+    ) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query(params).await?.map_one(mapper)
+    }
+
+    /// Execute the prepared statement and map the first row, returning `None` if no row exists.
+    ///
+    /// # Errors
+    /// Returns [`SqlMiddlewareDbError`] if execution or the mapper fails.
+    pub async fn query_map_optional<T, F>(
+        &self,
+        params: &[RowValues],
+        mapper: F,
+    ) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query(params).await?.map_optional(mapper)
     }
 
     /// Execute the prepared statement as a DML (INSERT/UPDATE/DELETE) returning rows affected.

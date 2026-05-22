@@ -1,6 +1,6 @@
 use tiberius::Query;
 
-use crate::middleware::{ResultSet, RowValues, SqlMiddlewareDbError};
+use crate::middleware::{CustomDbRow, ResultSet, RowValues, SqlMiddlewareDbError};
 use crate::tx_outcome::TxOutcome;
 
 use super::config::MssqlClient;
@@ -110,6 +110,66 @@ impl Tx<'_> {
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
         build_result_set(self.client, &prepared.sql, params).await
+    }
+
+    /// Execute a prepared SELECT and return the first row, if present.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution or result construction fails.
+    pub async fn query_prepared_optional(
+        &mut self,
+        prepared: &Prepared,
+        params: &[RowValues],
+    ) -> Result<Option<CustomDbRow>, SqlMiddlewareDbError> {
+        self.query_prepared(prepared, params)
+            .await
+            .map(ResultSet::into_optional)
+    }
+
+    /// Execute a prepared SELECT and return the first row.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution fails or no row is returned.
+    pub async fn query_prepared_one(
+        &mut self,
+        prepared: &Prepared,
+        params: &[RowValues],
+    ) -> Result<CustomDbRow, SqlMiddlewareDbError> {
+        self.query_prepared(prepared, params).await?.into_one()
+    }
+
+    /// Execute a prepared SELECT and map the first row.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution fails, no row is returned, or the mapper fails.
+    pub async fn query_prepared_map_one<T, F>(
+        &mut self,
+        prepared: &Prepared,
+        params: &[RowValues],
+        mapper: F,
+    ) -> Result<T, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query_prepared(prepared, params).await?.map_one(mapper)
+    }
+
+    /// Execute a prepared SELECT and map the first row, returning `None` if no row exists.
+    ///
+    /// # Errors
+    /// Returns `SqlMiddlewareDbError` if execution or the mapper fails.
+    pub async fn query_prepared_map_optional<T, F>(
+        &mut self,
+        prepared: &Prepared,
+        params: &[RowValues],
+        mapper: F,
+    ) -> Result<Option<T>, SqlMiddlewareDbError>
+    where
+        F: FnOnce(&CustomDbRow) -> Result<T, SqlMiddlewareDbError>,
+    {
+        self.query_prepared(prepared, params)
+            .await?
+            .map_optional(mapper)
     }
 
     /// Execute a SELECT inside the transaction.

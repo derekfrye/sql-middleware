@@ -6,7 +6,7 @@ use crate::middleware::{RowValues, SqlMiddlewareDbError};
 use crate::query_builder::QueryBuilder;
 use crate::results::ResultSet;
 use crate::turso::params::Params as TursoParams;
-use crate::types::ConversionMode;
+use crate::types::{ConversionMode, StatementCacheMode};
 
 use super::{InTx, TursoConnection, TursoManager};
 
@@ -43,7 +43,7 @@ impl TursoConnection<InTx> {
         query: &str,
         params: &[RowValues],
     ) -> Result<ResultSet, SqlMiddlewareDbError> {
-        select_rows(self.conn_mut(), query, params).await
+        select_rows(self.conn_mut(), query, params, StatementCacheMode::Cached).await
     }
 
     /// Start a query builder within the open transaction.
@@ -61,7 +61,20 @@ pub async fn select(
     query: &str,
     params: &[RowValues],
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
-    select_rows(conn, query, params).await
+    select_with_cache_mode(conn, query, params, StatementCacheMode::Cached).await
+}
+
+/// Adapter for query builder select with explicit statement cache mode.
+///
+/// # Errors
+/// Returns `SqlMiddlewareDbError` if the query execution fails.
+pub async fn select_with_cache_mode(
+    conn: &mut PooledConnection<'_, TursoManager>,
+    query: &str,
+    params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    select_rows(conn, query, params, statement_cache_mode).await
 }
 
 /// Shared helper to run a SELECT against a pooled Turso client and build a `ResultSet`.
@@ -69,12 +82,14 @@ async fn select_rows(
     conn: &mut PooledConnection<'_, TursoManager>,
     query: &str,
     params: &[RowValues],
+    statement_cache_mode: StatementCacheMode,
 ) -> Result<ResultSet, SqlMiddlewareDbError> {
     let converted = convert_params::<TursoParams>(params, ConversionMode::Query)?;
-    let mut stmt = conn
-        .prepare_cached(query)
-        .await
-        .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso prepare error: {e}")))?;
+    let mut stmt = match statement_cache_mode {
+        StatementCacheMode::Cached => conn.prepare_cached(query).await,
+        StatementCacheMode::Uncached => conn.prepare(query).await,
+    }
+    .map_err(|e| SqlMiddlewareDbError::ExecutionError(format!("turso prepare error: {e}")))?;
 
     let cols = stmt.column_names();
     let cols_arc = std::sync::Arc::new(cols);

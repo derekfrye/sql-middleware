@@ -36,6 +36,7 @@ pub mod query;
 
 // Internal modules (types are re-exported; modules stay private)
 pub(crate) mod query_builder;
+#[cfg(any(feature = "mssql", feature = "postgres", feature = "sqlite"))]
 pub(crate) mod query_utils;
 pub(crate) mod results;
 pub(crate) mod types;
@@ -61,7 +62,8 @@ pub use middleware::MiddlewarePoolOptions;
 pub use middleware::{
     AnyConnWrapper, BatchTarget, ConfigAndPool, ConversionMode, CustomDbRow, DatabaseType,
     MiddlewarePool, MiddlewarePoolConnection, ParamConverter, QueryAndParams, QueryBuilder,
-    QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, TxOutcome, execute_batch,
+    QueryTarget, ResultSet, RowValues, SqlMiddlewareDbError, StatementCacheMode, TxOutcome,
+    execute_batch,
 };
 #[cfg(feature = "mssql")]
 pub use middleware::{MssqlOptions, MssqlOptionsBuilder};

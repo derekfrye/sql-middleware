@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::types::StatementCacheMode;
+
 mod parsers;
 mod scanner;
 #[cfg(test)]
@@ -61,6 +63,7 @@ pub enum PrepareMode {
 pub struct QueryOptions {
     pub translation: TranslationMode,
     pub prepare: PrepareMode,
+    pub statement_cache: Option<StatementCacheMode>,
 }
 
 impl Default for QueryOptions {
@@ -68,6 +71,7 @@ impl Default for QueryOptions {
         Self {
             translation: TranslationMode::PoolDefault,
             prepare: PrepareMode::default(),
+            statement_cache: None,
         }
     }
 }
@@ -82,6 +86,12 @@ impl QueryOptions {
     #[must_use]
     pub fn with_prepare(mut self, prepare: PrepareMode) -> Self {
         self.prepare = prepare;
+        self
+    }
+
+    #[must_use]
+    pub fn with_statement_cache(mut self, statement_cache: StatementCacheMode) -> Self {
+        self.statement_cache = Some(statement_cache);
         self
     }
 }

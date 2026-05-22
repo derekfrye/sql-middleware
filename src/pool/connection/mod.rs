@@ -18,6 +18,7 @@ use super::types::MiddlewarePool;
 use crate::error::SqlMiddlewareDbError;
 #[cfg(feature = "sqlite")]
 use crate::sqlite::SqliteConnection;
+use crate::types::StatementCacheMode;
 
 #[cfg(feature = "turso")]
 use crate::turso::typed::TursoManager;
@@ -27,21 +28,25 @@ pub enum MiddlewarePoolConnection {
     Postgres {
         client: PooledConnection<'static, PgManager>,
         translate_placeholders: bool,
+        statement_cache_mode: StatementCacheMode,
     },
     #[cfg(feature = "sqlite")]
     Sqlite {
         conn: Option<SqliteConnection>,
         translate_placeholders: bool,
+        statement_cache_mode: StatementCacheMode,
     },
     #[cfg(feature = "mssql")]
     Mssql {
         conn: PooledConnection<'static, ConnectionManager>,
         translate_placeholders: bool,
+        statement_cache_mode: StatementCacheMode,
     },
     #[cfg(feature = "turso")]
     Turso {
         conn: PooledConnection<'static, TursoManager>,
         translate_placeholders: bool,
+        statement_cache_mode: StatementCacheMode,
     },
 }
 
@@ -72,23 +77,24 @@ impl MiddlewarePool {
     pub async fn get_connection(
         pool: &MiddlewarePool,
         translate_placeholders: bool,
+        statement_cache_mode: StatementCacheMode,
     ) -> Result<MiddlewarePoolConnection, SqlMiddlewareDbError> {
         match pool {
             #[cfg(feature = "postgres")]
             MiddlewarePool::Postgres(pool) => {
-                postgres::get_connection(pool, translate_placeholders).await
+                postgres::get_connection(pool, translate_placeholders, statement_cache_mode).await
             }
             #[cfg(feature = "sqlite")]
             MiddlewarePool::Sqlite(pool) => {
-                sqlite::get_connection(pool, translate_placeholders).await
+                sqlite::get_connection(pool, translate_placeholders, statement_cache_mode).await
             }
             #[cfg(feature = "mssql")]
             MiddlewarePool::Mssql(pool) => {
-                mssql::get_connection(pool, translate_placeholders).await
+                mssql::get_connection(pool, translate_placeholders, statement_cache_mode).await
             }
             #[cfg(feature = "turso")]
             MiddlewarePool::Turso(pool) => {
-                turso::get_connection(pool, translate_placeholders).await
+                turso::get_connection(pool, translate_placeholders, statement_cache_mode).await
             }
             #[allow(unreachable_patterns)]
             _ => Err(SqlMiddlewareDbError::Unimplemented(
@@ -123,6 +129,33 @@ impl MiddlewarePoolConnection {
                 translate_placeholders,
                 ..
             } => *translate_placeholders,
+        }
+    }
+
+    /// Pool-default statement cache mode attached to this connection.
+    #[must_use]
+    pub fn statement_cache_mode_default(&self) -> StatementCacheMode {
+        match self {
+            #[cfg(feature = "postgres")]
+            MiddlewarePoolConnection::Postgres {
+                statement_cache_mode,
+                ..
+            } => *statement_cache_mode,
+            #[cfg(feature = "sqlite")]
+            MiddlewarePoolConnection::Sqlite {
+                statement_cache_mode,
+                ..
+            } => *statement_cache_mode,
+            #[cfg(feature = "mssql")]
+            MiddlewarePoolConnection::Mssql {
+                statement_cache_mode,
+                ..
+            } => *statement_cache_mode,
+            #[cfg(feature = "turso")]
+            MiddlewarePoolConnection::Turso {
+                statement_cache_mode,
+                ..
+            } => *statement_cache_mode,
         }
     }
 }
