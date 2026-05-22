@@ -169,6 +169,20 @@ pub(crate) async fn execute_query_prepared_on_client(
     build_result_set_from_statement(&stmt, &rows)
 }
 
+/// Execute a prepared SELECT query with an already-prepared statement.
+///
+/// # Errors
+/// Returns errors from parameter conversion, query execution, or result building.
+pub(crate) async fn execute_query_prepared_statement_on_client(
+    client: &Client,
+    stmt: &Statement,
+    params: &[RowValues],
+) -> Result<ResultSet, SqlMiddlewareDbError> {
+    let rows =
+        query_rows_on_client(client, "", Some(stmt), params, "postgres select error").await?;
+    build_result_set_from_statement(stmt, &rows)
+}
+
 /// Execute a DML query on a client without managing transactions
 ///
 /// # Errors
@@ -197,6 +211,20 @@ pub(crate) async fn execute_dml_prepared_on_client(
     })?;
     let rows = execute_rows_on_client(client, query, Some(&stmt), params, "postgres execute error")
         .await?;
+    convert_affected_rows(rows, "postgres affected rows conversion error")
+}
+
+/// Execute a prepared DML query with an already-prepared statement.
+///
+/// # Errors
+/// Returns errors from parameter conversion, query execution, or row-count conversion.
+pub(crate) async fn execute_dml_prepared_statement_on_client(
+    client: &Client,
+    stmt: &Statement,
+    params: &[RowValues],
+) -> Result<usize, SqlMiddlewareDbError> {
+    let rows =
+        execute_rows_on_client(client, "", Some(stmt), params, "postgres execute error").await?;
     convert_affected_rows(rows, "postgres affected rows conversion error")
 }
 

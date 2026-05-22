@@ -95,8 +95,22 @@ pub(crate) async fn execute_select_prepared_dispatch(
     match conn {
         #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {
-            client: pg_client, ..
-        } => postgres::query::execute_query_prepared_on_client(pg_client, query, params).await,
+            prepared_statements,
+            client: pg_client,
+            ..
+        } => {
+            let stmt = if let Some(stmt) = prepared_statements.get(query) {
+                stmt.clone()
+            } else {
+                let stmt = pg_client.prepare(query).await.map_err(|e| {
+                    SqlMiddlewareDbError::ExecutionError(format!("postgres prepare error: {e}"))
+                })?;
+                prepared_statements.insert(query.to_owned(), stmt.clone());
+                stmt
+            };
+            postgres::query::execute_query_prepared_statement_on_client(pg_client, &stmt, params)
+                .await
+        }
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => {
             let sqlite_client = conn.sqlite_conn_mut()?;
@@ -166,8 +180,22 @@ pub(crate) async fn execute_dml_prepared_dispatch(
     match conn {
         #[cfg(feature = "postgres")]
         MiddlewarePoolConnection::Postgres {
-            client: pg_client, ..
-        } => postgres::query::execute_dml_prepared_on_client(pg_client, query, params).await,
+            prepared_statements,
+            client: pg_client,
+            ..
+        } => {
+            let stmt = if let Some(stmt) = prepared_statements.get(query) {
+                stmt.clone()
+            } else {
+                let stmt = pg_client.prepare(query).await.map_err(|e| {
+                    SqlMiddlewareDbError::ExecutionError(format!("postgres prepare error: {e}"))
+                })?;
+                prepared_statements.insert(query.to_owned(), stmt.clone());
+                stmt
+            };
+            postgres::query::execute_dml_prepared_statement_on_client(pg_client, &stmt, params)
+                .await
+        }
         #[cfg(feature = "sqlite")]
         MiddlewarePoolConnection::Sqlite { .. } => {
             let sqlite_client = conn.sqlite_conn_mut()?;

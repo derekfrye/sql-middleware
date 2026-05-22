@@ -52,6 +52,34 @@ fn test5a_postgres_custom_tx_minimal() -> Result<(), Box<dyn std::error::Error>>
             "alice"
         );
 
+        let cached_sql =
+            "SELECT name FROM t WHERE id = $1 /* sql_middleware_prepared_cache_test */";
+        for _ in 0..2 {
+            let rs = conn
+                .query(cached_sql)
+                .prepare()
+                .params(&[RowValues::Int(1)])
+                .select()
+                .await?;
+            assert_eq!(
+                rs.results[0].get("name").unwrap().as_text().unwrap(),
+                "alice"
+            );
+        }
+        let prepared_count = conn
+            .query("SELECT COUNT(*) AS cnt FROM pg_prepared_statements WHERE statement = $1")
+            .params(&[RowValues::Text(cached_sql.to_string())])
+            .select()
+            .await?;
+        assert_eq!(
+            *prepared_count.results[0]
+                .get("cnt")
+                .unwrap()
+                .as_int()
+                .unwrap(),
+            1
+        );
+
         {
             let MiddlewarePoolConnection::Postgres { client: pg_obj, .. } = &mut conn else {
                 panic!("Expected Postgres connection");

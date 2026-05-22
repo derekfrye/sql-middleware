@@ -1,5 +1,7 @@
 #[cfg(feature = "postgres")]
 use bb8::Pool;
+#[cfg(feature = "postgres")]
+use std::collections::HashMap;
 
 #[cfg(feature = "postgres")]
 use crate::error::SqlMiddlewareDbError;
@@ -25,5 +27,6 @@ pub(super) async fn get_connection(
         client: conn,
         translate_placeholders,
         statement_cache_mode,
+        prepared_statements: HashMap::new(),
     })
 }

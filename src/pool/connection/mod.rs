@@ -13,6 +13,8 @@ use crate::postgres::typed::PgManager;
 use bb8::PooledConnection;
 #[cfg(feature = "mssql")]
 use bb8_tiberius::ConnectionManager;
+#[cfg(feature = "postgres")]
+use std::collections::HashMap;
 
 use super::types::MiddlewarePool;
 use crate::error::SqlMiddlewareDbError;
@@ -29,6 +31,7 @@ pub enum MiddlewarePoolConnection {
         client: PooledConnection<'static, PgManager>,
         translate_placeholders: bool,
         statement_cache_mode: StatementCacheMode,
+        prepared_statements: HashMap<String, tokio_postgres::Statement>,
     },
     #[cfg(feature = "sqlite")]
     Sqlite {
